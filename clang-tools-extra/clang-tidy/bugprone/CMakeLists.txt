@@ -27,6 +27,7 @@ add_clang_library(clangTidyBugproneModule
   PosixReturnCheck.cpp
   SizeofContainerCheck.cpp
   SizeofExpressionCheck.cpp
+  StrictAliasingCheck.cpp
   StringConstructorCheck.cpp
   StringIntegerAssignmentCheck.cpp
   StringLiteralWithEmbeddedNulCheck.cpp

@@ -35,6 +35,7 @@
 #include "PosixReturnCheck.h"
 #include "SizeofContainerCheck.h"
 #include "SizeofExpressionCheck.h"
+#include "StrictAliasingCheck.h"
 #include "StringConstructorCheck.h"
 #include "StringIntegerAssignmentCheck.h"
 #include "StringLiteralWithEmbeddedNulCheck.h"
@@ -114,6 +115,8 @@ public:
         "bugprone-sizeof-container");
     CheckFactories.registerCheck<SizeofExpressionCheck>(
         "bugprone-sizeof-expression");
+    CheckFactories.registerCheck<StrictAliasingCheck>(
+        "bugprone-strict-aliasing");
     CheckFactories.registerCheck<StringConstructorCheck>(
         "bugprone-string-constructor");
     CheckFactories.registerCheck<StringIntegerAssignmentCheck>(

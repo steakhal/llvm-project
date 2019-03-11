@@ -63,6 +63,7 @@ Clang-Tidy Checks
    bugprone-posix-return
    bugprone-sizeof-container
    bugprone-sizeof-expression
+   bugprone-strict-aliasing
    bugprone-string-constructor
    bugprone-string-integer-assignment
    bugprone-string-literal-with-embedded-nul
