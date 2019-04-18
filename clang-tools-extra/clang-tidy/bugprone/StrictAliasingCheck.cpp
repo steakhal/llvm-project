@@ -30,6 +30,7 @@ static void valid(const char *msg) {
                << "  ((\033[32;1mvalid\033[0m))\n\n";
 }
 
+/*
 static void printCastTypes(const Type *SrcTy, const Type *DstTy,
                            const PrintingPolicy &pol) {
   std::string fst, snd;
@@ -68,7 +69,9 @@ static void printCastTypes(const Type *SrcTy, const Type *DstTy,
     DstTy->dump(llvm::outs());
   llvm::outs() << snd << '\n';
 }
+*/
 
+/*
 static bool equalFieldTypeWithoutCV(ASTContext &Ctx, const FieldDecl *Lhs,
                                     const FieldDecl *Rhs) {
   if (Lhs->getType().getTypePtr() != Rhs->getType().getTypePtr())
@@ -80,7 +83,9 @@ static bool equalFieldTypeWithoutCV(ASTContext &Ctx, const FieldDecl *Lhs,
     return Lhs->getBitWidthValue(Ctx) == Rhs->getBitWidthValue(Ctx);
   return true;
 }
+*/
 
+/*
 // [class.mem] 12.2/20
 static SmallVector<const Type *, 4>
 commonInitialSequence(ASTContext &Ctx, CXXRecordDecl *Lhs,
@@ -102,7 +107,9 @@ commonInitialSequence(ASTContext &Ctx, CXXRecordDecl *Lhs,
   }
   return common;
 }
+ */
 
+/*
 // [class.mem] 12.2/21-22
 static bool areLayoutCompatibleClasses(ASTContext &Ctx, CXXRecordDecl *Lhs,
                                        const CXXRecordDecl *Rhs) {
@@ -112,6 +119,7 @@ static bool areLayoutCompatibleClasses(ASTContext &Ctx, CXXRecordDecl *Lhs,
   return common.size() == static_cast<std::size_t>(std::distance(
                               Lhs->field_begin(), Lhs->field_end()));
 }
+*/
 
 // if the type is [unsigned|signed] char, std::byte, void
 // than true
@@ -197,6 +205,7 @@ static bool areSameTypeOrAliasableBuiltins(const Type *SrcTy,
   return false;
 }
 
+/*
 // [conv.qual] 7.5 (similarity)
 //   (1) A cv-decomposition of a type T is a sequence of cv_i and P_i such that
 //       T is:  "cv0 P0 cv1 P1 ... cvN-1 PN-1 cvN U" for N > 0,
@@ -264,6 +273,7 @@ static bool areSimilar(ASTContext &Ctx, const Type *Lhs, const Type *Rhs) {
 
   return false;
 }
+ */
 
 static bool isOneLevelDeepPrefix(const RecordType *OuterTy,
                                  const Type *InnerTy);
@@ -457,10 +467,12 @@ static bool arePointerInterchangeable(const RecordType *SrcTy,
     return true;
   }
 
-  // TODO: ensure that DstTy is prefix of the SrcTy
-  // RELAX: maybe relax the layout requirement?
-  valid("record to record - TODO");
-  return true;
+  if (isOneLevelDeepPrefix(SrcTy, DstTy))
+    return true;
+  if (isOneLevelDeepPrefix(DstTy, SrcTy))
+    return true;
+
+  return false;
 }
 static bool arePointerInterchangeable(const EnumType *SrcTy,
                                       const RecordType *DstTy) {
@@ -598,23 +610,51 @@ findPointeeTypeTransitively(const Type *SrcTy, const Type *DstTy) {
   return {SrcTy, DstTy};
 }
 
-void StrictAliasingCheck::registerMatchers(MatchFinder *Finder) {
+StrictAliasingCheck::StrictAliasingCheck(StringRef Name,
+                                         ClangTidyContext *Context)
+    : ClangTidyCheck(Name, Context),
+      WarnOnlyIfDereferenced(
+          Options.get("WarnOnlyIfDereferenced", "true").find("false") ==
+          std::string::npos) {}
+
+static void registerBitcastExprs(ClangTidyCheck *Checker, MatchFinder *Finder) {
   const auto refcast =
       explicitCastExpr(hasCastKind(CK_LValueBitCast)).bind("bitcast");
   const auto ptrcast =
       explicitCastExpr(hasCastKind(CK_BitCast)).bind("bitcast");
-  const auto iptrcast = ignoringParenImpCasts(ptrcast);
+  Finder->addMatcher(refcast, Checker);
+  Finder->addMatcher(ptrcast, Checker);
+}
 
+static void registerBitcastDereferenceExprs(ClangTidyCheck *Checker,
+                                            MatchFinder *Finder) {
+  const auto refcast =
+      explicitCastExpr(hasCastKind(CK_LValueBitCast)).bind("bitcast");
+  const auto ptrcast =
+      explicitCastExpr(hasCastKind(CK_BitCast)).bind("bitcast");
+
+  const auto iptrcast = ignoringParenImpCasts(ptrcast);
   const auto member = memberExpr(hasObjectExpression(iptrcast), isArrow());
   const auto array = arraySubscriptExpr(hasBase(iptrcast));
   const auto deref =
       unaryOperator(hasOperatorName("*"),
                     hasUnaryOperand(allOf(hasType(isAnyPointer()), iptrcast)));
 
-  Finder->addMatcher(refcast, this);
-  Finder->addMatcher(member, this);
-  Finder->addMatcher(array, this);
-  Finder->addMatcher(deref, this);
+  Finder->addMatcher(refcast, Checker);
+  Finder->addMatcher(member, Checker);
+  Finder->addMatcher(array, Checker);
+  Finder->addMatcher(deref, Checker);
+}
+
+void StrictAliasingCheck::registerMatchers(MatchFinder *Finder) {
+  if (WarnOnlyIfDereferenced)
+    registerBitcastDereferenceExprs(this, Finder);
+  else
+    registerBitcastExprs(this, Finder);
+}
+
+void StrictAliasingCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
+  Options.store(Opts, "WarnOnlyIfDereferenced", WarnOnlyIfDereferenced);
 }
 
 void StrictAliasingCheck::check(const MatchFinder::MatchResult &Result) {
@@ -652,9 +692,8 @@ void StrictAliasingCheck::check(const MatchFinder::MatchResult &Result) {
     return;
   }
 
-  arePointerInterchangeable(SrcTy, DstTy);
-
-  diag(ECE->getBeginLoc(), "checker result");
+  if (!arePointerInterchangeable(SrcTy, DstTy))
+    diag(ECE->getBeginLoc(), "checker result");
 }
 
 } // namespace bugprone

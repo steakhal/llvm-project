@@ -22,10 +22,14 @@ namespace bugprone {
 /// http://clang.llvm.org/extra/clang-tidy/checks/bugprone-strict-aliasing.html
 class StrictAliasingCheck : public ClangTidyCheck {
 public:
-  StrictAliasingCheck(StringRef Name, ClangTidyContext *Context)
-      : ClangTidyCheck(Name, Context) {}
+  StrictAliasingCheck(StringRef Name, ClangTidyContext *Context);
+
   void registerMatchers(ast_matchers::MatchFinder *Finder) override;
+  void storeOptions(ClangTidyOptions::OptionMap &Opts) override;
   void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
+
+private:
+  bool WarnOnlyIfDereferenced;
 };
 
 } // namespace bugprone
@@ -33,4 +37,3 @@ public:
 } // namespace clang
 
 #endif // LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_BUGPRONE_STRICTALIASINGCHECK_H
-

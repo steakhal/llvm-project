@@ -21,28 +21,28 @@ Base b;
 
 // check record to builtin type
 void rec_to_bt(Derived *d) {
-  *(int *)d;
+  *(int *)d; // bad
 
   using Derived_alias = Derived;
-  Derived_alias *p = d;
-  *(int *)p;
+  Derived_alias *p = d; // bad
+  *(int *)p; // bad
 }
 
 void qqqqqqq(Empty43 *p) {
-  *(Empty2 *)p;
-  *(int *)p;
+  *(Empty2 *)p; // bad
+  *(int *)p; // bad
 }
 
 enum E { DUMMY };
 void incomplete_enum(enum E *e, int *i) {
-  *(int *)e;
-  *(enum E *)i;
+  *(int *)e; // bad
+  *(enum E *)i; // bad
 }
 
 struct Forw;
 void hh(Forw *f, float *g) {
-  *(Forw *)g;
-  *(float *)f;
+  *(Forw *)g; // considered bad
+  *(float *)f; // considered bad
 }
 
 // ignore: Dependant casts
@@ -59,7 +59,7 @@ void dd(int ip) {
   *(Base *)ip;
 }
 
-void eeeee(Base **ip) {
+void TODO(Base **ip) {
   *(Base *)ip;
 }
 
