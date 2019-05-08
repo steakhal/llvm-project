@@ -32,8 +32,12 @@ enum class StrictAliasingError {
 
   empty_record,
   first_member_is_bitfield,
+  cannot_alias_with_first_member,
+
+  unrelated_record_types
 };
 
+/*
 static unsigned current_line; // TODO: remove these
 static void invalid(const char *msg) {
   llvm::outs() << current_line << ": " << msg
@@ -43,6 +47,7 @@ static void valid(const char *msg) {
   llvm::outs() << current_line << ": " << msg
                << "  ((\033[32;1mvalid\033[0m))\n\n";
 }
+ */
 
 /*
 static void printCastTypes(const Type *SrcTy, const Type *DstTy,
@@ -394,9 +399,12 @@ static StrictAliasingError isOneLevelDeepPrefix(const RecordType *OuterTy,
   if (FirstField->isBitField())
     return StrictAliasingError::first_member_is_bitfield;
 
-  // don't recurse, one level deep check
-  return areSameTypeOrAliasableBuiltins(FirstField->getType().getTypePtr(),
-                                        InnerTy);
+  // don't recurse, just do a one level deep check
+  if (areSameTypeOrAliasableBuiltins(FirstField->getType().getTypePtr(),
+                                     InnerTy))
+    return StrictAliasingError::valid;
+
+  return StrictAliasingError::cannot_alias_with_first_member;
 }
 
 /// cast to BuiltinType
@@ -464,7 +472,7 @@ static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
   if (isOneLevelDeepPrefix(DstTy, SrcTy) == Valid)
     return Valid;
 
-  return false;
+  return StrictAliasingError::unrelated_record_types;
 }
 static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
                                                      const RecordType *DstTy) {
@@ -474,10 +482,8 @@ static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
 
   if (const CXXRecordDecl *DstCXXRecordDecl = DstTy->getAsCXXRecordDecl()) {
     // invalid, if not standard layout
-    if (!DstCXXRecordDecl->isStandardLayout()) {
-      invalid("enum to record - cast to non-standard layout record");
-      return false;
-    }
+    if (!DstCXXRecordDecl->isStandardLayout())
+      return StrictAliasingError::non_standard_layout;
   }
 
   // if the enum type is the first of the record type (DstTy)
@@ -647,9 +653,9 @@ void StrictAliasingCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
 void StrictAliasingCheck::check(const MatchFinder::MatchResult &Result) {
   // const ASTContext *Ctx = Result.Context;
   const auto *ECE = Result.Nodes.getNodeAs<ExplicitCastExpr>("bitcast");
-  const auto beg = Result.SourceManager->getPresumedLoc(ECE->getBeginLoc());
-  const auto line = beg.getLine();
-  current_line = line; // TODO: remove this
+  //const auto beg = Result.SourceManager->getPresumedLoc(ECE->getBeginLoc());
+  //const auto line = beg.getLine();
+  // current_line = line; // TODO: remove this
 
   // types
   const Type *DstTy = ECE->getType().getTypePtr();
@@ -659,9 +665,9 @@ void StrictAliasingCheck::check(const MatchFinder::MatchResult &Result) {
   // printCastTypes(SrcTy, DstTy, pol);
 
   if (SrcTy->isPointerType() != DstTy->isPointerType()) {
-    llvm::outs() << line
-                 << ": not both src and dst are pointers/refs  ((skip))\n\n";
-    return;
+    //llvm::outs() << line
+    //             << ": not both src and dst are pointers/refs  ((skip))\n\n";
+    return; // TODO what to do in this case?
   }
 
   std::tie(SrcTy, DstTy) = findPointeeTypeTransitively(SrcTy, DstTy);
@@ -675,8 +681,8 @@ void StrictAliasingCheck::check(const MatchFinder::MatchResult &Result) {
   // printCastTypes(SrcTy, DstTy, pol);
 
   if (SrcTy->isPointerType() || DstTy->isPointerType()) {
-    invalid("not same 'deep' pointer chain");
-    return;
+    // invalid("not same 'deep' pointer chain");
+    return; // TODO what to do in this case?
   }
 
   if (arePointerInterchangeable(SrcTy, DstTy) != StrictAliasingError::valid)
