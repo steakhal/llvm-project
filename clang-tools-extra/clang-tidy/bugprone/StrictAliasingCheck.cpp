@@ -19,15 +19,16 @@ using namespace clang::ast_matchers;
 namespace clang {
 namespace tidy {
 namespace bugprone {
+
+/// \brief represents the internal information of the checker
+/// it will be used to distinguish the reasons why two pointers can not alias
 enum class StrictAliasingError {
   valid,
   incomplete,
   non_standard_layout,
 
   builtin_to_different_builtin,
-  builtin_to_different_than_first_member,
-
-  enum_to_non_stdbyte,
+  enum_to_builtin,
   enum_to_different_enum,
 
   empty_record,
@@ -37,112 +38,50 @@ enum class StrictAliasingError {
   unrelated_record_types
 };
 
-/*
-static unsigned current_line; // TODO: remove these
-static void invalid(const char *msg) {
-  llvm::outs() << current_line << ": " << msg
-               << "  ((\033[31;1minvalid\033[0m))\n\n";
-}
-static void valid(const char *msg) {
-  llvm::outs() << current_line << ": " << msg
-               << "  ((\033[32;1mvalid\033[0m))\n\n";
-}
- */
+/// \brief These functions are handling all the possible meaningful combinations
+/// of casting one type to the other
+///
+/// checks whether and object with SrcTy type could be reinterpreted as DstTy
+/// type without violating the strict aliasing rules
+///
+/// utility function that dispatches according to the first type
+static StrictAliasingError arePointerInterchangeable(const Type *SrcTy,
+                                                     const Type *DstTy);
+/// \brief utility function that dispatches according to the second type,
+/// this will call the arePointerInterchangeable function with the real types
+/// for both arguments
+template <class T>
+static StrictAliasingError arePointerInterchangeable(const T *SrcTy,
+                                                     const Type *DstTy);
 
-/*
-static void printCastTypes(const Type *SrcTy, const Type *DstTy,
-                           const PrintingPolicy &pol) {
-  std::string fst, snd;
-  if (!SrcTy->isPointerType())
-    fst = "&";
-  while (SrcTy->isPointerType()) {
-    fst += '*';
-    SrcTy = SrcTy->getPointeeType().getTypePtr();
-  }
+/// all possible casts to BuiltinType
+static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
+                                                     const BuiltinType *DstTy);
+static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
+                                                     const BuiltinType *DstTy);
+static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
+                                                     const BuiltinType *DstTy);
 
-  if (auto *BT = dyn_cast<BuiltinType>(SrcTy))
-    llvm::outs() << BT->getName(pol);
-  else if (auto *RT = dyn_cast<RecordType>(SrcTy))
-    llvm::outs() << RT->getDecl()->getName();
-  else if (auto *ET = dyn_cast<EnumType>(SrcTy))
-    llvm::outs() << ET->getDecl()->getName();
-  else
-    SrcTy->dump(llvm::outs());
+/// all possible casts to RecordType
+static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
+                                                     const RecordType *DstTy);
+static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
+                                                     const RecordType *DstTy);
+static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
+                                                     const RecordType *DstTy);
 
-  llvm::outs() << fst << " -> ";
+/// all possible casts to EnumType
+static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
+                                                     const EnumType *DstTy);
+static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
+                                                     const EnumType *DstTy);
+static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
+                                                     const EnumType *DstTy);
 
-  if (!DstTy->isPointerType())
-    snd = "&";
-  while (DstTy->isPointerType()) {
-    snd += '*';
-    DstTy = DstTy->getPointeeType().getTypePtr();
-  }
-
-  if (auto *BT = dyn_cast<BuiltinType>(DstTy))
-    llvm::outs() << BT->getName(pol);
-  else if (auto *RT = dyn_cast<RecordType>(DstTy))
-    llvm::outs() << RT->getDecl()->getName();
-  else if (auto *ET = dyn_cast<EnumType>(DstTy))
-    llvm::outs() << ET->getDecl()->getName();
-  else
-    DstTy->dump(llvm::outs());
-  llvm::outs() << snd << '\n';
-}
-*/
-
-/*
-static bool equalFieldTypeWithoutCV(ASTContext &Ctx, const FieldDecl *Lhs,
-                                    const FieldDecl *Rhs) {
-  if (Lhs->getType().getTypePtr() != Rhs->getType().getTypePtr())
-    return false;
-  if (Lhs->isBitField() != Rhs->isBitField())
-    return false;
-  // if bitfield, should have same width
-  if (Lhs->isBitField())
-    return Lhs->getBitWidthValue(Ctx) == Rhs->getBitWidthValue(Ctx);
-  return true;
-}
-*/
-
-/*
-// [class.mem] 12.2/20
-static SmallVector<const Type *, 4>
-commonInitialSequence(ASTContext &Ctx, CXXRecordDecl *Lhs,
-                      const CXXRecordDecl *Rhs) {
-  assert(Lhs && Rhs);
-
-  if (!Lhs->isStandardLayout() || !Rhs->isStandardLayout())
-    return {};
-
-  using IT = CXXRecordDecl::field_iterator;
-  IT LhsField = Lhs->field_begin(), RhsField = Rhs->field_begin();
-  const IT LhsFieldEnd = Lhs->field_end(), RhsFieldEnd = Rhs->field_end();
-
-  SmallVector<const Type *, 4> common{};
-  for (; LhsField != LhsFieldEnd && RhsField != RhsFieldEnd &&
-         equalFieldTypeWithoutCV(Ctx, *LhsField, *RhsField);
-       ++LhsField, ++RhsField) {
-    common.push_back(LhsField->getType().getTypePtr());
-  }
-  return common;
-}
- */
-
-/*
-// [class.mem] 12.2/21-22
-static bool areLayoutCompatibleClasses(ASTContext &Ctx, CXXRecordDecl *Lhs,
-                                       const CXXRecordDecl *Rhs) {
-  if (Lhs->isUnion() || Rhs->isUnion())
-    return false; // TODO: handle unions
-  const auto common = commonInitialSequence(Ctx, Lhs, Rhs);
-  return common.size() == static_cast<std::size_t>(std::distance(
-                              Lhs->field_begin(), Lhs->field_end()));
-}
-*/
-
-// if the type is [unsigned|signed] char, std::byte, void
-// than true
-// otherwise false
+/// \brief checks whether the type can alias every other type
+/// this is the case with [unsigned|signed] char, std::byte, void
+/// \note it will be true for signed char too, even the standard does not
+/// require this
 static bool isAnyAlias(const Type *Ty) {
   if (Ty->isStdByteType())
     return true;
@@ -153,49 +92,57 @@ static bool isAnyAlias(const Type *Ty) {
   return false;
 }
 
+/// \brief checks whether the two builtin types can alias eachother.
+/// \returns StrictAliasingError::valid if one can alias with the other
+/// otherwise returns StrictAliasingError::builtin_to_different_builtin
 static StrictAliasingError canAlias(const BuiltinType *SrcTy,
                                     const BuiltinType *DstTy) {
+  constexpr StrictAliasingError Valid = StrictAliasingError::valid;
   if (SrcTy == DstTy)
-    return StrictAliasingError::valid;
+    return Valid;
 
   if (isAnyAlias(SrcTy) || isAnyAlias(DstTy))
-    return StrictAliasingError::valid;
+    return Valid;
 
   // handle unsigned / signed compatibility for each type
   // ignore signess in case of wchar_t
-  if (SrcTy->isWideCharType() && DstTy->isWideCharType())
-    return StrictAliasingError::valid;
+  if (SrcTy->isWideCharType() || DstTy->isWideCharType())
+    return Valid;
 
   // handle other signed unsigned builtin types
   using BTKind = BuiltinType::Kind;
   const BTKind SrcKind = SrcTy->getKind();
   const BTKind DstKind = DstTy->getKind();
 
-  auto both_are_of = [SrcKind, DstKind](BTKind sign, BTKind unsign) {
-    auto one_of = [](BTKind x, BTKind sign, BTKind unsign) {
-      return x == sign || x == unsign;
+  auto bothAreOf = [SrcKind, DstKind](BTKind Signed, BTKind Unsigned) {
+    auto oneOf = [](BTKind X, BTKind Signed, BTKind Unsigned) {
+      return X == Signed || X == Unsigned;
     };
-    return one_of(SrcKind, sign, unsign) && one_of(DstKind, sign, unsign);
+    return oneOf(SrcKind, Signed, Unsigned) && oneOf(DstKind, Signed, Unsigned);
   };
 
-  if (both_are_of(BTKind::Short, BTKind::UShort))
-    return StrictAliasingError::valid;
+  if (bothAreOf(BTKind::Short, BTKind::UShort))
+    return Valid;
 
-  if (both_are_of(BTKind::Int, BTKind::UInt))
-    return StrictAliasingError::valid;
+  if (bothAreOf(BTKind::Int, BTKind::UInt))
+    return Valid;
 
-  if (both_are_of(BTKind::Long, BTKind::ULong))
-    return StrictAliasingError::valid;
+  if (bothAreOf(BTKind::Long, BTKind::ULong))
+    return Valid;
 
-  if (both_are_of(BTKind::LongLong, BTKind::ULongLong))
-    return StrictAliasingError::valid;
+  if (bothAreOf(BTKind::LongLong, BTKind::ULongLong))
+    return Valid;
 
-  if (both_are_of(BTKind::Int128, BTKind::UInt128))
-    return StrictAliasingError::valid;
+  if (bothAreOf(BTKind::Int128, BTKind::UInt128))
+    return Valid;
 
   return StrictAliasingError::builtin_to_different_builtin;
 }
 
+/// \brief Utility function that decides whether two (general) type are the same
+/// or builtin types that can alias each other \returns true if the types are
+/// the same or any of them can alias everything or both are builtin types which
+/// differs only in signess etc
 static bool areSameTypeOrAliasableBuiltins(const Type *SrcTy,
                                            const Type *DstTy) {
   if (SrcTy == DstTy)
@@ -210,116 +157,10 @@ static bool areSameTypeOrAliasableBuiltins(const Type *SrcTy,
         canAlias(SrcTy->getAs<BuiltinType>(), DstTy->getAs<BuiltinType>());
     return CanAlias == StrictAliasingError::valid;
   }
+
   // otherwise it cannot alias
   return false;
 }
-
-/*
-// [conv.qual] 7.5 (similarity)
-//   (1) A cv-decomposition of a type T is a sequence of cv_i and P_i such that
-//       T is:  "cv0 P0 cv1 P1 ... cvN-1 PN-1 cvN U" for N > 0,
-//       where each cv_i is a set of cv-qualifiers (6.9.3), and each P_i is
-//       "pointer to" (11.3.1), "pointer to member of class C_i of type"
-//       (11.3.3), "array of N_i", or "array of unknown bound of" (11.3.4). If
-//       P_i designates an array, the cv-qualifiers cv_i+1 on the element type
-//       are also taken as the cv-qualifiers cv_i of the array.
-//       [ Example: The type denoted by the type-id const int ** has two
-//       cv-decompositions, taking U as "int **" and as "pointer to const int".
-//       — end example ] The N-tuple of cv-qualifiers after the first one in the
-//       longest cv-decomposition of T, that is, cv1, cv2, ..., cvN, is called
-//       the cv-qualification signature of T.
-//   (2) Two types T1 and T2 are similar if they have cv-decompositions with the
-//       same N such that corresponding P_i components are the same and the
-//       types denoted by U are the same.
-//   (3) A prvalue expression of type T1 can be converted to type T2 if the
-//       following conditions are satisfied, where cv_i^j denotes the
-//       cv-qualifiers in the cv-qualification signature of T_j:
-//       — T1 and T2 are similar.
-//       — For every i > 0, if const is in cv_i^1 then
-//         const is in cv_k^2 for 0 < k < i.
-//       — If the cv_i^1 and cv_i^2 are different, then const is in every cv_k^2
-//         for 0 < k < i.
-static bool areSimilar(ASTContext &Ctx, const Type *Lhs, const Type *Rhs) {
-  // Informally, two types are similar if, ignoring top-level cv-qualification:
-  // -   they are the same type; or
-  if (Lhs == Rhs)
-    return true;
-
-  // -   they are both pointers, and the pointed-to types are similar; or
-  if (Lhs->isPointerType() && Rhs->isPointerType() &&
-      areSimilar(Ctx, Lhs->getPointeeType().getTypePtr(),
-                 Rhs->getPointeeType().getTypePtr()))
-    return true;
-
-  // -   they are both pointers to member of the same class, and the types of
-  //     the pointed-to members are similar; or
-  if (Lhs->isMemberPointerType() && Rhs->isMemberPointerType()) {
-    const MemberPointerType *LhsMemPtr = Lhs->getAs<MemberPointerType>();
-    const MemberPointerType *RhsMemPtr = Rhs->getAs<MemberPointerType>();
-    if (LhsMemPtr->getClass() == RhsMemPtr->getClass() &&
-        areSimilar(Ctx, LhsMemPtr->getPointeeType().getTypePtr(),
-                   RhsMemPtr->getPointeeType().getTypePtr()))
-      return true;
-  }
-
-  // -   they are both arrays of the same size or both arrays of unknown bound,
-  //     and the array element types are similar.
-  if (Lhs->isIncompleteArrayType() && Rhs->isIncompleteArrayType()) {
-    return areSimilar(Ctx, Lhs->getArrayElementTypeNoTypeQual(),
-                      Rhs->getArrayElementTypeNoTypeQual());
-  }
-
-  if (Lhs->isConstantArrayType() && Rhs->isConstantArrayType()) {
-    const ConstantArrayType *LhsArr =
-        Ctx.getAsConstantArrayType(QualType(Lhs, 0));
-    const ConstantArrayType *RhsArr =
-        Ctx.getAsConstantArrayType(QualType(Rhs, 0));
-    if (LhsArr->getSize() != RhsArr->getSize())
-      return false;
-    return areSimilar(Ctx, Lhs->getArrayElementTypeNoTypeQual(),
-                      Rhs->getArrayElementTypeNoTypeQual());
-  }
-
-  return false;
-}
- */
-
-static StrictAliasingError isOneLevelDeepPrefix(const RecordType *OuterTy,
-                                                const Type *InnerTy);
-
-/////////////////////////////////////// declarations start
-
-// checks whether and object with SrcTy type could be reinterpreted as DstTy
-// type without violating the strict aliasing rules.
-static StrictAliasingError arePointerInterchangeable(const Type *SrcTy,
-                                                     const Type *DstTy);
-template <class T>
-static StrictAliasingError arePointerInterchangeable(const T *SrcTy,
-                                                     const Type *DstTy);
-
-static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
-                                                     const BuiltinType *DstTy);
-static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
-                                                     const BuiltinType *DstTy);
-static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
-                                                     const BuiltinType *DstTy);
-
-/// cast to RecordType
-static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
-                                                     const RecordType *DstTy);
-static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
-                                                     const RecordType *DstTy);
-static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
-                                                     const RecordType *DstTy);
-
-/// cast to EnumType
-static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
-                                                     const EnumType *DstTy);
-static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
-                                                     const EnumType *DstTy);
-static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
-                                                     const EnumType *DstTy);
-/////////////////////////////////////// declarations end
 
 // [class.mem] 12.2/24
 //   If a standard-layout class object has any non-static data members, its
@@ -376,18 +217,19 @@ static StrictAliasingError isOneLevelDeepPrefix(const RecordType *OuterTy,
     // if itself has no data members but neither empty
     // so it must have at least one non-empty base
     if (CXXRecDecl->field_empty() && !CXXRecDecl->isEmpty()) {
-      const auto isNonEmptyBase = [](const CXXBaseSpecifier &base) {
-        assert(base.getType()->isRecordType());
-        return !base.getType()->getAsCXXRecordDecl()->isEmpty();
+      const auto IsNonEmptyBase = [](const CXXBaseSpecifier &Base) {
+        assert(Base.getType()->isRecordType());
+        return !Base.getType()->getAsCXXRecordDecl()->isEmpty();
       };
 
       // find the first non-empty base class
       const auto BaseIt = std::find_if(CXXRecDecl->bases_begin(),
-                                       CXXRecDecl->bases_end(), isNonEmptyBase);
+                                       CXXRecDecl->bases_end(), IsNonEmptyBase);
       assert(BaseIt != CXXRecDecl->bases_end() && "non-empty base must exist");
-
       const Type *BaseTy = BaseIt->getType().getTypePtr();
-      return arePointerInterchangeable(BaseTy, InnerTy); // recurse
+
+      // do the same checking on the non-empty base (recurse)
+      return arePointerInterchangeable(BaseTy, InnerTy);
     }
   }
 
@@ -399,7 +241,8 @@ static StrictAliasingError isOneLevelDeepPrefix(const RecordType *OuterTy,
   if (FirstField->isBitField())
     return StrictAliasingError::first_member_is_bitfield;
 
-  // don't recurse, just do a one level deep check
+  // don't recurse, just do a one level deep check whether the first member of
+  // this struct could alias with the other
   if (areSameTypeOrAliasableBuiltins(FirstField->getType().getTypePtr(),
                                      InnerTy))
     return StrictAliasingError::valid;
@@ -407,22 +250,13 @@ static StrictAliasingError isOneLevelDeepPrefix(const RecordType *OuterTy,
   return StrictAliasingError::cannot_alias_with_first_member;
 }
 
-/// cast to BuiltinType
-// only signess difference for each BuiltinType
+/// all possible casts to BuiltinType
+
+/// \brief casting builtin type to builtin type is only valid if they can alias
+/// each other
 static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
                                                      const BuiltinType *DstTy) {
   return canAlias(SrcTy, DstTy);
-}
-
-static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
-                                                     const BuiltinType *DstTy) {
-  return isOneLevelDeepPrefix(SrcTy, DstTy);
-  /*if (isOneLevelDeepPrefix(SrcTy, DstTy)) {
-  valid("record to prefix builtin member");
-  return true;
-}
-invalid("record to NON-prefix builtin member");
-return false;*/
 }
 
 static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
@@ -433,10 +267,10 @@ static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
   if (SrcTy->isStdByteType())
     return StrictAliasingError::valid;
 
-  return StrictAliasingError::enum_to_non_stdbyte;
+  return StrictAliasingError::enum_to_builtin;
 }
 
-/// cast to RecordType
+/// \brief cast to RecordType
 static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
                                                      const RecordType *DstTy) {
   if (DstTy->isIncompleteType(nullptr))
@@ -449,16 +283,21 @@ static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
   }
 
   // if the builtin type is the first of the record type (DstTy)
-  // RELAX: what if the pointer points NOT to the first member of the record,
-  //  maybe consider all the members transitively?
   return isOneLevelDeepPrefix(DstTy, SrcTy);
-  /*if (isOneLevelDeepPrefix(DstTy, SrcTy)) {
-    valid("builtin to prefix of record");
-    return true;
-  }
-  invalid("builtin to NON-prefix of record");
-  return false;*/
 }
+
+/// \brief casting a record to a builtin type is valid if the record the first
+/// member (non-transitively) of that record has exactly that type
+static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
+                                                     const BuiltinType *DstTy) {
+  return isOneLevelDeepPrefix(SrcTy, DstTy);
+}
+
+/// \brief casting record to record is valid if they are the same
+/// or the destination record type is the first member of the source record type
+///
+/// \note we allow the other way around because there are cases when the
+/// user knows for sure that the dynamic type was really that type
 static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
                                                      const RecordType *DstTy) {
   constexpr auto Valid = StrictAliasingError::valid;
@@ -474,6 +313,12 @@ static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
 
   return StrictAliasingError::unrelated_record_types;
 }
+
+/// \brief casting an enum to a record
+/// if that enum is the std::byte, than valid to convert it to anything
+/// if the destination type is not standard layout, than it is bad
+/// if the record type that we converting to has the enum type as first member,
+/// than ok otherwise bad
 static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
                                                      const RecordType *DstTy) {
   // std::byte can alias just like char does
@@ -487,22 +332,23 @@ static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
   }
 
   // if the enum type is the first of the record type (DstTy)
-  // RELAX: what if the pointer points NOT to the first member of the record,
-  //  maybe consider all the members transitively?
   return isOneLevelDeepPrefix(DstTy, SrcTy);
 }
 
-/// cast to EnumType
+/// \brief casting a builtin to enum
+/// no builtin type can alias with an enum except with std::byte which aliasses
+/// with everything
+///
+/// \code{.cpp}
+/// enum E1 : unsigned {Val1 = 1};  // f2(E1*, unsigned int*):
+/// int f2(E1 *p, unsigned *q) {    //   movl $1, (%rdi)
+///    *p = Val1;                   //   movl $1, %eax
+///    *q = 2;                      //   movl $2, (%rsi)
+///    return static_cast<int>(*p); //   ret
+/// }
+/// \endcode
 static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
                                                      const EnumType *DstTy) {
-  // underlying type type and enum -> NOT alias
-  //  enum E1 : unsigned {Val1 = 1};           // f(E1*, unsigned int*):
-  //  int f2(E1 *p, unsigned *q) {             //   movl $1, (%rdi)
-  //    *p = Val1;                             //   movl $2, (%rsi)
-  //    *q = 2;                                //   movl $1, %eax
-  //    return static_cast<int>(*p);           //   retq
-  //  }
-  // but std::byte can alias everything
   static_cast<void>(SrcTy);
 
   if (DstTy->isStdByteType())
@@ -510,36 +356,44 @@ static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
 
   return StrictAliasingError::enum_to_different_enum;
 }
+
+/// \brief casting a record to enum
+/// if the destination enum type is std::byte than ok
+/// otherwise if the source record type has a first member exactly of that enum
+/// type than it is ok
 static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
                                                      const EnumType *DstTy) {
   if (DstTy->isStdByteType())
     return StrictAliasingError::valid;
 
   // if the record has the given enum as it's first non-static data member
-  // (and everything standard layout) than OK, otherwise BAD
+  // (non-transitively) (and everything standard layout) than OK, otherwise BAD
   return isOneLevelDeepPrefix(SrcTy, DstTy);
-  /*if (isOneLevelDeepPrefix(SrcTy, DstTy)) {
-    valid("record to prefix enum member");
-    return true;
-  }
-  invalid("record to NON-prefix enum member");
-  return false;*/
 }
 
+/// \brief casting a record to enum
+/// can not cast an enum to an other enum except if
+/// they are the same or at least one of them is std::byte
+/// even if they have the same underlying type
+///
+/// \code{.cpp}
+///  // gcc-8.3 -O2
+///  enum E1 {Val1 = 1}; enum E2 {Val2 = 2}; // f1(E1*, E2*):
+///  int f1(E1 *p, E2 *q) {                  //   movl $1, (%rdi)
+///    *p = Val1;                            //   movl $1, %eax
+///    *q = Val2;                            //   movl $2, (%rsi)
+///    return static_cast<int>(*p);          //   ret
+///  }
+///  enum EE1 : unsigned int {Val3 = 1};
+///  enum EE2 : unsigned int {Val4 = 2}; // f2(EE1*, EE2*):
+///  int f2(EE1 *p, EE2 *q) {            //   movl $1, (%rdi)
+///    *p = Val3;                        //   movl $1, %eax
+///   *q = Val4;                        //   movl $2, (%rsi)
+///    return static_cast<int>(*p);      //   ret
+///  }
+/// \endcode
 static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
                                                      const EnumType *DstTy) {
-  // different enums -> NOT alias
-  //  enum E1 {Val1 = 1}; enum E2 {Val2 = 2}; // f(E1*, E2*):
-  //  int f(E1 *p, E2 *q) {                   //   movl $1, (%rdi)
-  //    *p = Val1;                            //   movl $2, (%rsi)
-  //    *q = Val2;                            //   movl $1, %eax
-  //    return static_cast<int>(*p);          //   retq
-  //  }
-  // different enum with common underlying type -> NOT alias
-  //  same example, same assembly but:
-  //  enum E1 : unsigned {Val1 = 1}; enum E2 : unsigned {Val2 = 2};
-  // same with enum classes
-
   if (SrcTy == DstTy)
     return StrictAliasingError::valid;
 
@@ -550,7 +404,7 @@ static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
   return StrictAliasingError ::enum_to_different_enum;
 }
 
-/// dispatch to the appropriate overload
+/// \brief dispatch to the appropriate overload using the second argument
 template <class T>
 static StrictAliasingError arePointerInterchangeable(const T *SrcTy,
                                                      const Type *DstTy) {
@@ -594,7 +448,7 @@ static StrictAliasingError arePointerInterchangeable(const Type *SrcTy,
 }
 
 static std::pair<const Type *, const Type *>
-findPointeeTypeTransitively(const Type *SrcTy, const Type *DstTy) {
+peelOffPointersTogether(const Type *SrcTy, const Type *DstTy) {
   // find the pointee type
   while (SrcTy && DstTy && SrcTy->isPointerType() && DstTy->isPointerType()) {
     SrcTy = SrcTy->getPointeeType().getTypePtr();
@@ -606,10 +460,11 @@ findPointeeTypeTransitively(const Type *SrcTy, const Type *DstTy) {
 StrictAliasingCheck::StrictAliasingCheck(StringRef Name,
                                          ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context),
-      WarnOnlyIfDereferenced(
-          Options.get("WarnOnlyIfDereferenced", "true").find("false") ==
-          std::string::npos) {}
+      WarnOnlyIfDereferenced(Options.get("WarnOnlyIfDereferenced", 1) != 0) {}
 
+/// \brief registers the AST matcher to the MatchFinder
+/// the ast matcher will match on all the bitcast expressions even if the
+/// expression is not dereferenced or used
 static void registerBitcastExprs(ClangTidyCheck *Checker, MatchFinder *Finder) {
   const auto refcast =
       explicitCastExpr(hasCastKind(CK_LValueBitCast)).bind("bitcast");
@@ -619,6 +474,10 @@ static void registerBitcastExprs(ClangTidyCheck *Checker, MatchFinder *Finder) {
   Finder->addMatcher(ptrcast, Checker);
 }
 
+/// \brief registers the AST matcher to the MatchFinder
+/// the ast matcher will match on all lvalue reference bitcast expressions and
+/// on all pointer dereferences using *, ->, [] operators immediately after
+/// bitcast expressions
 static void registerBitcastDereferenceExprs(ClangTidyCheck *Checker,
                                             MatchFinder *Finder) {
   const auto refcast =
@@ -639,6 +498,8 @@ static void registerBitcastDereferenceExprs(ClangTidyCheck *Checker,
   Finder->addMatcher(deref, Checker);
 }
 
+/// \brief registers the appropiate AST matcher according to the
+/// 'WarnOnlyIfDereferenced' boolean
 void StrictAliasingCheck::registerMatchers(MatchFinder *Finder) {
   if (WarnOnlyIfDereferenced)
     registerBitcastDereferenceExprs(this, Finder);
@@ -646,47 +507,98 @@ void StrictAliasingCheck::registerMatchers(MatchFinder *Finder) {
     registerBitcastExprs(this, Finder);
 }
 
+/// \brief declares the WarnOnlyIfDereferenced checker option
+/// it will be used to enable the more aggressive AST matcher mechanism
+/// which will warn on creating bad pointers
 void StrictAliasingCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
   Options.store(Opts, "WarnOnlyIfDereferenced", WarnOnlyIfDereferenced);
 }
 
-void StrictAliasingCheck::check(const MatchFinder::MatchResult &Result) {
-  // const ASTContext *Ctx = Result.Context;
-  const auto *ECE = Result.Nodes.getNodeAs<ExplicitCastExpr>("bitcast");
-  //const auto beg = Result.SourceManager->getPresumedLoc(ECE->getBeginLoc());
-  //const auto line = beg.getLine();
-  // current_line = line; // TODO: remove this
+/// \brief utility function for getting the printable name of a type
+/// for this usage, if the type is not a pointer type it should be a reference
+/// so appends its sign to the name
+static std::string getPrettyTypeName(QualType QT) {
+  if (!QT->isPointerType())
+    return (llvm::Twine(QT.getAsString()) + " &").str();
+  return QT.getAsString();
+}
 
-  // types
+void StrictAliasingCheck::check(const MatchFinder::MatchResult &Result) {
+  const auto *ECE = Result.Nodes.getNodeAs<ExplicitCastExpr>("bitcast");
+
   const Type *DstTy = ECE->getType().getTypePtr();
   const Type *SrcTy = ECE->getSubExpr()->getType().getTypePtr();
 
-  // llvm::outs() << beg.getLine() << ": seen cast: ";
-  // printCastTypes(SrcTy, DstTy, pol);
-
-  if (SrcTy->isPointerType() != DstTy->isPointerType()) {
-    //llvm::outs() << line
-    //             << ": not both src and dst are pointers/refs  ((skip))\n\n";
-    return; // TODO what to do in this case?
-  }
-
-  std::tie(SrcTy, DstTy) = findPointeeTypeTransitively(SrcTy, DstTy);
+  std::tie(SrcTy, DstTy) = peelOffPointersTogether(SrcTy, DstTy);
 
   if (const auto *ET = dyn_cast<ElaboratedType>(SrcTy))
     SrcTy = ET->desugar().getTypePtr();
   if (const auto *ET = dyn_cast<ElaboratedType>(DstTy))
     DstTy = ET->desugar().getTypePtr();
 
-  // llvm::outs() << line << ": after findPointeeTypeTransitively: ";
-  // printCastTypes(SrcTy, DstTy, pol);
+  // if the pointers have different indirection count, return
+  if (SrcTy->isPointerType() || DstTy->isPointerType())
+    return;
 
-  if (SrcTy->isPointerType() || DstTy->isPointerType()) {
-    // invalid("not same 'deep' pointer chain");
-    return; // TODO what to do in this case?
+  // function to emit warning message to the cast expression
+  const auto Warn = [&](StringRef Message) {
+    diag(ECE->getBeginLoc(), Message);
+  };
+
+  // text representation of the cast expression's argument
+  const std::string SourceExprText = [&Result, &ECE]() {
+    std::string Buffer;
+    llvm::raw_string_ostream Stream(Buffer);
+    ECE->getSubExpr()->printPretty(Stream, nullptr,
+                                   Result.Context->getPrintingPolicy());
+    return Stream.str();
+  }();
+
+  // text representation of the types for diagnostic messages
+  const std::string SourceTyText =
+      getPrettyTypeName(ECE->getSubExpr()->getType());
+  const std::string DestinationTyText = getPrettyTypeName(ECE->getType());
+
+  // analysis result whether the two pointers are interchangeable or not
+  const StrictAliasingError result = arePointerInterchangeable(SrcTy, DstTy);
+
+  switch (result) {
+  case StrictAliasingError::valid:
+    return;
+  case StrictAliasingError::incomplete:
+    Warn("some type is incomplete. Could not validate cast operation "
+         "; may include the types's definition");
+    break;
+  case StrictAliasingError::non_standard_layout:
+    Warn("c++ forbids reinterpret casts to non-standard layout types");
+    break;
+  case StrictAliasingError::builtin_to_different_builtin:
+    Warn("can not cast this builtin type to that different builtin "
+         "type safely; consider using std::memcpy instead");
+    break;
+  case StrictAliasingError::enum_to_builtin:
+    Warn((llvm::Twine("invalid to cast '") + SourceExprText + "' of type '" +
+          SourceTyText + "' to a fundamental type '" + DestinationTyText +
+          "', even if it would be the underlying type")
+             .str());
+    break;
+  case StrictAliasingError::enum_to_different_enum:
+    Warn("can not cast enum to different enum type other than std::byte");
+    break;
+  case StrictAliasingError::empty_record:
+    Warn("can not cast to/from an empty struct/class type");
+    break;
+  case StrictAliasingError::first_member_is_bitfield:
+    Warn("the first member of the struct/class is a bitfield, not "
+         "allowed to point to it");
+    break;
+  case StrictAliasingError::cannot_alias_with_first_member:
+    Warn("the first member of the struct/class has incompatible type");
+    break;
+  case StrictAliasingError::unrelated_record_types:
+    Warn("the structs/classes are unrelated, can not cast between them");
+    break;
   }
-
-  if (arePointerInterchangeable(SrcTy, DstTy) != StrictAliasingError::valid)
-    diag(ECE->getBeginLoc(), "checker result");
 }
 
 } // namespace bugprone
