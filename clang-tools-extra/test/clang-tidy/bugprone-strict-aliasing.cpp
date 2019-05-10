@@ -219,3 +219,52 @@ void testing_checker_option(Derived *d) {
   (Empty2 *)p;
   // CHECK-MESSAGES-STRICT: :[[@LINE-1]]:3: warning: can not cast to/from an empty struct/class type [bugprone-strict-aliasing]
 }
+
+
+
+struct S { int x; };
+struct T { int x; int f(); };
+struct S1 : S {}; // standard-layout
+struct ST : S, T {}; // not standard-layout
+
+void struct_test_cases() {
+  S s = {};
+  auto p = reinterpret_cast<T *>(&s); // value of p is "pointer to s"
+  // CHECK-MESSAGES-STRICT: :[[@LINE-1]]:12: warning: the structs/classes are unrelated, can not cast between them [bugprone-strict-aliasing]
+
+  // auto i = p->x; // class member access expression is undefined behavior; s is not a T object
+  // p->x = 1; // undefined behavior
+  // p->f();   // undefined behavior
+
+  S1 s1 = {};
+  auto p1 = reinterpret_cast<S *>(&s1); // value of p1 is "pointer to the S subobject of s1"
+  auto i = p1->x; // OK
+  p1->x = 1; // OK
+
+  ST st = {};
+  auto p2 = reinterpret_cast<S *>(&st); // value of p2 is "pointer to st"
+  // CHECK-MESSAGES-STRICT: :[[@LINE-1]]:13: warning: the structs/classes are unrelated, can not cast between them [bugprone-strict-aliasing]
+
+  // auto i = p2->x; // undefined behavior
+  // p2->x = 1; // undefined behavior
+}
+
+
+int f(int, int) { return 42; }
+void casting_function_pointers() {
+  void(*fp1)() = reinterpret_cast<void(*)()>(f);
+  // CHECK-MESSAGES-STRICT: :[[@LINE-1]]:18: warning: the function types does not match, can not safely use the resulting pointer [bugprone-strict-aliasing]
+  // casting to wrong return type
+  void (*fp2)(int, int) = reinterpret_cast<void(*)(int, int)>(f);
+  // CHECK-MESSAGES-STRICT: :[[@LINE-1]]:27: warning: the function types does not match, can not safely use the resulting pointer [bugprone-strict-aliasing]
+
+  // only CV difference on parameters, OK
+  int (*fp3)(const int, volatile int) = reinterpret_cast<int(*)(const int, volatile int)>(f);
+
+  // only CV difference on parameters and return type, OK
+  const volatile int (*fp4)(const int, volatile int) = reinterpret_cast<const volatile int(*)(const int, volatile int)>(f);
+
+  // parameter taken by ref now, bad
+  int (*fp5)(const int&, volatile int) = reinterpret_cast<int(*)(const int&, volatile int)>(f);
+  // CHECK-MESSAGES-STRICT: :[[@LINE-1]]:42: warning: the function types does not match, can not safely use the resulting pointer [bugprone-strict-aliasing]
+}

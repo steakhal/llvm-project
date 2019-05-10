@@ -35,7 +35,9 @@ enum class StrictAliasingError {
   first_member_is_bitfield,
   cannot_alias_with_first_member,
 
-  unrelated_record_types
+  unrelated_record_types,
+
+  unrelated_function_types
 };
 
 /// \brief These functions are handling all the possible meaningful combinations
@@ -77,6 +79,87 @@ static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
                                                      const EnumType *DstTy);
 static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
                                                      const EnumType *DstTy);
+
+/// [conv.qual] 7.5 (similarity)
+///   (1) A cv-decomposition of a type T is a sequence of cv_i and P_i such that
+///       T is:  "cv0 P0 cv1 P1 ... cvN-1 PN-1 cvN U" for N > 0,
+///       where each cv_i is a set of cv-qualifiers (6.9.3), and each P_i is
+///       "pointer to" (11.3.1), "pointer to member of class C_i of type"
+///       (11.3.3), "array of N_i", or "array of unknown bound of" (11.3.4). If
+///       P_i designates an array, the cv-qualifiers cv_i+1 on the element type
+///       are also taken as the cv-qualifiers cv_i of the array.
+///       [ Example: The type denoted by the type-id const int ** has two
+///       cv-decompositions, taking U as "int **" and as "pointer to const int".
+///       — end example ] The N-tuple of cv-qualifiers after the first one in
+///       the longest cv-decomposition of T, that is, cv1, cv2, ..., cvN, is
+///       called the cv-qualification signature of T.
+///   (2) Two types T1 and T2 are similar if they have cv-decompositions with
+///   the
+///       same N such that corresponding P_i components are the same and the
+///       types denoted by U are the same.
+///   (3) A prvalue expression of type T1 can be converted to type T2 if the
+///       following conditions are satisfied, where cv_i^j denotes the
+///       cv-qualifiers in the cv-qualification signature of T_j:
+///       — T1 and T2 are similar.
+///       — For every i > 0, if const is in cv_i^1 then const is in cv_k^2
+///       for 0 < k < i.
+///       — If the cv_i^1 and cv_i^2 are different, then const is in every
+///       cv_k^2 for 0 < k < i.
+///
+/// For example:
+///  - const int * volatile * and int * * const are similar;
+///  - const int (* volatile S::* const)[20] and int (* const S::* volatile)[20]
+///    are similar;
+///  - int (* const *)(int *) and int (* volatile *)(int *) are similar;
+///  - int (S::*)() const and int (S::*)() are not similar;
+///  - int (*)(int *) and int (*)(const int *) are not similar;
+///  - const int (*)(int *) and int (*)(int *) are not similar;
+///  - int (*)(int * const) and int (*)(int *) are similar (they are the same
+///    type);
+///  - std::pair<int, int> and std::pair<const int, int> are not similar.
+static bool areSimilar(ASTContext &Ctx, const Type *Lhs, const Type *Rhs) {
+  // Informally, two types are similar if, ignoring top-level cv-qualification:
+  // -   they are the same type; or
+  if (Lhs == Rhs)
+    return true;
+
+  // -   they are both pointers, and the pointed-to types are similar; or
+  if (Lhs->isPointerType() && Rhs->isPointerType() &&
+      areSimilar(Ctx, Lhs->getPointeeType().getTypePtr(),
+                 Rhs->getPointeeType().getTypePtr()))
+    return true;
+
+  // -   they are both pointers to member of the same class, and the types of
+  //     the pointed-to members are similar; or
+  if (Lhs->isMemberPointerType() && Rhs->isMemberPointerType()) {
+    const MemberPointerType *LhsMemPtr = Lhs->getAs<MemberPointerType>();
+    const MemberPointerType *RhsMemPtr = Rhs->getAs<MemberPointerType>();
+    if (LhsMemPtr->getClass() == RhsMemPtr->getClass() &&
+        areSimilar(Ctx, LhsMemPtr->getPointeeType().getTypePtr(),
+                   RhsMemPtr->getPointeeType().getTypePtr()))
+      return true;
+  }
+
+  // -   they are both arrays of the same size or both arrays of unknown bound,
+  //     and the array element types are similar.
+  if (Lhs->isIncompleteArrayType() && Rhs->isIncompleteArrayType()) {
+    return areSimilar(Ctx, Lhs->getArrayElementTypeNoTypeQual(),
+                      Rhs->getArrayElementTypeNoTypeQual());
+  }
+
+  if (Lhs->isConstantArrayType() && Rhs->isConstantArrayType()) {
+    const ConstantArrayType *LhsArr =
+        Ctx.getAsConstantArrayType(QualType(Lhs, 0));
+    const ConstantArrayType *RhsArr =
+        Ctx.getAsConstantArrayType(QualType(Rhs, 0));
+    if (LhsArr->getSize() != RhsArr->getSize())
+      return false;
+    return areSimilar(Ctx, Lhs->getArrayElementTypeNoTypeQual(),
+                      Rhs->getArrayElementTypeNoTypeQual());
+  }
+
+  return false;
+}
 
 /// \brief checks whether the type can alias every other type
 /// this is the case with [unsigned|signed] char, std::byte, void
@@ -427,10 +510,54 @@ static StrictAliasingError arePointerInterchangeable(const T *SrcTy,
   llvm_unreachable("Exhaustive list?");
 }
 
+// warn if cast to different one
+static StrictAliasingError
+pointerInterchangeableFunctions(const FunctionProtoType *SrcFun,
+                                const FunctionProtoType *DstFun) {
+  assert(SrcFun);
+  assert(DstFun);
+
+  // different return type
+  if (SrcFun->getReturnType().getTypePtr() !=
+      DstFun->getReturnType().getTypePtr())
+    return StrictAliasingError::unrelated_function_types;
+
+  // different parameter count
+  if (SrcFun->getNumParams() != DstFun->getNumParams())
+    return StrictAliasingError::unrelated_function_types;
+
+  // if any arguments in order doesn't match exactly without CV qualifiers
+  for (auto i = 0u; i < SrcFun->getNumParams(); ++i) {
+    if (SrcFun->getParamType(i).getTypePtr() !=
+        DstFun->getParamType(i).getTypePtr())
+      return StrictAliasingError::unrelated_function_types;
+  }
+
+  // otherwise it should be OK
+  // we are casting to the same type (possibly to have different CV
+  // qualifiers)
+  return StrictAliasingError::valid;
+}
+
 static StrictAliasingError arePointerInterchangeable(const Type *SrcTy,
                                                      const Type *DstTy) {
   assert(SrcTy);
   assert(DstTy);
+
+  {
+    // we are only interested in C++ typed functions
+    const auto *SrcFun = SrcTy->getAs<FunctionProtoType>();
+    const auto *DstFun = DstTy->getAs<FunctionProtoType>();
+
+    // if both are function types
+    if (SrcFun && DstFun)
+      return pointerInterchangeableFunctions(SrcFun, DstFun);
+
+    // not both types are function types lets say OK for the cases when only one
+    // type is function type
+    if (SrcFun || DstFun)
+      return StrictAliasingError::valid;
+  }
 
   if (SrcTy->isArrayType())
     return arePointerInterchangeable(SrcTy->getArrayElementTypeNoTypeQual(),
@@ -598,6 +725,12 @@ void StrictAliasingCheck::check(const MatchFinder::MatchResult &Result) {
   case StrictAliasingError::unrelated_record_types:
     Warn("the structs/classes are unrelated, can not cast between them");
     break;
+  case StrictAliasingError::unrelated_function_types:
+    Warn("the function types does not match, can not safely use the resulting "
+         "pointer");
+    break;
+  default:
+    llvm_unreachable("all possible errors should be handled");
   }
 }
 
