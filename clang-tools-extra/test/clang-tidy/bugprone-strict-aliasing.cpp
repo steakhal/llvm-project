@@ -16,20 +16,27 @@ struct Empty1 {}; // empty, has no members
 struct Empty2 {};
 struct Empty3 {};
 struct Empty4 : Empty3 {};
-struct Base : Empty3 {
+struct BitfieldBase : Empty3 {
   int i : 2;
   float f;
 };
-struct ProxyBase : Empty1, Base, Empty2 {};
+struct Base : Empty3 {
+    int i;
+    float f;
+};
+struct ProxyBase : Empty1, BitfieldBase, Empty2 {};
 struct Derived : ProxyBase {
   // empty, has no members
+};
+
+struct Derived2 : Empty1, Base, Empty2 {};
+struct NonStdDerived2 : Empty1, Base, Empty2 {
+    double dbl;
 };
 
 struct A {
   int i;
 };
-
-Base b;
 
 void record_to_builtin(Derived *d) {
   *(int *)d;
@@ -39,6 +46,18 @@ void record_to_builtin(Derived *d) {
   DerivedAlias *alias = d;
   *(int *)alias;
   // CHECK-MESSAGES-DEFAULT: :[[@LINE-1]]:4: warning: the first member of the struct/class is a bitfield, not allowed to point to it [bugprone-strict-aliasing]
+
+
+  Derived2 d2;
+  *(int*)&d2; // OK, Derived2 starts with an integer which is inherited from Base
+  *(unsigned int*)&d2; // OK
+
+  NonStdDerived2 nond2;
+  *(int*)&nond2; // bad, since NonStdDerived2 has non standard layout
+  // CHECK-MESSAGES-DEFAULT: :[[@LINE-1]]:4: warning: c++ forbids reinterpret casts to non-standard layout types [bugprone-strict-aliasing]
+
+  *(unsigned int*)&nond2; // bad, for same reason
+  // CHECK-MESSAGES-DEFAULT: :[[@LINE-1]]:4: warning: c++ forbids reinterpret casts to non-standard layout types [bugprone-strict-aliasing]
 }
 
 void casting_to_and_from_empty_struct(Empty4 *p) {
@@ -75,13 +94,13 @@ void ignore_dependant(Dependent<T> *f, float *g) {
 }
 
 void ignore_integer_to_pointer(long ip) {
-  *(Base *)ip; // should ignore IntegralToPointer casts
+  *(BitfieldBase *)ip; // should ignore IntegralToPointer casts
   ip = (long)&ip; // should ignore PointerToIntegral casts
 }
 
 
-void non_similar_ptr_cast(Base **ip) {
-  *(Base *)ip; // casting a Base** to Base*, which is not similar to it
+void non_similar_ptr_cast(BitfieldBase **ip) {
+  *(BitfieldBase *)ip; // casting a BitfieldBase** to BitfieldBase*, which is not similar to it
   // TODO catch this
 }
 
