@@ -19,13 +19,6 @@ namespace bugprone {
 /// Tries to find some of the bugprone cases using only the static type
 /// information.
 ///
-/// It has the following (case-sensitive) checker options:
-///   - WarnOnlyIfDereferenced={1,0}, default is 1
-///
-/// WarnOnlyIfDereferenced:
-///   Emit warning even if the pointer is not dereferenced right after the cast
-///   operation
-///
 /// For the user-facing documentation see:
 /// http://clang.llvm.org/extra/clang-tidy/checks/bugprone-strict-aliasing.html
 class StrictAliasingCheck : public ClangTidyCheck {
