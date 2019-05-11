@@ -165,7 +165,7 @@ static bool areSimilar(ASTContext &Ctx, const Type *Lhs, const Type *Rhs) {
 /// this is the case with [unsigned|signed] char, std::byte, void
 /// \note it will be true for signed char too, even the standard does not
 /// require this
-static bool isAnyAlias(const Type *Ty) {
+static bool canAliasAnyType(const Type *Ty) {
   if (Ty->isStdByteType())
     return true;
   if (Ty->isVoidType())
@@ -184,7 +184,7 @@ static StrictAliasingError canAlias(const BuiltinType *SrcTy,
   if (SrcTy == DstTy)
     return Valid;
 
-  if (isAnyAlias(SrcTy) || isAnyAlias(DstTy))
+  if (canAliasAnyType(SrcTy) || canAliasAnyType(DstTy))
     return Valid;
 
   // handle unsigned / signed compatibility for each type
@@ -232,7 +232,7 @@ static bool areSameTypeOrAliasableBuiltins(const Type *SrcTy,
     return true;
 
   // char-like? -> char-like?
-  if (isAnyAlias(SrcTy) || isAnyAlias(DstTy))
+  if (canAliasAnyType(SrcTy) || canAliasAnyType(DstTy))
     return true;
 
   if (SrcTy->isBuiltinType() && DstTy->isBuiltinType()) {
@@ -267,6 +267,9 @@ static StrictAliasingError isOneLevelDeepPrefix(const RecordType *OuterTy,
   const auto *CXXRecDecl = OuterTy->getAsCXXRecordDecl();
 
   if (OuterTy == InnerTy)
+    return StrictAliasingError::valid;
+
+  if (canAliasAnyType(InnerTy))
     return StrictAliasingError::valid;
 
   if (OuterTy->isIncompleteType(nullptr))
@@ -344,7 +347,8 @@ static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
 
 static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
                                                      const BuiltinType *DstTy) {
-  static_cast<void>(DstTy);
+  if (canAliasAnyType(DstTy))
+    return StrictAliasingError::valid;
 
   // if the type is std::byte, magically it can alias just like char does
   if (SrcTy->isStdByteType())
@@ -356,6 +360,9 @@ static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
 /// \brief cast to RecordType
 static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
                                                      const RecordType *DstTy) {
+  if (canAliasAnyType(SrcTy))
+    return StrictAliasingError::valid;
+
   if (DstTy->isIncompleteType(nullptr))
     return StrictAliasingError::incomplete;
 
@@ -373,6 +380,8 @@ static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
 /// member (non-transitively) of that record has exactly that type
 static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
                                                      const BuiltinType *DstTy) {
+  if (canAliasAnyType(DstTy))
+    return StrictAliasingError::valid;
   return isOneLevelDeepPrefix(SrcTy, DstTy);
 }
 
@@ -386,6 +395,10 @@ static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
   constexpr auto Valid = StrictAliasingError::valid;
 
   if (SrcTy == DstTy)
+    return Valid;
+
+  // consider OK iff the source type is incomplete type (like an opaque pointer)
+  if (SrcTy->isIncompleteType(nullptr))
     return Valid;
 
   if (isOneLevelDeepPrefix(SrcTy, DstTy) == Valid)
@@ -432,9 +445,7 @@ static StrictAliasingError arePointerInterchangeable(const EnumType *SrcTy,
 /// \endcode
 static StrictAliasingError arePointerInterchangeable(const BuiltinType *SrcTy,
                                                      const EnumType *DstTy) {
-  static_cast<void>(SrcTy);
-
-  if (DstTy->isStdByteType())
+  if (canAliasAnyType(SrcTy) || DstTy->isStdByteType())
     return StrictAliasingError::valid;
 
   return StrictAliasingError::enum_to_different_enum;
@@ -695,43 +706,42 @@ void StrictAliasingCheck::check(const MatchFinder::MatchResult &Result) {
   case StrictAliasingError::incomplete:
     Warn("some type is incomplete. Could not validate cast operation "
          "; may include the types's definition");
-    break;
+    return;
   case StrictAliasingError::non_standard_layout:
     Warn("c++ forbids reinterpret casts to non-standard layout types");
-    break;
+    return;
   case StrictAliasingError::builtin_to_different_builtin:
     Warn("can not cast this builtin type to that different builtin "
          "type safely; consider using std::memcpy instead");
-    break;
+    return;
   case StrictAliasingError::enum_to_builtin:
     Warn((llvm::Twine("invalid to cast '") + SourceExprText + "' of type '" +
           SourceTyText + "' to a fundamental type '" + DestinationTyText +
           "', even if it would be the underlying type")
              .str());
-    break;
+    return;
   case StrictAliasingError::enum_to_different_enum:
     Warn("can not cast enum to different enum type other than std::byte");
-    break;
+    return;
   case StrictAliasingError::empty_record:
     Warn("can not cast to/from an empty struct/class type");
-    break;
+    return;
   case StrictAliasingError::first_member_is_bitfield:
     Warn("the first member of the struct/class is a bitfield, not "
          "allowed to point to it");
-    break;
+    return;
   case StrictAliasingError::cannot_alias_with_first_member:
     Warn("the first member of the struct/class has incompatible type");
-    break;
+    return;
   case StrictAliasingError::unrelated_record_types:
     Warn("the structs/classes are unrelated, can not cast between them");
-    break;
+    return;
   case StrictAliasingError::unrelated_function_types:
     Warn("the function types does not match, can not safely use the resulting "
          "pointer");
-    break;
-  default:
-    llvm_unreachable("all possible errors should be handled");
+    return;
   }
+  llvm_unreachable("all possible errors should be handled");
 }
 
 } // namespace bugprone

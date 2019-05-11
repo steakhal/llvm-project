@@ -285,3 +285,9 @@ void casting_function_pointers() {
   int (*fp5)(const int&, volatile int) = reinterpret_cast<int(*)(const int&, volatile int)>(f);
   // CHECK-MESSAGES-STRICT: :[[@LINE-1]]:42: warning: the function types does not match, can not safely use the resulting pointer [bugprone-strict-aliasing]
 }
+
+void voidptr_to_nodeptr() {
+    void *RootNode;
+    // casting from an opaque pointer of type void*, considered OK
+    static_cast<const Base *>(RootNode);
+}
