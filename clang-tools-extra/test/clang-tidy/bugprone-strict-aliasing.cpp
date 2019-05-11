@@ -37,6 +37,10 @@ struct NonStdDerived2 : Empty1, Base, Empty2 {
 struct A {
   int i;
 };
+struct SameA {
+  int i;
+};
+
 
 void record_to_builtin(Derived *d) {
   *(int *)d;
@@ -61,11 +65,24 @@ void record_to_builtin(Derived *d) {
 }
 
 void casting_to_and_from_empty_struct(Empty4 *p) {
+  *reinterpret_cast<Empty4*>(p); // OK, self cast
+
   *(Empty2 *)p;
   // CHECK-MESSAGES-DEFAULT: :[[@LINE-1]]:4: warning: the structs/classes are unrelated, can not cast between them [bugprone-strict-aliasing]
 
   *(int *)p;
   // CHECK-MESSAGES-DEFAULT: :[[@LINE-1]]:4: warning: can not cast to/from an empty struct/class type [bugprone-strict-aliasing]
+}
+
+void casting_unrelated() {
+  A a;
+  SameA aa;
+
+  *(SameA*)&a;
+  // CHECK-MESSAGES-DEFAULT: :[[@LINE-1]]:4: warning: the structs/classes are unrelated, can not cast between them [bugprone-strict-aliasing]
+
+  *(A*)&aa;
+  // CHECK-MESSAGES-DEFAULT: :[[@LINE-1]]:4: warning: the structs/classes are unrelated, can not cast between them [bugprone-strict-aliasing]
 }
 
 enum E { DUMMY };
