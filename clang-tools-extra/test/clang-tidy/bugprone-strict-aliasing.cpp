@@ -8,9 +8,8 @@
 // RUN:   -- -std=c++17
 
 namespace std {
-    enum class byte : unsigned char {};
-}  // namespace std
-
+enum class byte : unsigned char {};
+} // namespace std
 
 struct Empty1 {}; // empty, has no members
 struct Empty2 {};
@@ -21,8 +20,8 @@ struct BitfieldBase : Empty3 {
   float f;
 };
 struct Base : Empty3 {
-    int i;
-    float f;
+  int i;
+  float f;
 };
 struct ProxyBase : Empty1, BitfieldBase, Empty2 {};
 struct Derived : ProxyBase {
@@ -31,7 +30,7 @@ struct Derived : ProxyBase {
 
 struct Derived2 : Empty1, Base, Empty2 {};
 struct NonStdDerived2 : Empty1, Base, Empty2 {
-    double dbl;
+  double dbl;
 };
 
 struct A {
@@ -40,7 +39,6 @@ struct A {
 struct SameA {
   int i;
 };
-
 
 void record_to_builtin(Derived *d) {
   *(int *)d;
@@ -104,20 +102,19 @@ void ignore_forward_decls(Forw *f, float *g) {
 }
 
 template <class T> struct Dependent;
-template <class T>
-void ignore_dependant(Dependent<T> *f, float *g) {
+template <class T> void ignore_dependant(Dependent<T> *f, float *g) {
   *(Dependent<T> *)g; // should ignore Dependant casts
-  *(float *)f; // should ignore Dependant casts
+  *(float *)f;        // should ignore Dependant casts
 }
 
 void ignore_integer_to_pointer(long ip) {
   *(BitfieldBase *)ip; // should ignore IntegralToPointer casts
-  ip = (long)&ip; // should ignore PointerToIntegral casts
+  ip = (long)&ip;      // should ignore PointerToIntegral casts
 }
 
-
 void non_similar_ptr_cast(BitfieldBase **ip) {
-  *(BitfieldBase *)ip; // casting a BitfieldBase** to BitfieldBase*, which is not similar to it
+  *(BitfieldBase *)ip; // casting a BitfieldBase** to BitfieldBase*, which is
+                       // not similar to it
   // TODO catch this
 }
 
@@ -181,7 +178,8 @@ void array_index_with_parens(double *d) {
 }
 
 void ignore_static_cast_related(double *p) {
-  *static_cast<int *>(static_cast<void*>(p)); // already code smell, ignore this for now
+  // already code smell, ignore this for now
+  *static_cast<int *>(static_cast<void*>(p));
 
   void *vp = static_cast<void*>(p);
   vp = reinterpret_cast<void*>(p);
