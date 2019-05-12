@@ -482,7 +482,7 @@ static StrictAliasingError arePointerInterchangeable(const RecordType *SrcTy,
 ///  enum EE2 : unsigned int {Val4 = 2}; // f2(EE1*, EE2*):
 ///  int f2(EE1 *p, EE2 *q) {            //   movl $1, (%rdi)
 ///    *p = Val3;                        //   movl $1, %eax
-///   *q = Val4;                        //   movl $2, (%rsi)
+///    *q = Val4;                        //   movl $2, (%rsi)
 ///    return static_cast<int>(*p);      //   ret
 ///  }
 /// \endcode
