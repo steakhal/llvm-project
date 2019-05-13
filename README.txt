@@ -16,6 +16,8 @@ The folders already contain my changes. Which are:
   added: clang-tools-extra/test/clang-tidy/bugprone-strict-aliasing.cpp
 
 But I also include the diff patch to be applied on top of the mentioned commit.
+It is called 'add-strict-aliasing.patch'.
 
-
+You can simply apply it on top the c0806e0d24add3895768ac1638a75b898433a03e commit of the github repo (after you have checked out) with:
+git apply add-strict-aliasing.patch
 
