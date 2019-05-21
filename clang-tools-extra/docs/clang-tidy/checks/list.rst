@@ -279,6 +279,7 @@ Clang-Tidy Checks
    llvm-prefer-register-over-unsigned
    llvm-twine-local
    misc-definitions-in-headers
+   misc-incorrect-pointer-cast
    misc-misplaced-const
    misc-new-delete-overloads
    misc-non-copyable-objects
