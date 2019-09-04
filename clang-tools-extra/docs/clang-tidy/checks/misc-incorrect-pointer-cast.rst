@@ -3,14 +3,14 @@
 misc-incorrect-pointer-cast
 ===========================
 
-Warns for cases when pointer is cast and the pointed to type is wider than the 
+Warns for cases when pointer is cast and the pointed to type is wider than the
 allocated type.
 For example `char` vs `int`, `long` vs `char` etc.
-Also warns for cases when the pointed to type layout is different from the 
-allocated type layout, like different structs, `int` vs `float`/`double`, 
+Also warns for cases when the pointed to type layout is different from the
+allocated type layout, like different structs, `int` vs `float`/`double`,
 different signedness.
 
-Allows pointer casts if the pointed to struct type is "part" of the allocated 
+Allows pointer casts if the pointed to struct type is "part" of the allocated
 type.
 Which means the allocated type contains the pointed to type member by member.
 
@@ -26,7 +26,7 @@ Options
 ..  option:: IgnoreReinterpretCast
 
   This option can be configured to do not warn  when reinterpter cast is used.
-  Disabled by default but this option might be useful on code bases where 
+  Disabled by default but this option might be useful on code bases where
   `reinterpret_cast` is used carefully.
 
 Examles
