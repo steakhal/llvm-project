@@ -1010,11 +1010,6 @@ void mallocExit(int *g) {
   return;
 }
 
-extern void __assert_fail (__const char *__assertion, __const char *__file,
-    unsigned int __line, __const char *__function)
-     __attribute__ ((__noreturn__));
-#define assert(expr) \
-  ((expr)  ? (void)(0)  : __assert_fail (#expr, __FILE__, __LINE__, __func__))
 void mallocAssert(int *g) {
   struct xx *p = malloc(12);
 

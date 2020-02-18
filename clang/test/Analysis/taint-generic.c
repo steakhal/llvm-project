@@ -2,6 +2,7 @@
 // RUN:   -analyzer-checker=alpha.security.taint \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=alpha.security.ArrayBoundV2 \
+// RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config \
 // RUN:     alpha.security.taint.TaintPropagation:Config=%S/Inputs/taint-generic-config.yaml
 
@@ -10,6 +11,7 @@
 // RUN:   -analyzer-checker=alpha.security.taint \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=alpha.security.ArrayBoundV2 \
+// RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config \
 // RUN:     alpha.security.taint.TaintPropagation:Config=%S/Inputs/taint-generic-config.yaml
 
@@ -45,9 +47,14 @@
 // CHECK-INVALID-ARG-SAME:        that expects an argument number for propagation
 // CHECK-INVALID-ARG-SAME:        rules greater or equal to -1
 
+typedef typeof(sizeof(int)) size_t;
 int scanf(const char *restrict format, ...);
 char *gets(char *str);
 int getchar(void);
+void *memset(void *s, int c, size_t n);
+
+void clang_analyzer_isTainted_int(int);
+void clang_analyzer_isTainted_char(char);
 
 typedef struct _FILE FILE;
 #ifdef FILE_IS_STRUCT
@@ -80,6 +87,8 @@ char *strncat(char *restrict s1, const char *restrict s2, size_t n);
 
 void *malloc(size_t);
 void *calloc(size_t nmemb, size_t size);
+void *alloca(size_t size);
+void *realloc(void *ptr, size_t size);
 void bcopy(void *s1, void *s2, size_t n);
 
 #define BUFSIZE 10
@@ -200,13 +209,9 @@ void testTaintedBufferSize() {
   scanf("%zd", &ts);
 
   int *buf1 = (int*)malloc(ts*sizeof(int)); // expected-warning {{Untrusted data is used to specify the buffer size}}
-  char *dst = (char*)calloc(ts, sizeof(char)); //expected-warning {{Untrusted data is used to specify the buffer size}}
-  bcopy(buf1, dst, ts); // expected-warning {{Untrusted data is used to specify the buffer size}}
-  __builtin_memcpy(dst, buf1, (ts + 4)*sizeof(char)); // expected-warning {{Untrusted data is used to specify the buffer size}}
-
-  // If both buffers are trusted, do not issue a warning.
-  char *dst2 = (char*)malloc(ts*sizeof(char)); // expected-warning {{Untrusted data is used to specify the buffer size}}
-  strncat(dst2, dst, ts); // no-warning
+  char *buf2 = (char *)calloc(ts, sizeof(char)); //expected-warning {{Untrusted data is used to specify the buffer size}}
+  char *buf3 = alloca(ts);                       //expected-warning {{Untrusted data is used to specify the buffer size}}
+  int *buf4 = realloc(buf1, ts - 1);             //expected-warning {{Untrusted data is used to specify the buffer size}}
 }
 
 #define AF_UNIX   1   /* local to host (pipes) */
@@ -234,19 +239,20 @@ void testSocket() {
   read(sock, &buffer, 100);
   execl(buffer, "filename", 0); // expected-warning {{Untrusted data is passed to a system call}}
 }
-
 void testStruct() {
   struct {
     char buf[16];
     int length;
   } tainted;
 
-  char buffer[16];
-  int sock;
-
-  sock = socket(AF_INET, SOCK_STREAM, 0);
+  int sock = socket(AF_INET, SOCK_STREAM, 0);
   read(sock, &tainted, sizeof(tainted));
-  __builtin_memcpy(buffer, tainted.buf, tainted.length); // expected-warning {{Untrusted data is used to specify the buffer size}}
+
+  // Both members (and all array elements) are tainted.
+  clang_analyzer_isTainted_int(tainted.length);   // expected-warning {{YES}}
+  clang_analyzer_isTainted_char(tainted.buf[0]);  // expected-warning {{YES}}
+  clang_analyzer_isTainted_char(tainted.buf[9]);  // expected-warning {{YES}}
+  clang_analyzer_isTainted_char(tainted.buf[15]); // expected-warning {{YES}}
 }
 
 void testStructArray() {
@@ -254,24 +260,36 @@ void testStructArray() {
     int length;
   } tainted[4];
 
-  char dstbuf[16], srcbuf[16];
-  int sock;
+  memset(&tainted[0], 0, sizeof(tainted));
+  clang_analyzer_isTainted_int(tainted[0].length); // expected-warning {{NO}}
+  clang_analyzer_isTainted_int(tainted[1].length); // expected-warning {{NO}}
+  clang_analyzer_isTainted_int(tainted[2].length); // expected-warning {{NO}}
+  clang_analyzer_isTainted_int(tainted[3].length); // expected-warning {{NO}}
 
-  sock = socket(AF_INET, SOCK_STREAM, 0);
-  __builtin_memset(srcbuf, 0, sizeof(srcbuf));
+  int sock = socket(AF_INET, SOCK_STREAM, 0);
 
-  read(sock, &tainted[0], sizeof(tainted));
-  __builtin_memcpy(dstbuf, srcbuf, tainted[0].length); // expected-warning {{Untrusted data is used to specify the buffer size}}
+  read(sock, &tainted[0], sizeof(tainted[0]));
+  clang_analyzer_isTainted_int(tainted[0].length); // expected-warning {{YES}}
+  clang_analyzer_isTainted_int(tainted[1].length); // expected-warning {{NO}}
+  clang_analyzer_isTainted_int(tainted[2].length); // expected-warning {{NO}}
+  clang_analyzer_isTainted_int(tainted[3].length); // expected-warning {{NO}}
 
-  __builtin_memset(&tainted, 0, sizeof(tainted));
-  read(sock, &tainted, sizeof(tainted));
-  __builtin_memcpy(dstbuf, srcbuf, tainted[0].length); // expected-warning {{Untrusted data is used to specify the buffer size}}
+  memset(&tainted[0], 0, sizeof(tainted));
 
-  __builtin_memset(&tainted, 0, sizeof(tainted));
+  read(sock, &tainted[1], sizeof(tainted[0]));
+  clang_analyzer_isTainted_int(tainted[0].length); // expected-warning {{NO}}
+  clang_analyzer_isTainted_int(tainted[1].length); // expected-warning {{YES}}
+  clang_analyzer_isTainted_int(tainted[2].length); // expected-warning {{NO}}
+  clang_analyzer_isTainted_int(tainted[3].length); // expected-warning {{NO}}
+
   // If we taint element 1, we should not raise an alert on taint for element 0 or element 2
   read(sock, &tainted[1], sizeof(tainted));
-  __builtin_memcpy(dstbuf, srcbuf, tainted[0].length); // no-warning
-  __builtin_memcpy(dstbuf, srcbuf, tainted[2].length); // no-warning
+
+  memset(&tainted[1], 0, sizeof(tainted[0]));
+  clang_analyzer_isTainted_int(tainted[0].length); // expected-warning {{NO}}
+  clang_analyzer_isTainted_int(tainted[1].length); // expected-warning {{NO}}
+  clang_analyzer_isTainted_int(tainted[2].length); // expected-warning {{NO}}
+  clang_analyzer_isTainted_int(tainted[3].length); // expected-warning {{NO}}
 }
 
 void testUnion() {

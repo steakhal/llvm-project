@@ -886,22 +886,9 @@ bool GenericTaintChecker::checkTaintedBufferSize(const CallEvent &Call,
                                                  CheckerContext &C) const {
   const auto *FDecl = Call.getDecl()->getAsFunction();
   // If the function has a buffer size argument, set ArgNum.
-  unsigned ArgNum = InvalidArgIndex;
-  unsigned BId = 0;
-  if ((BId = FDecl->getMemoryFunctionKind())) {
-    switch (BId) {
-    case Builtin::BImemcpy:
-    case Builtin::BImemmove:
-    case Builtin::BIstrncpy:
-      ArgNum = 2;
-      break;
-    case Builtin::BIstrndup:
-      ArgNum = 1;
-      break;
-    default:
-      break;
-    }
-  }
+  unsigned ArgNum = FDecl->getMemoryFunctionKind() == Builtin::BIstrndup
+                        ? 1
+                        : InvalidArgIndex;
 
   if (ArgNum == InvalidArgIndex) {
     using CCtx = CheckerContext;
@@ -913,8 +900,6 @@ bool GenericTaintChecker::checkTaintedBufferSize(const CallEvent &Call,
       ArgNum = 3;
     else if (CCtx::isCLibraryFunction(FDecl, "realloc"))
       ArgNum = 1;
-    else if (CCtx::isCLibraryFunction(FDecl, "bcopy"))
-      ArgNum = 2;
   }
 
   return ArgNum != InvalidArgIndex && Call.getNumArgs() > ArgNum &&

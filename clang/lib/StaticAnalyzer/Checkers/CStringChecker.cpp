@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "InterCheckerAPI.h"
+#include "Taint.h"
 #include "clang/Basic/CharInfo.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
@@ -54,7 +55,8 @@ using ErrorMessage = SmallString<128>;
 enum class AccessKind { write, read };
 
 static ErrorMessage createOutOfBoundErrorMsg(StringRef FunctionDescription,
-                                             AccessKind Access) {
+                                             AccessKind Access,
+                                             bool IsSizeTainted) {
   ErrorMessage Message;
   llvm::raw_svector_ostream Os(Message);
 
@@ -62,10 +64,18 @@ static ErrorMessage createOutOfBoundErrorMsg(StringRef FunctionDescription,
   Os << toUppercase(FunctionDescription.front())
      << &FunctionDescription.data()[1];
 
+  if (IsSizeTainted)
+    Os << " might";
+  const bool Singular = IsSizeTainted;
+
   if (Access == AccessKind::write) {
-    Os << " overflows the destination buffer";
+    Os << " overflow" << (Singular ? "" : "s") << " the destination buffer";
   } else { // read access
-    Os << " accesses out-of-bound array element";
+    Os << " access" << (Singular ? "" : "es") << " out-of-bound array element";
+  }
+
+  if (IsSizeTainted) {
+    Os << ". Untrusted data is used to specify the buffer size";
   }
 
   return Message;
@@ -237,7 +247,7 @@ public:
                                AnyArgExpr Arg, SVal l) const;
   ProgramStateRef CheckLocation(CheckerContext &C, ProgramStateRef state,
                                 AnyArgExpr Buffer, SVal Element,
-                                AccessKind Access) const;
+                                AccessKind Access, bool IsSizeTainted) const;
   ProgramStateRef CheckBufferAccess(CheckerContext &C, ProgramStateRef State,
                                     AnyArgExpr Buffer, SizeArgExpr Size,
                                     AccessKind Access) const;
@@ -325,8 +335,8 @@ ProgramStateRef CStringChecker::checkNonNull(CheckerContext &C,
 ProgramStateRef CStringChecker::CheckLocation(CheckerContext &C,
                                               ProgramStateRef state,
                                               AnyArgExpr Buffer, SVal Element,
-                                              AccessKind Access) const {
-
+                                              AccessKind Access,
+                                              bool IsSizeTainted) const {
   // If a previous check has failed, propagate the failure.
   if (!state)
     return nullptr;
@@ -354,15 +364,23 @@ ProgramStateRef CStringChecker::CheckLocation(CheckerContext &C,
   ProgramStateRef StInBound = state->assumeInBound(Idx, Size, true);
   ProgramStateRef StOutBound = state->assumeInBound(Idx, Size, false);
   if (StOutBound && !StInBound) {
-    // These checks are either enabled by the CString out-of-bounds checker
-    // explicitly or implicitly by the Malloc checker.
-    // In the latter case we only do modeling but do not emit warning.
     if (!Filter.CheckCStringOutOfBounds)
       return nullptr;
 
-    // Emit a bug report.
-    ErrorMessage Message =
-        createOutOfBoundErrorMsg(CurrentFunctionDescription, Access);
+    // We are sure about the out-of-bound access, pretend that it's not tainted.
+    constexpr bool PretendedTaintedness = false;
+    ErrorMessage Message = createOutOfBoundErrorMsg(
+        CurrentFunctionDescription, Access, PretendedTaintedness);
+    emitOutOfBoundsBug(C, StOutBound, Buffer.Expression, Message);
+    return nullptr;
+  }
+
+  if (StOutBound && StInBound && IsSizeTainted) {
+    if (!Filter.CheckCStringOutOfBounds)
+      return nullptr;
+
+    ErrorMessage Message = createOutOfBoundErrorMsg(CurrentFunctionDescription,
+                                                    Access, IsSizeTainted);
     emitOutOfBoundsBug(C, StOutBound, Buffer.Expression, Message);
     return nullptr;
   }
@@ -420,7 +438,8 @@ ProgramStateRef CStringChecker::CheckBufferAccess(CheckerContext &C,
     SVal BufEnd =
         svalBuilder.evalBinOpLN(State, BO_Add, *BufLoc, LastOffset, PtrTy);
 
-    State = CheckLocation(C, State, Buffer, BufEnd, Access);
+    const bool IsSizeTainted = taint::isTainted(State, LengthVal);
+    State = CheckLocation(C, State, Buffer, BufEnd, Access, IsSizeTainted);
 
     // If the buffer isn't large enough, abort.
     if (!State)
@@ -1170,8 +1189,8 @@ void CStringChecker::evalCopyCommon(CheckerContext &C, const CallExpr *CE,
       return;
 
     // Ensure the accesses are valid and that the buffers do not overlap.
-    state = CheckBufferAccess(C, state, Dest, Size, AccessKind::write);
     state = CheckBufferAccess(C, state, Source, Size, AccessKind::read);
+    state = CheckBufferAccess(C, state, Dest, Size, AccessKind::write);
 
     if (Restricted)
       state = CheckOverlap(C, state, Size, Dest, Source);
@@ -1853,7 +1872,10 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
       SVal maxLastElement =
           svalBuilder.evalBinOpLN(state, BO_Add, *dstRegVal, *maxLastNL, ptrTy);
 
-      state = CheckLocation(C, state, Dst, maxLastElement, AccessKind::write);
+      SizeArgExpr Size = {CE->getArg(2), 2};
+      const bool IsSizeTainted = taint::isTainted(state, Size.Expression, LCtx);
+      state = CheckLocation(C, state, Dst, maxLastElement, AccessKind::write,
+                            IsSizeTainted);
       if (!state)
         return;
     }
@@ -1865,7 +1887,9 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
 
       // ...and we haven't checked the bound, we'll check the actual copy.
       if (!boundWarning) {
-        state = CheckLocation(C, state, Dst, lastElement, AccessKind::write);
+        constexpr bool IsSizeTainted = false;
+        state = CheckLocation(C, state, Dst, lastElement, AccessKind::write,
+                              IsSizeTainted);
         if (!state)
           return;
       }

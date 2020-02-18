@@ -2,6 +2,7 @@
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
+// RUN:   -analyzer-checker=alpha.security.taint \
 // RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false
 //
@@ -9,6 +10,7 @@
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
+// RUN:   -analyzer-checker=alpha.security.taint \
 // RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false
 //
@@ -16,6 +18,7 @@
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
+// RUN:   -analyzer-checker=alpha.security.taint \
 // RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false
 //
@@ -23,6 +26,7 @@
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
+// RUN:   -analyzer-checker=alpha.security.taint \
 // RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false
 
@@ -41,6 +45,8 @@
 // Functions that have variants and are also available as builtins should be
 // declared carefully! See memcpy() for an example.
 
+#include "Inputs/system-header-simulator.h"
+
 #ifdef USE_BUILTINS
 # define BUILTIN(f) __builtin_ ## f
 #else /* USE_BUILTINS */
@@ -48,8 +54,10 @@
 #endif /* USE_BUILTINS */
 
 typedef typeof(sizeof(int)) size_t;
+int scanf(const char *format, ...); // To summon tainted values.
 
 void clang_analyzer_eval(int);
+void clang_analyzer_isTainted_char(char);
 
 //===----------------------------------------------------------------------===
 // memcpy()
@@ -164,6 +172,34 @@ void memcpy12() {
 void memcpy13() {
   char a[4] = {0};
   memcpy(a, 0, 0); // no-warning
+}
+
+void memcpy_builtin(char *src) {
+  int n;
+  scanf("%d", &n);
+  char dst[1024];
+  __builtin_memcpy(dst, src, n + 4);
+  // expected-warning@-1{{Untrusted data is used to specify the buffer size}}
+}
+
+void memcpy_unknown_tainted_size() {
+  char src[] = {1, 2, 3, 4};
+  int n;
+  scanf("%d", &n);
+  char dst[10];
+
+  memcpy(dst, src, n);
+  // expected-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+}
+
+void memcpy_bounded_tainted_size() {
+  char src[] = {1, 2, 3, 4};
+  int n;
+  scanf("%d", &n);
+  char dst[10] = {0};
+  if (0 <= n && n <= 4) {
+    memcpy(dst, src, n); // no-warning
+  }
 }
 
 void memcpy_unknown_size (size_t n) {
@@ -331,6 +367,25 @@ void mempcpy16() {
   clang_analyzer_eval(p1 == p2); // expected-warning{{TRUE}}
 }
 
+void mempcpy_unknown_tainted_size() {
+  char src[] = {1, 2, 3, 4};
+  int n;
+  scanf("%d", &n);
+  char dst[10];
+  mempcpy(dst, src, n);
+  // expected-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+}
+
+void mempcpy_bounded_tainted_size() {
+  char src[] = {1, 2, 3, 4};
+  int n;
+  scanf("%d", &n);
+  char dst[10] = {0};
+  if (0 <= n && n <= 4) {
+    mempcpy(dst, src, n); // no-warning
+  }
+}
+
 void mempcpy_unknown_size_warn (size_t n) {
   char a[4];
   void *result = mempcpy(a, 0, n); // expected-warning{{Null pointer passed as 2nd argument to memory copy function}}
@@ -390,6 +445,24 @@ void memmove2 () {
 #ifndef VARIANT
   // expected-warning@-2{{memmove' will always overflow; destination buffer has size 1, but size argument is 4}}
 #endif
+}
+
+void memmove_unknown_tainted_size() {
+  char src[] = {1, 2, 3, 4};
+  int n;
+  scanf("%d", &n);
+
+  memmove(src, src + 1, n);
+  // expected-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+}
+
+void memmove_bounded_tainted_size() {
+  char src[] = {1, 2, 3, 4};
+  int n;
+  scanf("%d", &n);
+  if (0 <= n && n <= 3) {
+    memmove(src, src + 1, n); // no-warning
+  }
 }
 
 //===----------------------------------------------------------------------===
@@ -474,6 +547,24 @@ int memcmp8(char *a, size_t n) {
   return memcmp(a, b, n); // expected-warning{{Null pointer passed as 2nd argument to memory comparison function}}
 }
 
+void memcmp_unknown_tainted_size(char *buf) {
+  char src[] = {1, 2, 3, 4};
+  int n;
+  scanf("%d", &n);
+
+  memcmp(buf, src, n);
+  // expected-warning@-1{{FIXME warn here possible unbounded memory access}}
+}
+
+void memcmp_bounded_tainted_size(char *buf) {
+  char src[] = {1, 2, 3, 4};
+  int n;
+  scanf("%d", &n);
+  if (0 <= n && n <= 4) {
+    memcmp(buf, src, n); // no-warning
+  }
+}
+
 //===----------------------------------------------------------------------===
 // bcopy()
 //===----------------------------------------------------------------------===
@@ -508,12 +599,38 @@ void bcopy2 () {
   bcopy(src, dst, 4); // expected-warning{{overflow}}
 }
 
+void bcopy3(char *src) {
+  int n;
+  scanf("%d", &n);
+  char buf[1024];
+  bcopy(src, buf, n);
+  // expected-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+}
+
+void bcopy_unknown_tainted_size() {
+  char src[] = {1, 2, 3, 4};
+  int n;
+  scanf("%d", &n);
+
+  bcopy(src, src + 1, n);
+  // expected-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+}
+
+void bcopy_bounded_tainted_size() {
+  char src[] = {1, 2, 3, 4};
+  int n;
+  scanf("%d", &n);
+  if (0 <= n && n <= 3) {
+    bcopy(src, src + 1, n); // no-warning
+  }
+}
+
 void *malloc(size_t);
 void free(void *);
 char radar_11125445_memcopythenlogfirstbyte(const char *input, size_t length) {
   char *bytes = malloc(sizeof(char) * (length + 1));
   memcpy(bytes, input, length);
-  char x = bytes[0]; // no warning
+  char x = bytes[0]; // no-warning
   free(bytes);
   return x;
 }
@@ -526,3 +643,61 @@ void nocrash_on_locint_offset(void *addr, void* from, struct S s) {
   size_t iAdd = (size_t) addr;
   memcpy(((void *) &(s.f)), from, iAdd);
 }
+
+/* FIXME: enable this section
+//===----------------------------------------------------------------------===
+// strcpy()
+//===----------------------------------------------------------------------===
+
+char *strcpy(char *dest, const char *src);
+
+void strcpy_unbounded_tainted_buffer (char *buf) {
+  scanf("%s", buf);
+
+  char dst[32];
+  strcpy(dst, buf);                       // FIXME: warn for possible buffer overflow
+  clang_analyzer_isTainted_char(dst[0]);  // expected-warning{{YES}}
+  clang_analyzer_isTainted_char(dst[1]);  // expected-warning{{NO}} FIXME: should be YES
+  clang_analyzer_isTainted_char(dst[31]); // expected-warning{{NO}} FIXME: should be YES
+}
+
+void strcpy_bounded_tainted_buffer (char *buf) {
+  scanf("%s", buf);
+  buf[10] = '\0';
+  clang_analyzer_isTainted_char(buf[0]);  // expected-warning{{YES}}
+  clang_analyzer_isTainted_char(buf[1]);  // expected-warning{{NO}} FIXME: should be YES
+  clang_analyzer_isTainted_char(buf[9]);  // expected-warning{{NO}} FIXME: should be YES
+  clang_analyzer_isTainted_char(buf[10]); // expected-warning{{NO}}
+  clang_analyzer_isTainted_char(buf[20]); // expected-warning{{NO}} FIXME: should be YES
+
+  char dst[32];
+  strcpy(dst, buf); // no-warning
+  clang_analyzer_isTainted_char(dst[0]);  // expected-warning{{YES}}
+  clang_analyzer_isTainted_char(dst[1]);  // expected-warning{{NO}} FIXME: should be YES
+  clang_analyzer_isTainted_char(dst[9]);  // expected-warning{{NO}} FIXME: should be YES
+  clang_analyzer_isTainted_char(dst[10]); // expected-warning{{NO}}
+  clang_analyzer_isTainted_char(dst[20]); // expected-warning{{NO}}
+}
+
+//===----------------------------------------------------------------------===
+// strncpy()
+//===----------------------------------------------------------------------===
+
+char *strncpy(char *dest, const char *src, size_t n);
+
+void strncpy_unbounded_tainted_buffer (char *src, char *dst) {
+  int n;
+  scanf("%d", &n);
+
+  strncpy(dst, src, n);
+  // expected-warning@-1{{FIXME warn here size is tainted}}
+}
+
+void strncpy_bounded_tainted_buffer (char *src, char *dst) {
+  int n;
+  scanf("%d", &n);
+  if (0 < n && n < 10) {
+    strncpy(dst, src, n); // no warning
+  }
+}
+FIXME: enable this section */

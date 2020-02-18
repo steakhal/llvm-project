@@ -127,6 +127,12 @@ void exit(int status) __attribute__ ((__noreturn__));
 void _exit(int status) __attribute__ ((__noreturn__));
 void _Exit(int status) __attribute__ ((__noreturn__));
 
+extern void __assert_fail(__const char *__assertion, __const char *__file,
+                          unsigned int __line, __const char *__function)
+    __attribute__((__noreturn__));
+#define assert(expr) \
+  ((expr) ? (void)(0) : __assert_fail(#expr, __FILE__, __LINE__, __func__))
+
 #define UINT32_MAX        4294967295U
 #define INT64_MIN        (-INT64_MAX-1)
 #define __DBL_MAX__ 1.7976931348623157e+308
