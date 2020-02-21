@@ -548,20 +548,22 @@ int memcmp8(char *a, size_t n) {
 }
 
 void memcmp_unknown_tainted_size(char *buf) {
+  assert(strlen(buf) >= 3 && "buf must have at leas 4 elements");
   char src[] = {1, 2, 3, 4};
   int n;
   scanf("%d", &n);
-
   memcmp(buf, src, n);
-  // expected-warning@-1{{FIXME warn here possible unbounded memory access}}
+  // expected-warning@-1{{Memory comparison function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
 }
 
 void memcmp_bounded_tainted_size(char *buf) {
+  assert(strlen(buf) >= 3 && "buf must have at leas 4 elements");
   char src[] = {1, 2, 3, 4};
   int n;
   scanf("%d", &n);
   if (0 <= n && n <= 4) {
-    memcmp(buf, src, n); // no-warning
+    memcmp(buf, src, n); // FIXME: no-warning
+    // expected-warning@-1{{Memory comparison function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
   }
 }
 
@@ -644,7 +646,6 @@ void nocrash_on_locint_offset(void *addr, void* from, struct S s) {
   memcpy(((void *) &(s.f)), from, iAdd);
 }
 
-/* FIXME: enable this section
 //===----------------------------------------------------------------------===
 // strcpy()
 //===----------------------------------------------------------------------===
@@ -690,14 +691,23 @@ void strncpy_unbounded_tainted_buffer (char *src, char *dst) {
   scanf("%d", &n);
 
   strncpy(dst, src, n);
-  // expected-warning@-1{{FIXME warn here size is tainted}}
+  // expected-warning@-1{{String copy function might overflow the destination buffer. Untrusted data is used to specify the buffer size}}
 }
 
 void strncpy_bounded_tainted_buffer (char *src, char *dst) {
+  assert(strlen(src) >= 10 && "src must have at leas 10 elements");
   int n;
   scanf("%d", &n);
   if (0 < n && n < 10) {
-    strncpy(dst, src, n); // no warning
+    // FIXME: dst is an output parameter, possibly not initialized. So we should not call any cstring functions on it, like strlen.
+    //  So we have no way to infer a reasonable lower bound of the size of the allocation pointed by dst.
+    //  Since the RULE for checking in-bound pointer access was the following:
+    //   > if we know for sure that it is out of bound access, warn
+    //   > else if it could be an in bound OR out bound access, check the size parameter and if that is tainted, warn
+    //  This methodology was good for most of the cases, except for this case.
+    //  In this case we cannot express in code that the dst is big enough, and so we will warn.
+    //  The user has no way suppressing this warning.
+    strncpy(dst, src, n); // FIXME: no-warning
+    // expected-warning@-1{{String copy function might overflow the destination buffer. Untrusted data is used to specify the buffer size}}
   }
 }
-FIXME: enable this section */
