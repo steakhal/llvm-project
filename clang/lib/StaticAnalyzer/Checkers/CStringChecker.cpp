@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "InterCheckerAPI.h"
+#include "Taint.h"
 #include "clang/Basic/CharInfo.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
@@ -137,6 +138,7 @@ public:
       {{CDF_MaybeBuiltin, "strncmp", 3}, &CStringChecker::evalStrncmp},
       {{CDF_MaybeBuiltin, "strcasecmp", 2}, &CStringChecker::evalStrcasecmp},
       {{CDF_MaybeBuiltin, "strncasecmp", 3}, &CStringChecker::evalStrncasecmp},
+      {{CDF_MaybeBuiltin, "strchr", 2}, &CStringChecker::evalStrchr},
       {{CDF_MaybeBuiltin, "strsep", 2}, &CStringChecker::evalStrsep},
       {{CDF_MaybeBuiltin, "bcopy", 3}, &CStringChecker::evalBcopy},
       {{CDF_MaybeBuiltin, "bcmp", 3}, &CStringChecker::evalMemcmp},
@@ -187,6 +189,7 @@ public:
                         bool IsBounded = false,
                         bool IgnoreCase = false) const;
 
+  void evalStrchr(CheckerContext &C, const CallExpr *CE) const;
   void evalStrsep(CheckerContext &C, const CallExpr *CE) const;
 
   void evalStdCopy(CheckerContext &C, const CallExpr *CE) const;
@@ -740,6 +743,7 @@ SVal CStringChecker::getCStringLengthForRegion(CheckerContext &C,
                                                const Expr *Ex,
                                                const MemRegion *MR,
                                                bool hypothetical) {
+  assert(MR);
   if (!hypothetical) {
     // If there's a recorded length, go ahead and return it.
     const SVal *Recorded = state->get<CStringLength>(MR);
@@ -2065,6 +2069,88 @@ void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallExpr *CE,
 
   // Record this as a possible path.
   C.addTransition(state);
+}
+
+void CStringChecker::evalStrchr(CheckerContext &C, const CallExpr *CE) const {
+  // char *strchr(const char *str, int ch);
+  CurrentFunctionDescription = "strchr()";
+  SourceArgExpr Haystack = {CE->getArg(0), 0};
+  AnyArgExpr Needle = {CE->getArg(1), 1};
+  SVal HaystackPointerVal = C.getSVal(Haystack.Expression);
+  ASTContext &Ctx = C.getASTContext();
+
+  // Make sure that the type of the needle is int.
+  if (Needle.Expression->getType() != Ctx.IntTy)
+    return;
+
+  ProgramStateRef State =
+      checkNonNull(C, C.getState(), Haystack, HaystackPointerVal);
+  if (!State)
+    return; // The error already reported, back off.
+
+  SVal CStringLength =
+      getCStringLength(C, State, Haystack.Expression, HaystackPointerVal);
+  if (CStringLength.isUndef())
+    return; // The error already reported, back off.
+
+  SValBuilder &SVB = C.getSValBuilder();
+  const LocationContext *LCtx = C.getLocationContext();
+
+  const auto MightSearchForNullTerminator =
+      [&C, &Ctx, &SVB](ProgramStateRef State, const Expr *Needle) -> bool {
+    // Cast int to char according to the specification.
+    SVal NeedleAsCharVal =
+        SVB.evalCast(C.getSVal(Needle), Ctx.CharTy, Ctx.IntTy);
+
+    SVal IsNeedleTheNullTerminator =
+        SVB.evalEQ(State, NeedleAsCharVal, SVB.makeZeroVal(Ctx.CharTy));
+
+    ProgramStateRef MightSearchForNullTerminator = State->assume(
+        IsNeedleTheNullTerminator.castAs<DefinedOrUnknownSVal>(), true);
+    return MightSearchForNullTerminator.get();
+  };
+
+  // If we //might// search for the zero terminator:
+  //  &str[0] <= ReturnPointer <= &str[termiantor]
+  //  &str[0] <= ReturnPointer <  &str[termiantor]  // otherwise
+  SVal UpperBound =
+      (MightSearchForNullTerminator(State, Needle.Expression))
+          ? (SVB.evalBinOpNN(State, BO_Add, CStringLength.castAs<NonLoc>(),
+                             SVB.makeArrayIndex(1), SVB.getArrayIndexType()))
+          : CStringLength;
+
+  const SubRegion *ReturnSuperRegion =
+      HaystackPointerVal.getAsRegion()->getAs<SubRegion>();
+  DefinedOrUnknownSVal ReturnElementOffset =
+      SVB.getMetadataSymbolVal(CStringChecker::getTag(), ReturnSuperRegion, CE,
+                               Ctx.getSizeType(), LCtx, C.blockCount());
+
+  // Assume that this ReturnElementOffset must be less then the UpperBound.
+  ProgramStateRef ReturnElementOffsetConstrained = State->assumeInBound(
+      ReturnElementOffset, UpperBound.castAs<DefinedOrUnknownSVal>(), true);
+
+  ReturnElementOffsetConstrained =
+      taint::addTaint(ReturnElementOffsetConstrained, ReturnElementOffset);
+  assert(ReturnElementOffsetConstrained);
+
+  // Otherwise there is no strchr match possible, return nullptr.
+  if (!ReturnElementOffsetConstrained) {
+    // Set the return value, and finish.
+    State = State->BindExpr(CE, LCtx, SVB.makeNullWithType(Ctx.CharTy));
+    C.addTransition(State);
+    return;
+  }
+
+  const ElementRegion *ReturnElementRegion =
+      SVB.getRegionManager().getElementRegion(
+          Ctx.CharTy, ReturnElementOffset.castAs<NonLoc>(), ReturnSuperRegion,
+          Ctx);
+
+  DefinedOrUnknownSVal ReturnPointer = SVB.makeLoc(ReturnElementRegion);
+
+  // Set the return value, and finish.
+  State = ReturnElementOffsetConstrained->BindExpr(CE, LCtx, ReturnPointer);
+  C.addTransition(State);
 }
 
 void CStringChecker::evalStrsep(CheckerContext &C, const CallExpr *CE) const {
