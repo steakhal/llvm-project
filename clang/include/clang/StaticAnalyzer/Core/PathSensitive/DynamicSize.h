@@ -23,7 +23,8 @@ namespace clang {
 namespace ento {
 
 /// Get the stored dynamic size for the region \p MR.
-DefinedOrUnknownSVal getDynamicSize(ProgramStateRef State, const MemRegion *MR,
+/// All extent sizes are implicitly constrained to be less then LongLongMax.
+DefinedOrUnknownSVal getDynamicSize(ProgramStateRef &State, const MemRegion *MR,
                                     SValBuilder &SVB);
 
 /// Get the stored element count of the region \p MR.

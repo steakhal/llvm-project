@@ -22,9 +22,27 @@
 namespace clang {
 namespace ento {
 
-DefinedOrUnknownSVal getDynamicSize(ProgramStateRef State, const MemRegion *MR,
+DefinedOrUnknownSVal getDynamicSize(ProgramStateRef &State, const MemRegion *MR,
                                     SValBuilder &SVB) {
-  return MR->getMemRegionManager().getStaticSize(MR, SVB);
+  const CanQualType LongLongTy = SVB.getContext().LongLongTy;
+  const nonloc::ConcreteInt LongLongMax(
+      SVB.getBasicValueFactory().getMaxValue(LongLongTy));
+  assert(SVB.getArrayIndexType() == LongLongTy);
+
+  DefinedOrUnknownSVal Size = MR->getMemRegionManager().getStaticSize(MR, SVB);
+
+  if (Size.isUnknownOrUndef())
+    return Size;
+
+  SVal UpperBoundConstraint = SVB.evalBinOpNN(
+      State, BO_LE, Size.castAs<NonLoc>(), LongLongMax, LongLongTy);
+  ProgramStateRef ImplicitlyConstrained =
+      State->assume(UpperBoundConstraint.castAs<NonLoc>(), true);
+  assert(ImplicitlyConstrained &&
+         "All extent size should be less then or equal to LongLongMax");
+  // Modify the caller state (apply implicit constraint).
+  State = ImplicitlyConstrained;
+  return Size; // Return the symbol to the extent.
 }
 
 DefinedOrUnknownSVal getDynamicElementCount(ProgramStateRef State,

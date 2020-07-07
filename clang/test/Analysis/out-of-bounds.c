@@ -153,7 +153,8 @@ void test_assume_after_access(unsigned long x) {
 int *get_symbolic();
 void test_index_below_symboloc() {
   int *buf = get_symbolic();
-  buf[-1] = 0; // no-warning;
+  // FIXME: should not warn here
+  buf[-1] = 0; // expected-warning{{Out of bound memory access}}
 }
 
 void test_incomplete_struct() {
