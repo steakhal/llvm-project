@@ -1,28 +1,35 @@
-// RUN: %clang_analyze_cc1 -verify %s \
+// This test file also used by the 'bstring-with-taint-and-crosscheck.c' file.
+//
+// RUN: %clang_analyze_cc1 -verify=expected,without-taint %s \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
-// RUN:   -analyzer-checker=alpha.security.taint \
 // RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false
 //
-// RUN: %clang_analyze_cc1 -verify %s -DUSE_BUILTINS \
+// RUN: %clang_analyze_cc1 -verify=expected,without-taint %s -DUSE_BUILTINS \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
-// RUN:   -analyzer-checker=alpha.security.taint \
 // RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false
 //
-// RUN: %clang_analyze_cc1 -verify %s -DVARIANT \
+// RUN: %clang_analyze_cc1 -verify=expected,without-taint %s -DVARIANT \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
-// RUN:   -analyzer-checker=alpha.security.taint \
 // RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false
 //
-// RUN: %clang_analyze_cc1 -verify %s -DUSE_BUILTINS -DVARIANT \
+// RUN: %clang_analyze_cc1 -verify=expected,without-taint %s -DUSE_BUILTINS -DVARIANT \
+// RUN:   -analyzer-checker=core \
+// RUN:   -analyzer-checker=unix.cstring \
+// RUN:   -analyzer-checker=alpha.unix.cstring \
+// RUN:   -analyzer-checker=debug.ExprInspection \
+// RUN:   -analyzer-config eagerly-assume=false
+//
+// Using taint analysis:
+// RUN: %clang_analyze_cc1 -verify=expected,with-taint,false-positive-with-taint %s \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
@@ -58,6 +65,7 @@ int scanf(const char *format, ...); // To summon tainted values.
 
 void clang_analyzer_eval(int);
 void clang_analyzer_isTainted_char(char);
+size_t clang_analyzer_getExtent(void *buf);
 
 //===----------------------------------------------------------------------===
 // memcpy()
@@ -179,7 +187,7 @@ void memcpy_builtin(char *src) {
   scanf("%d", &n);
   char dst[1024];
   __builtin_memcpy(dst, src, n + 4);
-  // expected-warning@-1{{Untrusted data is used to specify the buffer size}}
+  // with-taint-warning@-1{{Untrusted data is used to specify the buffer size}}
 }
 
 void memcpy_unknown_tainted_size() {
@@ -189,7 +197,7 @@ void memcpy_unknown_tainted_size() {
   char dst[10];
 
   memcpy(dst, src, n);
-  // expected-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+  // with-taint-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
 }
 
 void memcpy_bounded_tainted_size() {
@@ -373,7 +381,7 @@ void mempcpy_unknown_tainted_size() {
   scanf("%d", &n);
   char dst[10];
   mempcpy(dst, src, n);
-  // expected-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+  // with-taint-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
 }
 
 void mempcpy_bounded_tainted_size() {
@@ -453,7 +461,7 @@ void memmove_unknown_tainted_size() {
   scanf("%d", &n);
 
   memmove(src, src + 1, n);
-  // expected-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+  // with-taint-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
 }
 
 void memmove_bounded_tainted_size() {
@@ -553,7 +561,7 @@ void memcmp_unknown_tainted_size(char *buf) {
   int n;
   scanf("%d", &n);
   memcmp(buf, src, n);
-  // expected-warning@-1{{Memory comparison function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+  // with-taint-warning@-1{{Memory comparison function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
 }
 
 void memcmp_bounded_tainted_size(char *buf) {
@@ -563,7 +571,7 @@ void memcmp_bounded_tainted_size(char *buf) {
   scanf("%d", &n);
   if (0 <= n && n <= 4) {
     memcmp(buf, src, n); // FIXME: no-warning
-    // expected-warning@-1{{Memory comparison function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+    // with-taint-warning@-1{{Memory comparison function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
   }
 }
 
@@ -606,7 +614,7 @@ void bcopy3(char *src) {
   scanf("%d", &n);
   char buf[1024];
   bcopy(src, buf, n);
-  // expected-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+  // with-taint-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
 }
 
 void bcopy_unknown_tainted_size() {
@@ -615,7 +623,7 @@ void bcopy_unknown_tainted_size() {
   scanf("%d", &n);
 
   bcopy(src, src + 1, n);
-  // expected-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
+  // with-taint-warning@-1{{Memory copy function might access out-of-bound array element. Untrusted data is used to specify the buffer size}}
 }
 
 void bcopy_bounded_tainted_size() {
@@ -656,28 +664,57 @@ void strcpy_unbounded_tainted_buffer (char *buf) {
   scanf("%s", buf);
 
   char dst[32];
-  strcpy(dst, buf);                       // FIXME: warn for possible buffer overflow
-  clang_analyzer_isTainted_char(dst[0]);  // expected-warning{{YES}}
-  clang_analyzer_isTainted_char(dst[1]);  // expected-warning{{NO}} FIXME: should be YES
-  clang_analyzer_isTainted_char(dst[31]); // expected-warning{{NO}} FIXME: should be YES
+  strcpy(dst, buf); // FIXME: warn for possible buffer overflow
+  clang_analyzer_isTainted_char(dst[0]);
+  clang_analyzer_isTainted_char(dst[1]);
+  clang_analyzer_isTainted_char(dst[31]);
+  // with-taint-warning@-3{{YES}}
+  // with-taint-warning@-3{{NO}} FIXME: should be YES
+  // with-taint-warning@-3{{NO}} FIXME: should be YES
+  //
+  // without-taint-warning@-7{{NO}}
+  // without-taint-warning@-7{{NO}}
+  // without-taint-warning@-7{{NO}}
 }
 
 void strcpy_bounded_tainted_buffer (char *buf) {
   scanf("%s", buf);
   buf[10] = '\0';
-  clang_analyzer_isTainted_char(buf[0]);  // expected-warning{{YES}}
-  clang_analyzer_isTainted_char(buf[1]);  // expected-warning{{NO}} FIXME: should be YES
-  clang_analyzer_isTainted_char(buf[9]);  // expected-warning{{NO}} FIXME: should be YES
-  clang_analyzer_isTainted_char(buf[10]); // expected-warning{{NO}}
-  clang_analyzer_isTainted_char(buf[20]); // expected-warning{{NO}} FIXME: should be YES
+  clang_analyzer_isTainted_char(buf[0]);
+  clang_analyzer_isTainted_char(buf[1]);
+  clang_analyzer_isTainted_char(buf[9]);
+  clang_analyzer_isTainted_char(buf[10]);
+  clang_analyzer_isTainted_char(buf[20]);
+  // with-taint-warning@-5{{YES}}
+  // with-taint-warning@-5{{NO}} FIXME: should be YES
+  // with-taint-warning@-5{{NO}} FIXME: should be YES
+  // with-taint-warning@-5{{NO}}
+  // with-taint-warning@-5{{NO}} FIXME: should be YES
+  //
+  // without-taint-warning@-11{{NO}}
+  // without-taint-warning@-11{{NO}}
+  // without-taint-warning@-11{{NO}}
+  // without-taint-warning@-11{{NO}}
+  // without-taint-warning@-11{{NO}}
 
   char dst[32];
   strcpy(dst, buf); // no-warning
-  clang_analyzer_isTainted_char(dst[0]);  // expected-warning{{YES}}
-  clang_analyzer_isTainted_char(dst[1]);  // expected-warning{{NO}} FIXME: should be YES
-  clang_analyzer_isTainted_char(dst[9]);  // expected-warning{{NO}} FIXME: should be YES
-  clang_analyzer_isTainted_char(dst[10]); // expected-warning{{NO}}
-  clang_analyzer_isTainted_char(dst[20]); // expected-warning{{NO}}
+  clang_analyzer_isTainted_char(dst[0]);
+  clang_analyzer_isTainted_char(dst[1]);
+  clang_analyzer_isTainted_char(dst[9]);
+  clang_analyzer_isTainted_char(dst[10]);
+  clang_analyzer_isTainted_char(dst[20]);
+  // with-taint-warning@-5{{YES}}
+  // with-taint-warning@-5{{NO}} FIXME: should be YES
+  // with-taint-warning@-5{{NO}} FIXME: should be YES
+  // with-taint-warning@-5{{NO}}
+  // with-taint-warning@-5{{NO}}
+  //
+  // without-taint-warning@-11{{NO}}
+  // without-taint-warning@-11{{NO}}
+  // without-taint-warning@-11{{NO}}
+  // without-taint-warning@-11{{NO}}
+  // without-taint-warning@-11{{NO}}
 }
 
 //===----------------------------------------------------------------------===
@@ -689,25 +726,22 @@ char *strncpy(char *dest, const char *src, size_t n);
 void strncpy_unbounded_tainted_buffer (char *src, char *dst) {
   int n;
   scanf("%d", &n);
-
   strncpy(dst, src, n);
-  // expected-warning@-1{{String copy function might overflow the destination buffer. Untrusted data is used to specify the buffer size}}
+  // with-taint-warning@-1{{String copy function might overflow the destination buffer. Untrusted data is used to specify the buffer size}}
 }
 
 void strncpy_bounded_tainted_buffer (char *src, char *dst) {
-  assert(strlen(src) >= 10 && "src must have at leas 10 elements");
+  assert(clang_analyzer_getExtent(src) >= 10);
+  assert(clang_analyzer_getExtent(dst) >= 10);
   int n;
   scanf("%d", &n);
   if (0 < n && n < 10) {
-    // FIXME: dst is an output parameter, possibly not initialized. So we should not call any cstring functions on it, like strlen.
-    //  So we have no way to infer a reasonable lower bound of the size of the allocation pointed by dst.
-    //  Since the RULE for checking in-bound pointer access was the following:
-    //   > if we know for sure that it is out of bound access, warn
-    //   > else if it could be an in bound OR out bound access, check the size parameter and if that is tainted, warn
-    //  This methodology was good for most of the cases, except for this case.
-    //  In this case we cannot express in code that the dst is big enough, and so we will warn.
-    //  The user has no way suppressing this warning.
-    strncpy(dst, src, n); // FIXME: no-warning
-    // expected-warning@-1{{String copy function might overflow the destination buffer. Untrusted data is used to specify the buffer size}}
+    // We should expect a report only if we enable the taint analysis without z3 crosscheck.
+    // - Without taint analysis we are evaluating the preconditions conservatively.
+    //   Since we can not prove that has a bug, we wont warn here.
+    // - With taint analysis and z3 crosscheck the analyzer wont report this,
+    //   since that report will be invalidated due to infeasable constraint.
+    strncpy(dst, src, n);
+    // false-positive-with-taint-warning@-1{{String copy function might overflow the destination buffer. Untrusted data is used to specify the buffer size}}
   }
 }
