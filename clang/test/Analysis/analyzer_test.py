@@ -4,9 +4,9 @@ import lit.TestRunner
 # Custom format class for static analyzer tests
 class AnalyzerTest(lit.formats.ShTest):
 
-    def __init__(self, execute_external, use_z3_solver=False):
+    def __init__(self, execute_external, recheck_with_z3_solver=False):
         super(AnalyzerTest, self).__init__(execute_external)
-        self.use_z3_solver = use_z3_solver
+        self.recheck_with_z3_solver = recheck_with_z3_solver
 
     def execute(self, test, litConfig):
         results = []
@@ -15,15 +15,16 @@ class AnalyzerTest(lit.formats.ShTest):
         saved_test = test
         lit.TestRunner.parseIntegratedTestScript(test)
 
-        if 'z3' not in test.requires:
-            results.append(self.executeWithAnalyzeSubstitution(
-                saved_test, litConfig, '-analyzer-constraints=range'))
+        #print("executing with range based constraint solver")
+        results.append(self.executeWithAnalyzeSubstitution(
+            saved_test, litConfig, '-analyzer-constraints=range'))
 
-            if results[-1].code == lit.Test.FAIL:
-                return results[-1]
+        if results[-1].code == lit.Test.FAIL:
+            return results[-1]
 
-        # If z3 backend available, add an additional run line for it
-        if self.use_z3_solver == '1':
+        # If we want to rerun the test with the Z3 solver, add an additional run line for it
+        if 'z3' in test.requires and self.recheck_with_z3_solver == '1':
+            #print("rechecking with z3 based constraint solver")
             assert(test.config.clang_staticanalyzer_z3 == '1')
             results.append(self.executeWithAnalyzeSubstitution(
                 saved_test, litConfig, '-analyzer-constraints=z3 -DANALYZER_CM_Z3'))
