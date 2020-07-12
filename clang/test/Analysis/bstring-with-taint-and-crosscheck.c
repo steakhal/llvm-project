@@ -1,8 +1,9 @@
 // Using taint analysis WITH Z3 crosscheck:
 //
 // REQUIRES: z3
-// RUN: %clang_analyze_cc1 %S/bstring.c \
+// RUN: %clang_cc1 %S/bstring.c \
 // RUN:   -verify=expected,without-taint \
+// RUN:   -analyze -analyzer-constraints=range -setup-static-analyzer \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \

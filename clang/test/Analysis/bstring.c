@@ -1,27 +1,33 @@
 // This test file also used by the 'bstring-with-taint-and-crosscheck.c' file.
+// Intentionally using clang_cc1 instead of clang_analyze_cc1 since these test
+// would only work with the range based constraint manager.
 //
-// RUN: %clang_analyze_cc1 -verify=expected,without-taint %s \
+// RUN: %clang_cc1 -verify=expected,without-taint %s \
+// RUN:   -analyze -analyzer-constraints=range -setup-static-analyzer \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
 // RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false
 //
-// RUN: %clang_analyze_cc1 -verify=expected,without-taint %s -DUSE_BUILTINS \
+// RUN: %clang_cc1 -verify=expected,without-taint %s -DUSE_BUILTINS \
+// RUN:   -analyze -analyzer-constraints=range -setup-static-analyzer \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
 // RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false
 //
-// RUN: %clang_analyze_cc1 -verify=expected,without-taint %s -DVARIANT \
+// RUN: %clang_cc1 -verify=expected,without-taint %s -DVARIANT \
+// RUN:   -analyze -analyzer-constraints=range -setup-static-analyzer \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
 // RUN:   -analyzer-checker=debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false
 //
-// RUN: %clang_analyze_cc1 -verify=expected,without-taint %s -DUSE_BUILTINS -DVARIANT \
+// RUN: %clang_cc1 -verify=expected,without-taint %s -DUSE_BUILTINS -DVARIANT \
+// RUN:   -analyze -analyzer-constraints=range -setup-static-analyzer \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
@@ -29,7 +35,8 @@
 // RUN:   -analyzer-config eagerly-assume=false
 //
 // Using taint analysis:
-// RUN: %clang_analyze_cc1 -verify=expected,with-taint,false-positive-with-taint %s \
+// RUN: %clang_cc1 -verify=expected,with-taint,false-positive-with-taint %s \
+// RUN:   -analyze -analyzer-constraints=range -setup-static-analyzer \
 // RUN:   -analyzer-checker=core \
 // RUN:   -analyzer-checker=unix.cstring \
 // RUN:   -analyzer-checker=alpha.unix.cstring \
