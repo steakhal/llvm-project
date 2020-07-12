@@ -1,5 +1,5 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core -w -DNO_CROSSCHECK -verify %s
-// RUN: %clang_cc1 -analyze -analyzer-checker=core -w -analyzer-config crosscheck-with-z3=true -verify %s
+// RUN: %clang_analyze_cc1_range -analyzer-checker=core -w -verify %s
+// RUN: %clang_analyze_cc1_range -analyzer-checker=core -w -verify %s -analyzer-config crosscheck-with-z3=true
 // REQUIRES: z3
 
 typedef struct o p;

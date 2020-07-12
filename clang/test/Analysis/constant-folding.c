@@ -1,4 +1,5 @@
-// RUN: %clang_analyze_cc1 -analyzer-checker=core,debug.ExprInspection -verify -analyzer-config eagerly-assume=false %s
+// RUN: %clang_analyze_cc1_range -analyzer-config eagerly-assume=false -verify %s \
+// RUN:   -analyzer-checker=core,debug.ExprInspection
 
 #define UINT_MAX (~0U)
 #define INT_MAX (int)(UINT_MAX & (UINT_MAX >> 1))

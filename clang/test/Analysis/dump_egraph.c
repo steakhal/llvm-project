@@ -1,12 +1,12 @@
-// RUN: %clang_analyze_cc1 -analyzer-checker=core \
-// RUN:  -analyzer-dump-egraph=%t.dot %s
+// RUN: %clang_analyze_cc1_range -analyzer-checker=core \
+// RUN:   -analyzer-dump-egraph=%t.dot %s
 // RUN: cat %t.dot | FileCheck %s
-
-// RUN: %clang_analyze_cc1 -analyzer-checker=core \
-// RUN:  -analyzer-dump-egraph=%t.dot \
-// RUN:  -trim-egraph %s
+//
+// RUN: %clang_analyze_cc1_range -analyzer-checker=core \
+// RUN:   -analyzer-dump-egraph=%t.dot \
+// RUN:   -trim-egraph %s
 // RUN: cat %t.dot | FileCheck %s
-
+//
 // REQUIRES: asserts
 
 int getJ();

@@ -1,5 +1,10 @@
-// RUN: %clang_analyze_cc1 -analyzer-checker=core,debug.ExprInspection -analyzer-config unroll-loops=true,cfg-loopexit=true -verify -std=c++11 -analyzer-config exploration_strategy=unexplored_first_queue %s
-// RUN: %clang_analyze_cc1 -analyzer-checker=core,debug.ExprInspection -analyzer-config unroll-loops=true,cfg-loopexit=true,exploration_strategy=dfs -verify -std=c++11 -DDFS=1 %s
+// RUN: %clang_analyze_cc1_range -verify=expected,ufq -std=c++11 %s \
+// RUN:   -analyzer-checker=core,debug.ExprInspection \
+// RUN:   -analyzer-config unroll-loops=true,cfg-loopexit=true,exploration_strategy=unexplored_first_queue
+//
+// RUN: %clang_analyze_cc1_range -verify=expected,dfs -std=c++11 %s \
+// RUN:   -analyzer-checker=core,debug.ExprInspection \
+// RUN:   -analyzer-config unroll-loops=true,cfg-loopexit=true,exploration_strategy=dfs
 
 void clang_analyzer_numTimesReached();
 void clang_analyzer_warnIfReached();
@@ -346,11 +351,9 @@ int simple_known_bound_loop() {
 
 int simple_unknown_bound_loop() {
   for (int i = 2; i < getNum(); i++) {
-#ifdef DFS
-    clang_analyzer_numTimesReached(); // expected-warning {{16}}
-#else
-    clang_analyzer_numTimesReached(); // expected-warning {{8}}
-#endif
+    clang_analyzer_numTimesReached();
+    // dfs-warning@-1 {{16}}
+    // ufq-warning@-2 {{8}}
   }
   return 0;
 }
@@ -368,11 +371,9 @@ int nested_inlined_unroll1() {
 int nested_inlined_no_unroll1() {
   int k;
   for (int i = 0; i < 9; i++) {
-#ifdef DFS
-    clang_analyzer_numTimesReached(); // expected-warning {{18}}
-#else
-    clang_analyzer_numTimesReached(); // expected-warning {{14}}
-#endif
+    clang_analyzer_numTimesReached();
+    // dfs-warning@-1 {{18}}
+    // ufq-warning@-2 {{14}}
     k = simple_unknown_bound_loop();  // reevaluation without inlining, splits the state as well
   }
   int a = 22 / k; // no-warning

@@ -1,5 +1,5 @@
-// RUN: %clang_analyze_cc1 -analyzer-checker=core,unix -verify %s
-// RUN: %clang_analyze_cc1 -analyzer-checker=core,unix -analyzer-output=plist-multi-file %s -o %t.plist
+// RUN: %clang_analyze_cc1_range -analyzer-checker=core,unix -verify %s
+// RUN: %clang_analyze_cc1_range -analyzer-checker=core,unix -analyzer-output=plist-multi-file %s -o %t.plist
 // RUN: %normalize_plist <%t.plist | diff -ub %S/Inputs/expected-plists/plist-macros.cpp.plist -
 
 

@@ -1,7 +1,5 @@
-// RUN: %clang_analyze_cc1 \
-// RUN:  -analyzer-checker=debug.ExprInspection \
-// RUN:  -verify %s 2>&1 | FileCheck %s
-
+// RUN: %clang_analyze_cc1_range -analyzer-checker=debug.ExprInspection -verify %s 2>&1 | FileCheck %s
+//
 // Self-tests for the debug.ExprInspection checker.
 
 void clang_analyzer_dump(int x);
