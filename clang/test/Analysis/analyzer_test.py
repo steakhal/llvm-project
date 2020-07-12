@@ -4,9 +4,9 @@ import lit.TestRunner
 # Custom format class for static analyzer tests
 class AnalyzerTest(lit.formats.ShTest):
 
-    def __init__(self, execute_external, use_z3_solver=False):
+    def __init__(self, execute_external, recheck_with_z3_solver=False):
         super(AnalyzerTest, self).__init__(execute_external)
-        self.use_z3_solver = use_z3_solver
+        self.recheck_with_z3_solver = recheck_with_z3_solver
 
     def execute(self, test, litConfig):
         results = []
@@ -15,17 +15,16 @@ class AnalyzerTest(lit.formats.ShTest):
         saved_test = test
         lit.TestRunner.parseIntegratedTestScript(test)
 
-        if 'z3' not in test.requires:
-            results.append(self.executeWithAnalyzeSubstitution(
-                saved_test, litConfig, '-analyzer-constraints=range'))
+        results.append(self.executeWithConstraintManagerSubstitution(
+            saved_test, litConfig, '-analyzer-constraints=range'))
 
-            if results[-1].code == lit.Test.FAIL:
-                return results[-1]
+        if results[-1].code == lit.Test.FAIL:
+            return results[-1]
 
-        # If z3 backend available, add an additional run line for it
-        if self.use_z3_solver == '1':
+        # If we want to rerun the test with the Z3 solver, add an additional run line for it
+        if self.recheck_with_z3_solver == '1':
             assert(test.config.clang_staticanalyzer_z3 == '1')
-            results.append(self.executeWithAnalyzeSubstitution(
+            results.append(self.executeWithConstraintManagerSubstitution(
                 saved_test, litConfig, '-analyzer-constraints=z3 -DANALYZER_CM_Z3'))
 
         # Combine all result outputs into the last element
@@ -38,9 +37,9 @@ class AnalyzerTest(lit.formats.ShTest):
         return lit.Test.Result(lit.Test.UNSUPPORTED,
             "Test requires the following unavailable features: z3")
 
-    def executeWithAnalyzeSubstitution(self, test, litConfig, substitution):
+    def executeWithConstraintManagerSubstitution(self, test, litConfig, substitution):
         saved_substitutions = list(test.config.substitutions)
-        test.config.substitutions.append(('%analyze', substitution))
+        test.config.substitutions.append(('%constraint_manager', substitution))
         result = lit.TestRunner.executeShTest(test, litConfig,
             self.execute_external)
         test.config.substitutions = saved_substitutions

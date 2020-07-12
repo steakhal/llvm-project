@@ -62,7 +62,7 @@ write_lit_config("lit_site_cfg") {
     "LLVM_LIT_TOOLS_DIR=",  # Intentionally empty, matches cmake build.
     "LLVM_USE_SANITIZER=",
     "Python3_EXECUTABLE=$python_path",
-    "USE_Z3_SOLVER=",
+    "RECHECK_WITH_Z3_SOLVER=",
   ]
 
   if (clang_enable_arcmt) {

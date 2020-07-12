@@ -467,7 +467,9 @@ class LLVMConfig(object):
           builtin_include_dir = self.get_clang_builtin_include_dir(self.config.clang)
           tool_substitutions = [
               ToolSubst('%clang', command=self.config.clang, extra_args=additional_flags),
-              ToolSubst('%clang_analyze_cc1', command='%clang_cc1', extra_args=['-analyze', '%analyze', '-setup-static-analyzer']+additional_flags),
+              ToolSubst('%clang_analyze_cc1_range', command='%clang_cc1', extra_args=['-analyze', '-analyzer-constraints=range', '-setup-static-analyzer']+additional_flags),
+              ToolSubst('%clang_analyze_cc1_z3', command='%clang_cc1', extra_args=['-analyze', '-analyzer-constraints=z3', '-setup-static-analyzer']+additional_flags),
+              ToolSubst('%clang_analyze_cc1', command='%clang_cc1', extra_args=['-analyze', '%constraint_manager', '-setup-static-analyzer']+additional_flags),
               ToolSubst('%clang_cc1', command=self.config.clang, extra_args=['-cc1', '-internal-isystem', builtin_include_dir, '-nostdsysteminc']+additional_flags),
               ToolSubst('%clang_cpp', command=self.config.clang, extra_args=['--driver-mode=cpp']+additional_flags),
               ToolSubst('%clang_cl', command=self.config.clang, extra_args=['--driver-mode=cl']+additional_flags),
