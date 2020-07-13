@@ -533,6 +533,24 @@ by calling <a href = "https://clang.llvm.org/doxygen/classclang_1_1ento_1_1Check
     <pre class="code">
     $ <b>bin/llvm-lit -sv ../llvm/tools/clang/test/Analysis</b>
     </pre>
+  Or you can simply use the corresponding ninja target to achieve this:
+    <pre class="code">
+    $ <b>ninja check-clang-analysis</b>
+    </pre>
+
+  Tests that require the Z3 constraint manager won't run since those would require too much time.
+  It will require clang to be built with the Z3 though.
+  You can enable these tests by an explicit llvm-lit parameter:
+    <pre class="code">
+    $ <b>bin/llvm-lit -sv ../llvm/tools/clang/test/Analysis --param RECHECK_WITH_Z3_SOLVER=1</b>
+    </pre>
+
+  The <tt>RECHECK_WITH_Z3_SOLVER</tt> parameter lets the testsuite to use both
+  constraint managers, which are substituted by the <tt>%clang_analyze_cc1</tt>
+  in each <tt>RUN</tt> line.
+  Your test can explicitly require a specific constraint manager using either
+  <tt>%clang_analyze_cc1_range</tt> or <tt>%clang_analyze_cc1_z3</tt> if that won't
+  work with both of them.
 
 <h2 id=commands>Useful Commands/Debugging Hints</h2>
 
