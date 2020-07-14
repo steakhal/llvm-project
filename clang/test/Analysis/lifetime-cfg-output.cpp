@@ -1,5 +1,6 @@
-// RUN: %clang_cc1 -fcxx-exceptions -fexceptions -analyze -analyzer-checker=debug.DumpCFG -analyzer-config cfg-lifetime=true,cfg-temporary-dtors=false,cfg-rich-constructors=false -analyzer-config cfg-implicit-dtors=false %s > %t 2>&1
-// RUN: FileCheck --input-file=%t %s
+// RUN: %clang_analyze_cc1 -fcxx-exceptions -fexceptions -analyzer-checker=debug.DumpCFG \
+// RUN:   -analyzer-config cfg-lifetime=true,cfg-temporary-dtors=false \
+// RUN:   -analyzer-config cfg-rich-constructors=false,cfg-implicit-dtors=false %s 2>&1 | FileCheck %s
 
 extern bool UV;
 class A {

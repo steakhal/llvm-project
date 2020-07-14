@@ -1,5 +1,4 @@
-// RUN: %clang_cc1 -triple=i386-apple-darwin10 -verify %s -analyze \
-// RUN:   -analyzer-checker=debug.ExprInspection
+// RUN: %clang_analyze_cc1 -triple=i386-apple-darwin10 -analyzer-checker=debug.ExprInspection -verify %s
 
 #define NULL 0
 void clang_analyzer_eval(int);

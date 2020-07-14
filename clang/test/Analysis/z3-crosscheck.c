@@ -1,16 +1,14 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,unix.Malloc,debug.ExprInspection -DNO_CROSSCHECK -verify %s
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,unix.Malloc,debug.ExprInspection -analyzer-config crosscheck-with-z3=true -verify %s
+// RUN: %clang_analyze_cc1_range -analyzer-checker=core,unix.Malloc,debug.ExprInspection \
+// RUN:   -verify=false-positive,expected %s
+// RUN: %clang_analyze_cc1_range -analyzer-checker=core,unix.Malloc,debug.ExprInspection \
+// RUN:   -analyzer-config crosscheck-with-z3=true -verify=expected %s
 // REQUIRES: z3
 
 int foo(int x) 
 {
   int *z = 0;
   if ((x & 1) && ((x & 1) ^ 1))
-#ifdef NO_CROSSCHECK
-      return *z; // expected-warning {{Dereference of null pointer (loaded from variable 'z')}}
-#else
-      return *z; // no-warning
-#endif
+    return *z; // false-positive-warning {{Dereference of null pointer (loaded from variable 'z')}}
   return 0;
 }
 

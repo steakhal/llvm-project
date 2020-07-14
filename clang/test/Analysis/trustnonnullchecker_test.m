@@ -1,4 +1,4 @@
-// RUN: %clang_analyze_cc1 -fblocks -analyze -analyzer-checker=core,nullability,apiModeling,debug.ExprInspection -verify %s
+// RUN: %clang_analyze_cc1 -fblocks -analyzer-checker=core,nullability,apiModeling,debug.ExprInspection -verify %s
 
 #include "Inputs/system-header-simulator-for-nullability.h"
 
