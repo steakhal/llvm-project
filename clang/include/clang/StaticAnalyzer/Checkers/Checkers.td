@@ -435,6 +435,12 @@ def CStringModeling : Checker<"CStringModeling">,
   Documentation<NotDocumented>,
   Hidden;
 
+def CStringChecker : Checker<"CStringChecker">,
+  HelpText<"TODO: some good description.">,
+  Dependencies<[CStringModeling]>,
+  Documentation<HasDocumentation>,
+  Hidden;
+
 def CStringNullArg : Checker<"NullArg">,
   HelpText<"Check for null pointers being passed as arguments to C string "
            "functions">,
