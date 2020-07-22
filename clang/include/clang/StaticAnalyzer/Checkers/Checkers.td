@@ -429,16 +429,17 @@ def ReturnUndefChecker : Checker<"UndefReturn">,
 let ParentPackage = CString in {
 
 def CStringModeling : Checker<"CStringModeling">,
-  HelpText<"The base of several CString related checkers. On it's own it emits "
-           "no reports, but adds valuable information to the analysis when "
-           "enabled.">,
+  HelpText<"Responsible for essential modeling of cstring lengths. "
+           "This is required by all cstring related checkers.">,
   Documentation<NotDocumented>,
   Hidden;
 
 def CStringChecker : Checker<"CStringChecker">,
-  HelpText<"TODO: some good description.">,
+  HelpText<"The base of several CString related checkers. On it's own it emits "
+           "no reports, but adds valuable information to the analysis when "
+           "enabled.">,
   Dependencies<[CStringModeling]>,
-  Documentation<HasDocumentation>,
+  Documentation<NotDocumented>,
   Hidden;
 
 def CStringNullArg : Checker<"NullArg">,

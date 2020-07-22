@@ -1,4 +1,4 @@
-//=== TODO. ------*- C++ -*-//
+//=== CStringLength.cpp ------------------------------------------*- C++ -*--=//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// TODO.
+// Also defines the CStringModeling checker which responsible for tracking and
+// maintaining the associated cstring lengths. Such informations are tracked in
+// the CStringLengthMap.
+//
 //
 //===----------------------------------------------------------------------===//
 
@@ -29,6 +32,10 @@ REGISTER_MAP_WITH_PROGRAMSTATE(CStringLengthMap, const MemRegion *, SVal)
 namespace {
 using namespace cstring;
 
+/// Updates the CStringLengthMap.
+/// - Infers the cstring lenght of string literals.
+/// - Removes cstring length associations of dead symbols.
+/// - Handles region invalidation.
 class CStringModeling
     : public Checker<check::PreStmt<DeclStmt>, check::LiveSymbols,
                      check::DeadSymbols, check::RegionChanges> {
@@ -108,7 +115,7 @@ public:
   checkRegionChanges(ProgramStateRef state, const InvalidatedSymbols *,
                      ArrayRef<const MemRegion *> ExplicitRegions,
                      ArrayRef<const MemRegion *> Regions,
-                     const LocationContext *LCtx, const CallEvent *Call) const {
+                     const LocationContext *, const CallEvent *) const {
     CStringLengthMapTy Entries = state->get<CStringLengthMap>();
     if (Entries.isEmpty())
       return state;
@@ -157,6 +164,7 @@ public:
     return state->set<CStringLengthMap>(Entries);
   }
 
+  // TODO: Is it useful?
   void printState(raw_ostream &Out, ProgramStateRef State, const char *NL,
                   const char *Sep) const {
     dumpCStringLengths(State, Out, NL, Sep);
@@ -172,13 +180,14 @@ bool ento::shouldRegisterCStringModeling(const CheckerManager &) {
   return true;
 }
 
-// ###################################### IMPL ###############################
+//===----------------------------------------------------------------------===//
+// Implementation of the public API.
+//===----------------------------------------------------------------------===//
 
 namespace clang {
 namespace ento {
 namespace cstring {
 
-/// TODO describe behavior.
 ProgramStateRef setCStringLength(ProgramStateRef State, const MemRegion *MR,
                                  SVal StrLength) {
   assert(!StrLength.isUndef() && "Attempt to set an undefined string length");
@@ -214,23 +223,16 @@ ProgramStateRef setCStringLength(ProgramStateRef State, const MemRegion *MR,
   }
 
   if (StrLength.isUnknown())
-    return State->remove<CStringLengthMap>(MR);
+    return removeCStringLength(State, MR);
 
   return State->set<CStringLengthMap>(MR, StrLength);
 }
 
-/// TODO.
 ProgramStateRef removeCStringLength(ProgramStateRef State,
                                     const MemRegion *MR) {
   return State->remove<CStringLengthMap>(MR);
 }
 
-// If hypothetical:
-//   only conjure symbol
-// otherwise:
-//   use stored if available
-//   if failed, conjure new
-//   add implicit constraint
 static SVal getCStringLengthForRegion(CheckerContext &Ctx,
                                       ProgramStateRef &State, const Expr *Ex,
                                       const MemRegion *MR, bool Hypothetical) {
@@ -243,26 +245,21 @@ static SVal getCStringLengthForRegion(CheckerContext &Ctx,
   // Otherwise, get a new symbol and update the state.
   SValBuilder &SVB = Ctx.getSValBuilder();
   QualType SizeTy = SVB.getContext().getSizeType();
-  SVal CStrLen =
+  NonLoc CStrLen =
       SVB.getMetadataSymbolVal(CStringModeling::getTag(), MR, Ex, SizeTy,
-                               Ctx.getLocationContext(), Ctx.blockCount());
+                               Ctx.getLocationContext(), Ctx.blockCount())
+          .castAs<NonLoc>();
 
   if (!Hypothetical) {
-    // TODO: why would it be loc? Simplify condition accordingly.
-    Optional<NonLoc> CStrLenNonLoc = CStrLen.getAs<NonLoc>();
-    assert(CStrLenNonLoc.hasValue() && "how could it be loc?");
-    if (CStrLenNonLoc.hasValue()) {
-      // In case of unbounded calls strlen etc bound the range to SIZE_MAX/4
-      BasicValueFactory &BVF = SVB.getBasicValueFactory();
-      const llvm::APSInt &MaxValue = BVF.getMaxValue(SizeTy);
-      llvm::APSInt Four = APSIntType(MaxValue).getValue(4);
-      const llvm::APSInt *MaxLength = BVF.evalAPSInt(BO_Div, MaxValue, Four);
-      NonLoc MaxLengthSVal = SVB.makeIntVal(*MaxLength);
-      SVal evalLength =
-          SVB.evalBinOpNN(State, BO_LE, *CStrLenNonLoc, MaxLengthSVal, SizeTy);
-      State = State->assume(evalLength.castAs<DefinedOrUnknownSVal>(), true);
-    }
-
+    // In case of unbounded calls strlen etc bound the range to SIZE_MAX/4
+    BasicValueFactory &BVF = SVB.getBasicValueFactory();
+    const llvm::APSInt &MaxValue = BVF.getMaxValue(SizeTy);
+    const llvm::APSInt Four = APSIntType(MaxValue).getValue(4);
+    const llvm::APSInt *MaxLength = BVF.evalAPSInt(BO_Div, MaxValue, Four);
+    const NonLoc MaxLengthSVal = SVB.makeIntVal(*MaxLength);
+    SVal Constrained =
+        SVB.evalBinOpNN(State, BO_LE, CStrLen, MaxLengthSVal, SizeTy);
+    State = State->assume(Constrained.castAs<DefinedOrUnknownSVal>(), true);
     State = State->set<CStringLengthMap>(MR, CStrLen);
   }
 
@@ -271,15 +268,16 @@ static SVal getCStringLengthForRegion(CheckerContext &Ctx,
 
 SVal getCStringLength(CheckerContext &Ctx, ProgramStateRef &State,
                       const Expr *Ex, SVal Buf, bool Hypothetical /*=false*/) {
-  const MemRegion *MR = Buf.getAsRegion();
-  if (!MR) {
-    if (Buf.getAs<loc::GotoLabel>())
-      return UndefinedVal();
+  if (Buf.isUnknownOrUndef())
+    return Buf;
 
-    // If it's not a region and not a label, give up.
-    // TODO: do we really need this?
+  if (Buf.getAs<loc::GotoLabel>())
+    return UndefinedVal();
+
+  // If it's not a region, give up.
+  const MemRegion *MR = Buf.getAsRegion();
+  if (!MR)
     return UnknownVal();
-  }
 
   // If we have a region, strip casts from it and see if we can figure out
   // its length. For anything we can't figure out, just return UnknownVal.

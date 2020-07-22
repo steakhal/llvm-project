@@ -1,4 +1,4 @@
-//=== TODO. --------*- C++ -*-//
+//=== CStringLength.h Stores the length of a cstring. ------------*- C++ -*--=//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,19 +6,23 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// TODO.
+// Defines an interface for interacting and manipulating the associated cstring
+// length of a given memory region.
+// You can assign a cstring length to any memory region, representing the first
+// zero terminator in that region.
+// Eg: "abc\00def" -> 4
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_CSTRINGLENGTH_H
 #define LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_CSTRINGLENGTH_H
 
-#include "clang/StaticAnalyzer/Core/BugReporter/BugReporterVisitors.h"
-#include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 
 namespace clang {
 namespace ento {
+class CheckerContext;
+
 namespace cstring {
 
 /// Assigns a cstring length to a memory region.
@@ -27,13 +31,12 @@ LLVM_NODISCARD ProgramStateRef setCStringLength(ProgramStateRef State,
                                                 SVal StrLength);
 
 /// Removes the assigned cstring length from the memory region.
+/// It is useful for invalidation.
 LLVM_NODISCARD ProgramStateRef removeCStringLength(ProgramStateRef State,
                                                    const MemRegion *MR);
 
-/// TODO: do we even need this API? What should it do?
-/// What is the hypothetical parameter? wut
-/// TODO: shouldn't we have a simpler API? eg:
-/// 'getCStringLength(ProgramStateRef, const MemRegion *) -> SVal'?
+// FIXME: Eventually rework the interface of this function.
+//  Especially the magic 'Hypothetical' parameter.
 LLVM_NODISCARD SVal getCStringLength(CheckerContext &Ctx,
                                      ProgramStateRef &State, const Expr *Ex,
                                      SVal Buf, bool Hypothetical = false);
