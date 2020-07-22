@@ -41,6 +41,7 @@
 // CHECK-NEXT: security.insecureAPI.vfork
 // CHECK-NEXT: unix.API
 // CHECK-NEXT: unix.cstring.CStringModeling
+// CHECK-NEXT: unix.cstring.CStringChecker
 // CHECK-NEXT: unix.DynamicMemoryModeling
 // CHECK-NEXT: unix.Malloc
 // CHECK-NEXT: unix.MallocSizeof

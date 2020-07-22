@@ -21,39 +21,27 @@ namespace clang {
 namespace ento {
 namespace cstring {
 
-/// TODO.
+/// Assigns a cstring length to a memory region.
 LLVM_NODISCARD ProgramStateRef setCStringLength(ProgramStateRef State,
                                                 const MemRegion *MR,
                                                 SVal StrLength);
 
-/// TODO.
+/// Removes the assigned cstring length from the memory region.
 LLVM_NODISCARD ProgramStateRef removeCStringLength(ProgramStateRef State,
                                                    const MemRegion *MR);
 
 /// TODO: do we even need this API? What should it do?
 /// What is the hypothetical parameter? wut
-LLVM_NODISCARD SVal getCStringLengthForRegion(CheckerContext &C,
-                                              ProgramStateRef &state,
-                                              const Expr *Ex,
-                                              const MemRegion *MR,
-                                              bool hypothetical);
-
-/// TODO: same comments here.
 /// TODO: shouldn't we have a simpler API? eg:
 /// 'getCStringLength(ProgramStateRef, const MemRegion *) -> SVal'?
-LLVM_NODISCARD SVal getCStringLength(CheckerContext &C, ProgramStateRef &state,
-                                     const Expr *Ex, SVal Buf,
-                                     bool hypothetical = false);
+LLVM_NODISCARD SVal getCStringLength(CheckerContext &Ctx,
+                                     ProgramStateRef &State, const Expr *Ex,
+                                     SVal Buf, bool Hypothetical = false);
 
 LLVM_DUMP_METHOD void dumpCStringLengths(ProgramStateRef State,
                                          raw_ostream &Out = llvm::errs(),
                                          const char *NL = "\n",
                                          const char *Sep = " : ");
-
-/// \deprecated { PLS dont use it, put it somewhere else or dont know. It is
-/// only used by  }
-LLVM_ATTRIBUTE_DEPRECATED(const StringLiteral *getCStringLiteral(SVal val),
-                          "TODO: Use something else?? instead.");
 } // namespace cstring
 } // namespace ento
 } // namespace clang

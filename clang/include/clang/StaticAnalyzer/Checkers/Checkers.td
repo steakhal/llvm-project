@@ -444,13 +444,13 @@ def CStringChecker : Checker<"CStringChecker">,
 def CStringNullArg : Checker<"NullArg">,
   HelpText<"Check for null pointers being passed as arguments to C string "
            "functions">,
-  Dependencies<[CStringModeling]>,
+  Dependencies<[CStringChecker]>,
   Documentation<HasDocumentation>;
 
 def CStringSyntaxChecker : Checker<"BadSizeArg">,
   HelpText<"Check the size argument passed into C string functions for common "
            "erroneous patterns">,
-  Dependencies<[CStringModeling]>,
+  Dependencies<[CStringChecker]>,
   Documentation<HasDocumentation>;
 
 } // end "unix.cstring"
@@ -459,17 +459,17 @@ let ParentPackage = CStringAlpha in {
 
 def CStringOutOfBounds : Checker<"OutOfBounds">,
   HelpText<"Check for out-of-bounds access in string functions">,
-  Dependencies<[CStringModeling]>,
+  Dependencies<[CStringChecker]>,
   Documentation<HasAlphaDocumentation>;
 
 def CStringBufferOverlap : Checker<"BufferOverlap">,
   HelpText<"Checks for overlap in two buffer arguments">,
-  Dependencies<[CStringModeling]>,
+  Dependencies<[CStringChecker]>,
   Documentation<HasAlphaDocumentation>;
 
 def CStringNotNullTerm : Checker<"NotNullTerminated">,
   HelpText<"Check for arguments which are not null-terminating strings">,
-  Dependencies<[CStringModeling]>,
+  Dependencies<[CStringChecker]>,
   Documentation<HasAlphaDocumentation>;
 
 } // end "alpha.unix.cstring"
@@ -493,7 +493,7 @@ def DynamicMemoryModeling: Checker<"DynamicMemoryModeling">,
                   "false",
                   InAlpha>
   ]>,
-  Dependencies<[CStringModeling]>,
+  Dependencies<[CStringChecker]>,
   Documentation<NotDocumented>,
   Hidden;
 

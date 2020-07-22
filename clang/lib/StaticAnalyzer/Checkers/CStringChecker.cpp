@@ -233,6 +233,12 @@ public:
                                 ProgramStateRef state,
                                 const Expr *FirstBuf,
                                 const Expr *Size);
+
+  // FIXME: refactor the rest of the code, and remove this function.
+  // Simply wraps the cstring::getCStringLength function and emits warnings.
+  SVal getCStringLengthChecked(CheckerContext &Ctx, ProgramStateRef &State,
+                               const Expr *Ex, SVal Buf,
+                               bool hypothetical = false) const;
 };
 
 } //end anonymous namespace
@@ -240,6 +246,76 @@ public:
 //===----------------------------------------------------------------------===//
 // Individual checks and utility methods.
 //===----------------------------------------------------------------------===//
+
+static const StringLiteral *getCStringLiteral(SVal val) {
+  // Get the memory region pointed to by the val.
+  const MemRegion *bufRegion = val.getAsRegion();
+  if (!bufRegion)
+    return nullptr;
+
+  // Strip casts off the memory region.
+  bufRegion = bufRegion->StripCasts();
+
+  // Cast the memory region to a string region.
+  const StringRegion *strRegion = dyn_cast<StringRegion>(bufRegion);
+  if (!strRegion)
+    return nullptr;
+
+  // Return the actual string in the string region.
+  return strRegion->getStringLiteral();
+}
+
+SVal CStringChecker::getCStringLengthChecked(CheckerContext &Ctx,
+                                             ProgramStateRef &State,
+                                             const Expr *Ex, SVal Buf,
+                                             bool hypothetical) const {
+  SVal CStrLen = cstring::getCStringLength(Ctx, State, Ex, Buf, hypothetical);
+
+  // Simply return if everything goes well.
+  // Otherwise we shall investigate why did it fail.
+  if (!CStrLen.isUndef())
+    return CStrLen;
+
+  // Handle if the buffer was not referring to a memory region.
+  const MemRegion *MR = Buf.getAsRegion();
+  if (!MR) {
+    // If we can't get a region, see if it's something we /know/ isn't a
+    // C string. In the context of locations, the only time we can issue such
+    // a warning is for labels.
+    if (Optional<loc::GotoLabel> Label = Buf.getAs<loc::GotoLabel>()) {
+      if (Filter.CheckCStringNotNullTerm) {
+        SmallString<120> buf;
+        llvm::raw_svector_ostream os(buf);
+        assert(CurrentFunctionDescription);
+        os << "Argument to " << CurrentFunctionDescription
+           << " is the address of the label '" << Label->getLabel()->getName()
+           << "', which is not a null-terminated string";
+
+        emitNotCStringBug(Ctx, State, Ex, os.str());
+      }
+      return UndefinedVal();
+    }
+  }
+
+  // Other regions (mostly non-data) can't have a reliable C string length.
+  // In this case, an error is emitted and UndefinedVal is returned.
+  // The caller should always be prepared to handle this case.
+  if (Filter.CheckCStringNotNullTerm) {
+    SmallString<120> buf;
+    llvm::raw_svector_ostream os(buf);
+
+    assert(CurrentFunctionDescription);
+    os << "Argument to " << CurrentFunctionDescription << " is ";
+
+    if (SummarizeRegion(os, Ctx.getASTContext(), MR))
+      os << ", which is not a null-terminated string";
+    else
+      os << "not a null-terminated string";
+
+    emitNotCStringBug(Ctx, State, Ex, os.str());
+  }
+  return UndefinedVal();
+}
 
 std::pair<ProgramStateRef , ProgramStateRef >
 CStringChecker::assumeZero(CheckerContext &C, ProgramStateRef state, SVal V,
@@ -1181,7 +1257,7 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C, const CallExpr *CE,
   if (!state)
     return;
 
-  SVal strLength = cstring::getCStringLength(C, state, Arg.Expression, ArgVal);
+  SVal strLength = getCStringLengthChecked(C, state, Arg.Expression, ArgVal);
 
   // If the argument isn't a valid C string, there's no valid state to
   // transition to.
@@ -1349,12 +1425,11 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
 
   // Get the string length of the source.
   SVal strLength =
-      cstring::getCStringLength(C, state, srcExpr.Expression, srcVal);
+      getCStringLengthChecked(C, state, srcExpr.Expression, srcVal);
   Optional<NonLoc> strLengthNL = strLength.getAs<NonLoc>();
 
   // Get the string length of the destination buffer.
-  SVal dstStrLength =
-      cstring::getCStringLength(C, state, Dst.Expression, DstVal);
+  SVal dstStrLength = getCStringLengthChecked(C, state, Dst.Expression, DstVal);
   Optional<NonLoc> dstStrLengthNL = dstStrLength.getAs<NonLoc>();
 
   // If the source isn't a valid C string, give up.
@@ -1578,7 +1653,7 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
     if (finalStrLength.isUnknown()) {
       // Try to get a "hypothetical" string length symbol, which we can later
       // set as a real value if that turns out to be the case.
-      finalStrLength = cstring::getCStringLength(C, state, CE, DstVal, true);
+      finalStrLength = getCStringLengthChecked(C, state, CE, DstVal, true);
       assert(!finalStrLength.isUndef());
 
       if (Optional<NonLoc> finalStrLengthNL = finalStrLength.getAs<NonLoc>()) {
@@ -1749,14 +1824,13 @@ void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallExpr *CE,
     return;
 
   // Get the string length of the first string or give up.
-  SVal LeftLength =
-      cstring::getCStringLength(C, state, Left.Expression, LeftVal);
+  SVal LeftLength = getCStringLengthChecked(C, state, Left.Expression, LeftVal);
   if (LeftLength.isUndef())
     return;
 
   // Get the string length of the second string or give up.
   SVal RightLength =
-      cstring::getCStringLength(C, state, Right.Expression, RightVal);
+      getCStringLengthChecked(C, state, Right.Expression, RightVal);
   if (RightLength.isUndef())
     return;
 
@@ -1791,12 +1865,8 @@ void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallExpr *CE,
   // For now, we only do this if they're both known string literals.
 
   // Attempt to extract string literals from both expressions.
-  // TODO: somehow workaround the use of the getCStringLiteral function.
-  // Generalize the algorithm?
-  //       Determine the relationship between the evalStrcmpCommon and the
-  //       CStringLength.cpp:CStringModeling class.
-  const StringLiteral *LeftStrLiteral = cstring::getCStringLiteral(LeftVal);
-  const StringLiteral *RightStrLiteral = cstring::getCStringLiteral(RightVal);
+  const StringLiteral *LeftStrLiteral = getCStringLiteral(LeftVal);
+  const StringLiteral *RightStrLiteral = getCStringLiteral(RightVal);
   bool canComputeResult = false;
   SVal resultVal = svalBuilder.conjureSymbolVal(nullptr, CE, LCtx,
       C.blockCount());

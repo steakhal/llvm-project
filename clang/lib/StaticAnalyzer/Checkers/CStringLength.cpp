@@ -21,218 +21,23 @@
 using namespace clang;
 using namespace ento;
 
-// TODO describe map.
+/// Stores the size of the zero terminated string in the memory region.
+/// In other words, the inclusive range between the begin of the region and the
+/// zero terminator.
 REGISTER_MAP_WITH_PROGRAMSTATE(CStringLengthMap, const MemRegion *, SVal)
-
-namespace clang {
-namespace ento {
-namespace cstring {
-
-/// TODO describe behavior.
-ProgramStateRef setCStringLength(ProgramStateRef State, const MemRegion *MR,
-                                 SVal StrLength) {
-  assert(!StrLength.isUndef() && "Attempt to set an undefined string length");
-
-  MR = MR->StripCasts();
-
-  switch (MR->getKind()) {
-  case MemRegion::StringRegionKind:
-    // FIXME: This can happen if we strcpy() into a string region. This is
-    // undefined [C99 6.4.5p6], but we should still warn about it.
-    return State;
-
-  case MemRegion::SymbolicRegionKind:
-  case MemRegion::AllocaRegionKind:
-  case MemRegion::NonParamVarRegionKind:
-  case MemRegion::ParamVarRegionKind:
-  case MemRegion::FieldRegionKind:
-  case MemRegion::ObjCIvarRegionKind:
-    // These are the types we can currently track string lengths for.
-    break;
-
-  case MemRegion::ElementRegionKind:
-    // FIXME: Handle element regions by upper-bounding the parent region's
-    // string length.
-    return State;
-
-  default:
-    // Other regions (mostly non-data) can't have a reliable C string length.
-    // For now, just ignore the change.
-    // FIXME: These are rare but not impossible. We should output some kind of
-    // warning for things like strcpy((char[]){'a', 0}, "b");
-    return State;
-  }
-
-  if (StrLength.isUnknown())
-    return State->remove<CStringLengthMap>(MR);
-
-  return State->set<CStringLengthMap>(MR, StrLength);
-}
-
-/// TODO.
-ProgramStateRef removeCStringLength(ProgramStateRef State,
-                                    const MemRegion *MR) {
-  return State->remove<CStringLengthMap>(MR);
-}
-
-// TODO: understand this and migrate if useful as-is. Modify if necessary.
-SVal getCStringLengthForRegion(CheckerContext &C, ProgramStateRef &state,
-                               const Expr *Ex, const MemRegion *MR,
-                               bool hypothetical) {
-  if (!hypothetical) {
-    // If there's a recorded length, go ahead and return it.
-    const SVal *Recorded = state->get<CStringLengthMap>(MR);
-    if (Recorded)
-      return *Recorded;
-  }
-
-  // Otherwise, get a new symbol and update the state.
-  SValBuilder &svalBuilder = C.getSValBuilder();
-  QualType sizeTy = svalBuilder.getContext().getSizeType();
-  SVal strLength =
-      svalBuilder.getMetadataSymbolVal(CStringChecker::getTag(), MR, Ex, sizeTy,
-                                       C.getLocationContext(), C.blockCount());
-
-  if (!hypothetical) {
-    if (Optional<NonLoc> strLn = strLength.getAs<NonLoc>()) {
-      // In case of unbounded calls strlen etc bound the range to SIZE_MAX/4
-      BasicValueFactory &BVF = svalBuilder.getBasicValueFactory();
-      const llvm::APSInt &maxValInt = BVF.getMaxValue(sizeTy);
-      llvm::APSInt fourInt = APSIntType(maxValInt).getValue(4);
-      const llvm::APSInt *maxLengthInt =
-          BVF.evalAPSInt(BO_Div, maxValInt, fourInt);
-      NonLoc maxLength = svalBuilder.makeIntVal(*maxLengthInt);
-      SVal evalLength =
-          svalBuilder.evalBinOpNN(state, BO_LE, *strLn, maxLength, sizeTy);
-      state = state->assume(evalLength.castAs<DefinedOrUnknownSVal>(), true);
-    }
-    state = state->set<CStringLengthMap>(MR, strLength);
-  }
-
-  return strLength;
-}
-
-// TODO: factor reporting out from this.
-SVal getCStringLength(CheckerContext &C, ProgramStateRef &state, const Expr *Ex,
-                      SVal Buf, bool hypothetical /*=false*/) {
-  const MemRegion *MR = Buf.getAsRegion();
-  if (!MR) {
-    // If we can't get a region, see if it's something we /know/ isn't a
-    // C string. In the context of locations, the only time we can issue such
-    // a warning is for labels.
-    if (Optional<loc::GotoLabel> Label = Buf.getAs<loc::GotoLabel>()) {
-      if (Filter.CheckCStringNotNullTerm) {
-        SmallString<120> buf;
-        llvm::raw_svector_ostream os(buf);
-        assert(CurrentFunctionDescription);
-        os << "Argument to " << CurrentFunctionDescription
-           << " is the address of the label '" << Label->getLabel()->getName()
-           << "', which is not a null-terminated string";
-
-        emitNotCStringBug(C, state, Ex, os.str());
-      }
-      return UndefinedVal();
-    }
-
-    // If it's not a region and not a label, give up.
-    return UnknownVal();
-  }
-
-  // If we have a region, strip casts from it and see if we can figure out
-  // its length. For anything we can't figure out, just return UnknownVal.
-  MR = MR->StripCasts();
-
-  switch (MR->getKind()) {
-  case MemRegion::StringRegionKind: {
-    // Modifying the contents of string regions is undefined [C99 6.4.5p6],
-    // so we can assume that the byte length is the correct C string length.
-    SValBuilder &svalBuilder = C.getSValBuilder();
-    QualType sizeTy = svalBuilder.getContext().getSizeType();
-    const StringLiteral *strLit = cast<StringRegion>(MR)->getStringLiteral();
-    return svalBuilder.makeIntVal(strLit->getByteLength(), sizeTy);
-  }
-  case MemRegion::SymbolicRegionKind:
-  case MemRegion::AllocaRegionKind:
-  case MemRegion::NonParamVarRegionKind:
-  case MemRegion::ParamVarRegionKind:
-  case MemRegion::FieldRegionKind:
-  case MemRegion::ObjCIvarRegionKind:
-    return getCStringLengthForRegion(C, state, Ex, MR, hypothetical);
-  case MemRegion::CompoundLiteralRegionKind:
-    // FIXME: Can we track this? Is it necessary?
-    return UnknownVal();
-  case MemRegion::ElementRegionKind:
-    // FIXME: How can we handle this? It's not good enough to subtract the
-    // offset from the base string length; consider "123\x00567" and &a[5].
-    return UnknownVal();
-  default:
-    // Other regions (mostly non-data) can't have a reliable C string length.
-    // In this case, an error is emitted and UndefinedVal is returned.
-    // The caller should always be prepared to handle this case.
-    if (Filter.CheckCStringNotNullTerm) {
-      SmallString<120> buf;
-      llvm::raw_svector_ostream os(buf);
-
-      assert(CurrentFunctionDescription);
-      os << "Argument to " << CurrentFunctionDescription << " is ";
-
-      if (SummarizeRegion(os, C.getASTContext(), MR))
-        os << ", which is not a null-terminated string";
-      else
-        os << "not a null-terminated string";
-
-      emitNotCStringBug(C, state, Ex, os.str());
-    }
-    return UndefinedVal();
-  }
-}
-
-// TODO.
-void dumpCStringLengths(ProgramStateRef State, raw_ostream &Out, const char *NL,
-                        const char *Sep) {
-  const CStringLengthMapTy Items = State->get<CStringLengthMap>();
-  if (!Items.isEmpty())
-    Out << "CString lengths:" << NL;
-  for (const auto &Item : Items) {
-    Item.first->dumpToStream(Out);
-    Out << Sep;
-    Item.second.dumpToStream(Out);
-    Out << NL;
-  }
-}
-
-/// TODO: It should not be here!
-const StringLiteral *getCStringLiteral(SVal val) {
-  // Get the memory region pointed to by the val.
-  const MemRegion *bufRegion = val.getAsRegion();
-  if (!bufRegion)
-    return nullptr;
-
-  // Strip casts off the memory region.
-  bufRegion = bufRegion->StripCasts();
-
-  // Cast the memory region to a string region.
-  const StringRegion *strRegion = dyn_cast<StringRegion>(bufRegion);
-  if (!strRegion)
-    return nullptr;
-
-  // Return the actual string in the string region.
-  return strRegion->getStringLiteral();
-}
-
-} // namespace cstring
-} // namespace ento
-} // namespace clang
-
-/// #####################  IMPL  ######################################
 
 namespace {
 using namespace cstring;
 
-class CStringModelingV2
+class CStringModeling
     : public Checker<check::PreStmt<DeclStmt>, check::LiveSymbols,
                      check::DeadSymbols, check::RegionChanges> {
 public:
+  static void *getTag() {
+    static int Tag;
+    return &Tag;
+  }
+
   void checkPreStmt(const DeclStmt *DS, CheckerContext &C) const {
     // Record string length for char a[] = "abc";
     ProgramStateRef state = C.getState();
@@ -268,28 +73,24 @@ public:
     C.addTransition(state);
   }
 
-  void checkLiveSymbols(ProgramStateRef state, SymbolReaper &SR) const {
+  void checkLiveSymbols(ProgramStateRef State, SymbolReaper &SR) const {
     // Mark all symbols in our string length map as valid.
-    CStringLengthMapTy Entries = state->get<CStringLengthMap>();
-
-    for (CStringLengthMapTy::iterator I = Entries.begin(), E = Entries.end();
-         I != E; ++I) {
-      SVal Len = I.getData();
-
-      for (SymExpr::symbol_iterator si = Len.symbol_begin(),
-                                    se = Len.symbol_end();
-           si != se; ++si)
-        SR.markInUse(*si);
+    for (const auto &Item : State->get<CStringLengthMap>()) {
+      SVal Len = Item.second;
+      const auto LenSymbolRange =
+          llvm::make_range(Len.symbol_begin(), Len.symbol_end());
+      for (SymbolRef Symbol : LenSymbolRange)
+        SR.markInUse(Symbol);
     }
   }
 
   void checkDeadSymbols(SymbolReaper &SR, CheckerContext &C) const {
-    ProgramStateRef state = C.getState();
-    CStringLengthMapTy Entries = state->get<CStringLengthMap>();
+    ProgramStateRef State = C.getState();
+    CStringLengthMapTy Entries = State->get<CStringLengthMap>();
     if (Entries.isEmpty())
       return;
 
-    CStringLengthMapTy::Factory &F = state->get_context<CStringLengthMap>();
+    CStringLengthMapTy::Factory &F = State->get_context<CStringLengthMap>();
     for (CStringLengthMapTy::iterator I = Entries.begin(), E = Entries.end();
          I != E; ++I) {
       SVal Len = I.getData();
@@ -299,8 +100,8 @@ public:
       }
     }
 
-    state = state->set<CStringLengthMap>(Entries);
-    C.addTransition(state);
+    State = State->set<CStringLengthMap>(Entries);
+    C.addTransition(State);
   }
 
   ProgramStateRef
@@ -360,13 +161,173 @@ public:
                   const char *Sep) const {
     dumpCStringLengths(State, Out, NL, Sep);
   }
-}; // class CStringModelingV2
+}; // class CStringModeling
 } // namespace
 
 void ento::registerCStringModeling(CheckerManager &Mgr) {
-  Mgr.registerChecker<CStringModelingV2>();
+  Mgr.registerChecker<CStringModeling>();
 }
 
 bool ento::shouldRegisterCStringModeling(const CheckerManager &) {
   return true;
 }
+
+// ###################################### IMPL ###############################
+
+namespace clang {
+namespace ento {
+namespace cstring {
+
+/// TODO describe behavior.
+ProgramStateRef setCStringLength(ProgramStateRef State, const MemRegion *MR,
+                                 SVal StrLength) {
+  assert(!StrLength.isUndef() && "Attempt to set an undefined string length");
+
+  MR = MR->StripCasts();
+
+  switch (MR->getKind()) {
+  case MemRegion::StringRegionKind:
+    // FIXME: This can happen if we strcpy() into a string region. This is
+    // undefined [C99 6.4.5p6], but we should still warn about it.
+    return State;
+
+  case MemRegion::SymbolicRegionKind:
+  case MemRegion::AllocaRegionKind:
+  case MemRegion::NonParamVarRegionKind:
+  case MemRegion::ParamVarRegionKind:
+  case MemRegion::FieldRegionKind:
+  case MemRegion::ObjCIvarRegionKind:
+    // These are the types we can currently track string lengths for.
+    break;
+
+  case MemRegion::ElementRegionKind:
+    // FIXME: Handle element regions by upper-bounding the parent region's
+    // string length.
+    return State;
+
+  default:
+    // Other regions (mostly non-data) can't have a reliable C string length.
+    // For now, just ignore the change.
+    // FIXME: These are rare but not impossible. We should output some kind of
+    // warning for things like strcpy((char[]){'a', 0}, "b");
+    return State;
+  }
+
+  if (StrLength.isUnknown())
+    return State->remove<CStringLengthMap>(MR);
+
+  return State->set<CStringLengthMap>(MR, StrLength);
+}
+
+/// TODO.
+ProgramStateRef removeCStringLength(ProgramStateRef State,
+                                    const MemRegion *MR) {
+  return State->remove<CStringLengthMap>(MR);
+}
+
+// If hypothetical:
+//   only conjure symbol
+// otherwise:
+//   use stored if available
+//   if failed, conjure new
+//   add implicit constraint
+static SVal getCStringLengthForRegion(CheckerContext &Ctx,
+                                      ProgramStateRef &State, const Expr *Ex,
+                                      const MemRegion *MR, bool Hypothetical) {
+  if (!Hypothetical) {
+    // If there's a recorded length, go ahead and return it.
+    if (const SVal *Recorded = State->get<CStringLengthMap>(MR))
+      return *Recorded;
+  }
+
+  // Otherwise, get a new symbol and update the state.
+  SValBuilder &SVB = Ctx.getSValBuilder();
+  QualType SizeTy = SVB.getContext().getSizeType();
+  SVal CStrLen =
+      SVB.getMetadataSymbolVal(CStringModeling::getTag(), MR, Ex, SizeTy,
+                               Ctx.getLocationContext(), Ctx.blockCount());
+
+  if (!Hypothetical) {
+    // TODO: why would it be loc? Simplify condition accordingly.
+    Optional<NonLoc> CStrLenNonLoc = CStrLen.getAs<NonLoc>();
+    assert(CStrLenNonLoc.hasValue() && "how could it be loc?");
+    if (CStrLenNonLoc.hasValue()) {
+      // In case of unbounded calls strlen etc bound the range to SIZE_MAX/4
+      BasicValueFactory &BVF = SVB.getBasicValueFactory();
+      const llvm::APSInt &MaxValue = BVF.getMaxValue(SizeTy);
+      llvm::APSInt Four = APSIntType(MaxValue).getValue(4);
+      const llvm::APSInt *MaxLength = BVF.evalAPSInt(BO_Div, MaxValue, Four);
+      NonLoc MaxLengthSVal = SVB.makeIntVal(*MaxLength);
+      SVal evalLength =
+          SVB.evalBinOpNN(State, BO_LE, *CStrLenNonLoc, MaxLengthSVal, SizeTy);
+      State = State->assume(evalLength.castAs<DefinedOrUnknownSVal>(), true);
+    }
+
+    State = State->set<CStringLengthMap>(MR, CStrLen);
+  }
+
+  return CStrLen;
+}
+
+SVal getCStringLength(CheckerContext &Ctx, ProgramStateRef &State,
+                      const Expr *Ex, SVal Buf, bool Hypothetical /*=false*/) {
+  const MemRegion *MR = Buf.getAsRegion();
+  if (!MR) {
+    if (Buf.getAs<loc::GotoLabel>())
+      return UndefinedVal();
+
+    // If it's not a region and not a label, give up.
+    // TODO: do we really need this?
+    return UnknownVal();
+  }
+
+  // If we have a region, strip casts from it and see if we can figure out
+  // its length. For anything we can't figure out, just return UnknownVal.
+  MR = MR->StripCasts();
+
+  switch (MR->getKind()) {
+  case MemRegion::StringRegionKind: {
+    // Modifying the contents of string regions is undefined [C99 6.4.5p6],
+    // so we can assume that the byte length is the correct C string length.
+    SValBuilder &SVB = Ctx.getSValBuilder();
+    QualType SizeTy = SVB.getContext().getSizeType();
+    const StringLiteral *StrLiteral =
+        cast<StringRegion>(MR)->getStringLiteral();
+    return SVB.makeIntVal(StrLiteral->getByteLength(), SizeTy);
+  }
+  case MemRegion::SymbolicRegionKind:
+  case MemRegion::AllocaRegionKind:
+  case MemRegion::NonParamVarRegionKind:
+  case MemRegion::ParamVarRegionKind:
+  case MemRegion::FieldRegionKind:
+  case MemRegion::ObjCIvarRegionKind:
+    return getCStringLengthForRegion(Ctx, State, Ex, MR, Hypothetical);
+  case MemRegion::CompoundLiteralRegionKind:
+    // FIXME: Can we track this? Is it necessary?
+    return UnknownVal();
+  case MemRegion::ElementRegionKind:
+    // FIXME: How can we handle this? It's not good enough to subtract the
+    // offset from the base string length; consider "123\x00567" and &a[5].
+    return UnknownVal();
+  default:
+    // Other regions (mostly non-data) can't have a reliable C string length.
+    return UndefinedVal();
+  }
+}
+
+void dumpCStringLengths(ProgramStateRef State, raw_ostream &Out, const char *NL,
+                        const char *Sep) {
+  const CStringLengthMapTy Items = State->get<CStringLengthMap>();
+  if (!Items.isEmpty())
+    Out << "CString lengths:" << NL;
+  for (const auto &Item : Items) {
+    Item.first->dumpToStream(Out);
+    Out << Sep;
+    Item.second.dumpToStream(Out);
+    Out << NL;
+  }
+}
+
+} // namespace cstring
+} // namespace ento
+} // namespace clang
