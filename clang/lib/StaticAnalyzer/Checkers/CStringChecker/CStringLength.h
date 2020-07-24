@@ -1,4 +1,4 @@
-//=== CStringLength.h Stores the length of a cstring. ------------*- C++ -*--=//
+//=== CStringLength.h Query and store the length of a cstring. ---*- C++ -*--=//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,9 +8,9 @@
 //
 // Defines an interface for interacting and manipulating the associated cstring
 // length of a given memory region.
-// You can assign a cstring length to any memory region, representing the first
-// zero terminator in that region.
-// Eg: "abc\00def" -> 4
+// You can assign a cstring length to any memory region.
+// The represented value is what strlen would return on the given memory region.
+// Eg: 3 for both "ABC" and "abc\00def".
 //
 //===----------------------------------------------------------------------===//
 
@@ -18,6 +18,7 @@
 #define LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_CSTRINGLENGTH_H
 
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 
 namespace clang {
 namespace ento {

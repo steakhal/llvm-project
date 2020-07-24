@@ -429,29 +429,22 @@ def ReturnUndefChecker : Checker<"UndefReturn">,
 let ParentPackage = CString in {
 
 def CStringModeling : Checker<"CStringModeling">,
-  HelpText<"Responsible for essential modeling of cstring lengths. "
-           "This is required by all cstring related checkers.">,
-  Documentation<NotDocumented>,
-  Hidden;
-
-def CStringChecker : Checker<"CStringChecker">,
   HelpText<"The base of several CString related checkers. On it's own it emits "
            "no reports, but adds valuable information to the analysis when "
            "enabled.">,
-  Dependencies<[CStringModeling]>,
   Documentation<NotDocumented>,
   Hidden;
 
 def CStringNullArg : Checker<"NullArg">,
   HelpText<"Check for null pointers being passed as arguments to C string "
            "functions">,
-  Dependencies<[CStringChecker]>,
+  Dependencies<[CStringModeling]>,
   Documentation<HasDocumentation>;
 
 def CStringSyntaxChecker : Checker<"BadSizeArg">,
   HelpText<"Check the size argument passed into C string functions for common "
            "erroneous patterns">,
-  Dependencies<[CStringChecker]>,
+  Dependencies<[CStringModeling]>,
   Documentation<HasDocumentation>;
 
 } // end "unix.cstring"
@@ -460,17 +453,17 @@ let ParentPackage = CStringAlpha in {
 
 def CStringOutOfBounds : Checker<"OutOfBounds">,
   HelpText<"Check for out-of-bounds access in string functions">,
-  Dependencies<[CStringChecker]>,
+  Dependencies<[CStringModeling]>,
   Documentation<HasAlphaDocumentation>;
 
 def CStringBufferOverlap : Checker<"BufferOverlap">,
   HelpText<"Checks for overlap in two buffer arguments">,
-  Dependencies<[CStringChecker]>,
+  Dependencies<[CStringModeling]>,
   Documentation<HasAlphaDocumentation>;
 
 def CStringNotNullTerm : Checker<"NotNullTerminated">,
   HelpText<"Check for arguments which are not null-terminating strings">,
-  Dependencies<[CStringChecker]>,
+  Dependencies<[CStringModeling]>,
   Documentation<HasAlphaDocumentation>;
 
 } // end "alpha.unix.cstring"
@@ -494,7 +487,7 @@ def DynamicMemoryModeling: Checker<"DynamicMemoryModeling">,
                   "false",
                   InAlpha>
   ]>,
-  Dependencies<[CStringChecker]>,
+  Dependencies<[CStringModeling]>,
   Documentation<NotDocumented>,
   Hidden;
 

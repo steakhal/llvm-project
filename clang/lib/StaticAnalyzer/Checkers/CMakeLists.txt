@@ -12,8 +12,8 @@ add_clang_library(clangStaticAnalyzerCheckers
   BlockInCriticalSectionChecker.cpp
   BoolAssignmentChecker.cpp
   BuiltinFunctionChecker.cpp
-  CStringChecker.cpp
-  CStringLength.cpp
+  CStringChecker/CStringChecker.cpp
+  CStringChecker/CStringLengthModeling.cpp
   CStringSyntaxChecker.cpp
   CallAndMessageChecker.cpp
   CastSizeChecker.cpp
@@ -141,4 +141,8 @@ add_clang_library(clangStaticAnalyzerCheckers
 
   DEPENDS
   omp_gen
+  )
+
+target_include_directories(clangStaticAnalyzerCheckers PRIVATE
+  CStringChecker
   )
