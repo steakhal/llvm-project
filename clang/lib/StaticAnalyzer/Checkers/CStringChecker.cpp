@@ -812,10 +812,18 @@ SVal CStringChecker::getCStringLength(CheckerContext &C, ProgramStateRef &state,
   case MemRegion::StringRegionKind: {
     // Modifying the contents of string regions is undefined [C99 6.4.5p6],
     // so we can assume that the byte length is the correct C string length.
-    SValBuilder &svalBuilder = C.getSValBuilder();
-    QualType sizeTy = svalBuilder.getContext().getSizeType();
-    const StringLiteral *strLit = cast<StringRegion>(MR)->getStringLiteral();
-    return svalBuilder.makeIntVal(strLit->getByteLength(), sizeTy);
+    const auto CalculateStringLength =
+        [](const StringLiteral *Str) -> unsigned {
+      for (unsigned i = 0; i < Str->getLength(); ++i)
+        if (Str->getCodeUnit(i) == '\0')
+          return i;
+      return Str->getByteLength();
+    };
+
+    SValBuilder &SVB = C.getSValBuilder();
+    QualType SizeTy = SVB.getContext().getSizeType();
+    const StringLiteral *StrLit = cast<StringRegion>(MR)->getStringLiteral();
+    return SVB.makeIntVal(CalculateStringLength(StrLit), SizeTy);
   }
   case MemRegion::SymbolicRegionKind:
   case MemRegion::AllocaRegionKind:
