@@ -1017,40 +1017,79 @@ SVal SimpleSValBuilder::evalBinOpLL(ProgramStateRef state,
       }
     }
 
-    // Handle special cases for when both regions are element regions.
-    const ElementRegion *RightER = dyn_cast<ElementRegion>(RightMR);
-    const ElementRegion *LeftER = dyn_cast<ElementRegion>(LeftMR);
-    if (RightER && LeftER) {
-      // Next, see if the two ERs have the same super-region and matching types.
-      // FIXME: This should do something useful even if the types don't match,
-      // though if both indexes are constant the RegionRawOffset path will
-      // give the correct answer.
-      if (LeftER->getSuperRegion() == RightER->getSuperRegion() &&
-          LeftER->getElementType() == RightER->getElementType()) {
-        // Get the left index and cast it to the correct type.
-        // If the index is unknown or undefined, bail out here.
-        SVal LeftIndexVal = LeftER->getIndex();
-        Optional<NonLoc> LeftIndex = LeftIndexVal.getAs<NonLoc>();
-        if (!LeftIndex)
-          return UnknownVal();
-        LeftIndexVal = evalCastFromNonLoc(*LeftIndex, ArrayIndexTy);
-        LeftIndex = LeftIndexVal.getAs<NonLoc>();
-        if (!LeftIndex)
+    // Handle: \forall MemRegion X, \forall NonLoc n, m:
+    //  - Element{X,n} OP Element{X,m}
+    //  - Element{X,n} OP X
+    //  -            X OP Element{X,n}
+    // We don't handle here nested ElementRegions like in the this expression:
+    // Element{Element{x,3,int [10]},5,int}  ==  Element{x,35,int}
+    {
+      // Calculates the byte offset within the memory region to the referred
+      // element. E.g if the Element Region refers to an array of `T buf[n]`.
+      // The result would be the offset in bytes to the item:
+      //   Element{buf,2} --> 2 * sizeof(T)
+      const auto ByteOffsetOfElement =
+          [this, state](const ElementRegion *ElemReg) -> NonLoc {
+        NonLoc Index = evalCastFromNonLoc(ElemReg->getIndex(), ArrayIndexTy)
+                           .castAs<NonLoc>();
+        CharUnits SingleElementSize =
+            ElemReg->getContext().getTypeSizeInChars(ElemReg->getElementType());
+        return evalBinOpNN(state, BO_Mul, Index,
+                           makeArrayIndex(SingleElementSize.getQuantity()),
+                           ArrayIndexTy)
+            .castAs<NonLoc>();
+      };
+
+      // If both has the same memory region, and the index has a concrete value,
+      // we can evaluate equality operators.
+      const auto EvaluateEqualityOperators =
+          [this, state, op, resultTy](NonLoc Index,
+                                      bool HasSameMemRegions) -> SVal {
+        assert(BinaryOperator::isEqualityOp(op));
+        const llvm::APSInt *Int = getKnownValue(state, Index);
+        if (!Int)
           return UnknownVal();
 
-        // Do the same for the right index.
-        SVal RightIndexVal = RightER->getIndex();
-        Optional<NonLoc> RightIndex = RightIndexVal.getAs<NonLoc>();
-        if (!RightIndex)
-          return UnknownVal();
-        RightIndexVal = evalCastFromNonLoc(*RightIndex, ArrayIndexTy);
-        RightIndex = RightIndexVal.getAs<NonLoc>();
-        if (!RightIndex)
-          return UnknownVal();
+        const bool EQResult = HasSameMemRegions && *Int == 0;
+        return makeTruthVal(op == BO_EQ ? EQResult : !EQResult, resultTy);
+      };
 
-        // Actually perform the operation.
-        // evalBinOpNN expects the two indexes to already be the right type.
-        return evalBinOpNN(state, op, *LeftIndex, *RightIndex, resultTy);
+      const ElementRegion *RightER = dyn_cast<ElementRegion>(RightMR);
+      const ElementRegion *LeftER = dyn_cast<ElementRegion>(LeftMR);
+      if (RightER && LeftER) {
+        // Next, see if the two ERs have the same super-region and matching
+        // types.
+        // FIXME: This should do something useful even if the types don't match,
+        // though if both indexes are constant the RegionRawOffset path will
+        // give the correct answer.
+        if (LeftER->getSuperRegion() == RightER->getSuperRegion() &&
+            LeftER->getElementType() == RightER->getElementType()) {
+          return evalBinOpNN(state, op, ByteOffsetOfElement(LeftER),
+                             ByteOffsetOfElement(RightER), resultTy);
+        }
+      } else if (LeftER && !RightER) {
+        NonLoc LeftIndex = ByteOffsetOfElement(LeftER);
+        const bool HasSameMemRegions = LeftER->getSuperRegion() == RightMR;
+
+        if (BinaryOperator::isEqualityOp(op))
+          return EvaluateEqualityOperators(LeftIndex, HasSameMemRegions);
+
+        if (op == BO_Sub && HasSameMemRegions)
+          return LeftIndex;
+        return UnknownVal();
+      } else if (!LeftER && RightER) {
+        NonLoc RightIndex = ByteOffsetOfElement(RightER);
+        const bool HasSameMemRegions = LeftMR == RightER->getSuperRegion();
+
+        if (BinaryOperator::isEqualityOp(op))
+          return EvaluateEqualityOperators(RightIndex, HasSameMemRegions);
+
+        // FIXME: Consider refactoring evalMinus function to accept the State
+        // as well, and use it here.
+        if (op == BO_Sub && HasSameMemRegions)
+          return evalBinOpNN(state, BO_Sub, makeZeroArrayIndex(), RightIndex,
+                             ArrayIndexTy);
+        return UnknownVal();
       }
     }
 
