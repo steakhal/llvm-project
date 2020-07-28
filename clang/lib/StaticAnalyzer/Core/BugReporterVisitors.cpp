@@ -2825,10 +2825,16 @@ void FalsePositiveRefutationBRVisitor::finalizeVisitor(
   llvm::SMTSolverRef RefutationSolver = llvm::CreateZ3Solver();
   ASTContext &Ctx = BRC.getASTContext();
 
+  llvm::errs() << "Constraints:\n";
   // Add constraints to the solver
   for (const auto &I : Constraints) {
     const SymbolRef Sym = I.first;
     auto RangeIt = I.second.begin();
+    llvm::errs() << "> ";
+    I.first->dump();
+    llvm::errs() << " --> ";
+    I.second.print(llvm::errs());
+    llvm::errs() << "\n";
 
     llvm::SMTExprRef SMTConstraints = SMTConv::getRangeExpr(
         RefutationSolver, Ctx, Sym, RangeIt->From(), RangeIt->To(),
@@ -2842,6 +2848,9 @@ void FalsePositiveRefutationBRVisitor::finalizeVisitor(
 
     RefutationSolver->addConstraint(SMTConstraints);
   }
+
+  llvm::errs() << "RefutationSolver->dump():\n";
+  RefutationSolver->dump();
 
   // And check for satisfiability
   Optional<bool> IsSAT = RefutationSolver->check();
