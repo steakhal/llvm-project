@@ -37,10 +37,9 @@ LLVM_NODISCARD ProgramStateRef removeCStringLength(ProgramStateRef State,
                                                    const MemRegion *MR);
 
 // FIXME: Eventually rework the interface of this function.
-//  Especially the magic 'Hypothetical' parameter.
 LLVM_NODISCARD SVal getCStringLength(CheckerContext &Ctx,
                                      ProgramStateRef &State, const Expr *Ex,
-                                     SVal Buf, bool Hypothetical = false);
+                                     SVal Buf);
 
 // TODO: Don't use.
 LLVM_NODISCARD NonLoc createCStringLength(ProgramStateRef &State,

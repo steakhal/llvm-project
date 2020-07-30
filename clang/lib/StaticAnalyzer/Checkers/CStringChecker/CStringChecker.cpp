@@ -72,9 +72,8 @@ static const StringLiteral *getCStringLiteral(SVal val) {
 
 SVal CStringChecker::getCStringLengthChecked(CheckerContext &Ctx,
                                              ProgramStateRef &State,
-                                             const Expr *Ex, SVal Buf,
-                                             bool hypothetical) const {
-  SVal CStrLen = cstring::getCStringLength(Ctx, State, Ex, Buf, hypothetical);
+                                             const Expr *Ex, SVal Buf) const {
+  SVal CStrLen = cstring::getCStringLength(Ctx, State, Ex, Buf);
 
   // Simply return if everything goes well.
   // Otherwise we shall investigate why did it fail.

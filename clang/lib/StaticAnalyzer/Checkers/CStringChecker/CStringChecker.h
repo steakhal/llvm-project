@@ -168,8 +168,7 @@ private:
 
   /// Simply wraps the cstring::getCStringLength function to emit warnings.
   SVal getCStringLengthChecked(CheckerContext &Ctx, ProgramStateRef &State,
-                               const Expr *Ex, SVal Buf,
-                               bool hypothetical = false) const;
+                               const Expr *Ex, SVal Buf) const;
 
   std::pair<ProgramStateRef, ProgramStateRef> static assumeZero(
       CheckerContext &C, ProgramStateRef state, SVal V, QualType Ty);
