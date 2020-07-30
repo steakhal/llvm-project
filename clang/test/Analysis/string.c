@@ -1211,6 +1211,32 @@ int strncasecmp_null_argument(char *a, size_t n) {
 }
 
 //===----------------------------------------------------------------------===
+// strchr()
+//===----------------------------------------------------------------------===
+char *strchr(const char *str, int ch);
+
+void strchr_null_haystack() {
+  strchr(NULL, 'z'); // expected-warning{{Null pointer passed as 1st argument to strchr()}}
+}
+
+void strchr_on_unknown(char *unknown) {
+  char *result = strchr(unknown, 'z');                   // no-warning
+  clang_analyzer_eval(strlen(result) < strlen(unknown)); // expected-warning{{TRUE}}
+}
+
+void strchr_on_empty_with_z() {
+  char *result = strchr("", 'z');   // no-warning
+  clang_analyzer_eval(result == 0); // expected-warning{{TRUE}}
+}
+
+void strchr_on_empty_with_zero_terminator() {
+  char *original = "";
+  char *result = strchr(original, '\0');                   // no-warning
+  clang_analyzer_eval(result == original);                 // expected-warning{{TRUE}}
+  clang_analyzer_eval(strlen(result) == strlen(original)); // expected-warning{{TRUE}}
+}
+
+//===----------------------------------------------------------------------===
 // strsep()
 //===----------------------------------------------------------------------===
 

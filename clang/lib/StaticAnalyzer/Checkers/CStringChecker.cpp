@@ -2096,55 +2096,52 @@ void CStringChecker::evalStrchr(CheckerContext &C, const CallExpr *CE) const {
   if (!State)
     return; // The error already reported, back off.
 
-  SVal CStringLength =
-      getCStringLength(C, State, Haystack.Expression, HaystackPointerVal);
-  if (CStringLength.isUndef())
+  Optional<NonLoc> CStringLength =
+      getCStringLength(C, State, Haystack.Expression, HaystackPointerVal)
+          .getAs<NonLoc>();
+  if (!CStringLength)
     return; // The error already reported, back off.
 
   SValBuilder &SVB = C.getSValBuilder();
   const LocationContext *LCtx = C.getLocationContext();
 
-  const auto MightSearchForNullTerminator =
-      [&C, &Ctx, &SVB](ProgramStateRef State, const Expr *Needle) -> bool {
     // Cast int to char according to the specification.
-    SVal NeedleAsCharVal =
-        SVB.evalCast(C.getSVal(Needle), Ctx.CharTy, Ctx.IntTy);
+  SVal NeedleAsCharVal =
+      SVB.evalCast(C.getSVal(Needle.Expression), Ctx.CharTy, Ctx.IntTy);
 
-    SVal IsNeedleTheNullTerminator =
-        SVB.evalEQ(State, NeedleAsCharVal, SVB.makeZeroVal(Ctx.CharTy));
+  DefinedOrUnknownSVal IsNeedleTheTerminator =
+      SVB.evalEQ(State, NeedleAsCharVal, SVB.makeZeroVal(Ctx.CharTy))
+          .castAs<DefinedOrUnknownSVal>();
 
-    ProgramStateRef MightSearchForNullTerminator = State->assume(
-        IsNeedleTheNullTerminator.castAs<DefinedOrUnknownSVal>(), true);
-    return MightSearchForNullTerminator.get();
-  };
+  ProgramStateRef SearchForTerminator, NotSearchForTerminator;
+  std::tie(SearchForTerminator, NotSearchForTerminator) =
+      State->assume(IsNeedleTheTerminator.castAs<DefinedOrUnknownSVal>());
 
   // If we //might// search for the zero terminator:
   //  &str[0] <= ReturnPointer <= &str[termiantor]
   //  &str[0] <= ReturnPointer <  &str[termiantor]  // otherwise
-  SVal UpperBound =
-      (MightSearchForNullTerminator(State, Needle.Expression))
-          ? (SVB.evalBinOpNN(State, BO_Add, CStringLength.castAs<NonLoc>(),
+  NonLoc UpperBound =
+      SearchForTerminator
+          ? (SVB.evalBinOpNN(State, BO_Add, *CStringLength,
                              SVB.makeArrayIndex(1), SVB.getArrayIndexType()))
-          : CStringLength;
+                .castAs<NonLoc>()
+          : *CStringLength;
 
   const SubRegion *ReturnSuperRegion =
       HaystackPointerVal.getAsRegion()->getAs<SubRegion>();
   DefinedOrUnknownSVal ReturnElementOffset =
       SVB.getMetadataSymbolVal(CStringChecker::getTag(), ReturnSuperRegion, CE,
                                Ctx.getSizeType(), LCtx, C.blockCount());
+  State = taint::addTaint(State, ReturnElementOffset);
 
+  // FIXME: find better variable name.
   // Assume that this ReturnElementOffset must be less then the UpperBound.
-  ProgramStateRef ReturnElementOffsetConstrained = State->assumeInBound(
-      ReturnElementOffset, UpperBound.castAs<DefinedOrUnknownSVal>(), true);
-
-  ReturnElementOffsetConstrained =
-      taint::addTaint(ReturnElementOffsetConstrained, ReturnElementOffset);
-  assert(ReturnElementOffsetConstrained);
+  ProgramStateRef ReturnElementOffsetConstrained =
+      State->assumeInBound(ReturnElementOffset, UpperBound, true);
 
   // Otherwise there is no strchr match possible, return nullptr.
   if (!ReturnElementOffsetConstrained) {
-    // Set the return value, and finish.
-    State = State->BindExpr(CE, LCtx, SVB.makeNullWithType(Ctx.CharTy));
+    State = State->BindExpr(CE, LCtx, SVB.makeNull());
     C.addTransition(State);
     return;
   }
@@ -2153,12 +2150,24 @@ void CStringChecker::evalStrchr(CheckerContext &C, const CallExpr *CE) const {
       SVB.getRegionManager().getElementRegion(
           Ctx.CharTy, ReturnElementOffset.castAs<NonLoc>(), ReturnSuperRegion,
           Ctx);
-
   DefinedOrUnknownSVal ReturnPointer = SVB.makeLoc(ReturnElementRegion);
 
-  // Set the return value, and finish.
-  State = ReturnElementOffsetConstrained->BindExpr(CE, LCtx, ReturnPointer);
-  C.addTransition(State);
+  // If we search for the terminator, the cstring length of the returned pointer
+  // should be the same as the original.
+  if (SearchForTerminator && !NotSearchForTerminator) {
+    DefinedOrUnknownSVal ReturnCStringLength =
+        getCStringLength(C, ReturnElementOffsetConstrained, CE,
+                         HaystackPointerVal)
+            .castAs<DefinedOrUnknownSVal>();
+    DefinedOrUnknownSVal TheyMatch = SVB.evalEQ(
+        ReturnElementOffsetConstrained, ReturnCStringLength, *CStringLength);
+    ReturnElementOffsetConstrained =
+        ReturnElementOffsetConstrained->assume(TheyMatch, true);
+    assert(ReturnElementOffsetConstrained);
+  }
+
+  C.addTransition(
+      ReturnElementOffsetConstrained->BindExpr(CE, LCtx, ReturnPointer));
 }
 
 void CStringChecker::evalStrsep(CheckerContext &C, const CallExpr *CE) const {
