@@ -88,28 +88,13 @@ static SVal getCStringLengthForRegion(CheckerContext &Ctx,
   }
 
   // Otherwise, get a new symbol and update the state.
-  NonLoc CStrLen = cstring::createCStringLength(Ctx, Ex, MR);
-
-  if (!Hypothetical) {
-    // In case of unbounded calls strlen etc bound the range to SIZE_MAX/4
-    SValBuilder &SVB = Ctx.getSValBuilder();
-    QualType SizeTy = SVB.getContext().getSizeType();
-    BasicValueFactory &BVF = SVB.getBasicValueFactory();
-    const llvm::APSInt &MaxValue = BVF.getMaxValue(SizeTy);
-    const llvm::APSInt Four = APSIntType(MaxValue).getValue(4);
-    const llvm::APSInt *MaxLength = BVF.evalAPSInt(BO_Div, MaxValue, Four);
-    const NonLoc MaxLengthSVal = SVB.makeIntVal(*MaxLength);
-    SVal Constrained =
-        SVB.evalBinOpNN(State, BO_LE, CStrLen, MaxLengthSVal, SizeTy);
-    State = State->assume(Constrained.castAs<DefinedOrUnknownSVal>(), true);
-    State = State->set<CStringLengthMap>(MR, CStrLen);
-  }
+  NonLoc CStrLen = cstring::createCStringLength(State, Ctx, Ex, MR);
 
   return CStrLen;
 }
 
-NonLoc cstring::createCStringLength(CheckerContext &Ctx, const Expr *Ex,
-                                    const MemRegion *MR) {
+NonLoc cstring::createCStringLength(ProgramStateRef &State, CheckerContext &Ctx,
+                                    const Expr *Ex, const MemRegion *MR) {
   assert(Ex);
   assert(MR);
 
@@ -119,6 +104,18 @@ NonLoc cstring::createCStringLength(CheckerContext &Ctx, const Expr *Ex,
       SVB.getMetadataSymbolVal(CStringChecker::getTag(), MR, Ex, SizeTy,
                                Ctx.getLocationContext(), Ctx.blockCount())
           .castAs<NonLoc>();
+
+  // Implicitly bound the range to SIZE_MAX/4
+  BasicValueFactory &BVF = SVB.getBasicValueFactory();
+  const llvm::APSInt &MaxValue = BVF.getMaxValue(SizeTy);
+  const llvm::APSInt Four = APSIntType(MaxValue).getValue(4);
+  const llvm::APSInt *MaxLength = BVF.evalAPSInt(BO_Div, MaxValue, Four);
+  const NonLoc MaxLengthSVal = SVB.makeIntVal(*MaxLength);
+  SVal Constrained =
+      SVB.evalBinOpNN(State, BO_LE, CStrLen, MaxLengthSVal, SizeTy);
+  State = State->assume(Constrained.castAs<DefinedOrUnknownSVal>(), true);
+  State = State->set<CStringLengthMap>(MR, CStrLen);
+
   return CStrLen;
 }
 
