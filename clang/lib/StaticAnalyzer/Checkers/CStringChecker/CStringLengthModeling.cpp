@@ -78,17 +78,11 @@ ProgramStateRef cstring::removeCStringLength(ProgramStateRef State,
   return State->remove<CStringLengthMap>(MR);
 }
 
-static SVal getCStringLengthForRegion(CheckerContext &Ctx,
-                                      ProgramStateRef &State, const Expr *Ex,
-                                      const MemRegion *MR) {
-  // If there's a recorded length, go ahead and return it.
+static Optional<SVal> getCStringLengthForRegion(const ProgramStateRef &State,
+                                                const MemRegion *MR) {
   if (const SVal *Recorded = State->get<CStringLengthMap>(MR))
     return *Recorded;
-
-  // Otherwise, get a new symbol and update the state.
-  NonLoc CStrLen = cstring::createCStringLength(State, Ctx, Ex, MR);
-
-  return CStrLen;
+  return llvm::None;
 }
 
 NonLoc cstring::createCStringLength(ProgramStateRef &State, CheckerContext &Ctx,
@@ -149,8 +143,12 @@ SVal cstring::getCStringLength(CheckerContext &Ctx, ProgramStateRef &State,
   case MemRegion::NonParamVarRegionKind:
   case MemRegion::ParamVarRegionKind:
   case MemRegion::FieldRegionKind:
-  case MemRegion::ObjCIvarRegionKind:
-    return getCStringLengthForRegion(Ctx, State, Ex, MR);
+  case MemRegion::ObjCIvarRegionKind: {
+    Optional<SVal> Tmp = getCStringLengthForRegion(State, MR);
+    if (Tmp.hasValue())
+      return Tmp.getValue();
+    return cstring::createCStringLength(State, Ctx, Ex, MR);
+  }
   case MemRegion::CompoundLiteralRegionKind:
     // FIXME: Can we track this? Is it necessary?
     return UnknownVal();
