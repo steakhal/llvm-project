@@ -78,13 +78,6 @@ ProgramStateRef cstring::removeCStringLength(ProgramStateRef State,
   return State->remove<CStringLengthMap>(MR);
 }
 
-static Optional<SVal> getCStringLengthForRegion(const ProgramStateRef &State,
-                                                const MemRegion *MR) {
-  if (const SVal *Recorded = State->get<CStringLengthMap>(MR))
-    return *Recorded;
-  return llvm::None;
-}
-
 NonLoc cstring::createCStringLength(ProgramStateRef &State, CheckerContext &Ctx,
                                     const Expr *Ex, const MemRegion *MR) {
   assert(Ex);
@@ -97,7 +90,7 @@ NonLoc cstring::createCStringLength(ProgramStateRef &State, CheckerContext &Ctx,
                                Ctx.getLocationContext(), Ctx.blockCount())
           .castAs<NonLoc>();
 
-  // Implicitly bound the range to SIZE_MAX/4
+  // Implicitly constrain the range to SIZE_MAX/4
   BasicValueFactory &BVF = SVB.getBasicValueFactory();
   const llvm::APSInt &MaxValue = BVF.getMaxValue(SizeTy);
   const llvm::APSInt Four = APSIntType(MaxValue).getValue(4);
@@ -107,12 +100,12 @@ NonLoc cstring::createCStringLength(ProgramStateRef &State, CheckerContext &Ctx,
       SVB.evalBinOpNN(State, BO_LE, CStrLen, MaxLengthSVal, SizeTy);
   State = State->assume(Constrained.castAs<DefinedOrUnknownSVal>(), true);
   State = State->set<CStringLengthMap>(MR, CStrLen);
-
   return CStrLen;
 }
 
-SVal cstring::getCStringLength(CheckerContext &Ctx, ProgramStateRef &State,
-                               const Expr *Ex, SVal Buf) {
+Optional<SVal> cstring::getCStringLength(CheckerContext &Ctx,
+                                         const ProgramStateRef &State,
+                                         SVal Buf) {
   if (Buf.isUnknownOrUndef())
     return Buf;
 
@@ -143,12 +136,10 @@ SVal cstring::getCStringLength(CheckerContext &Ctx, ProgramStateRef &State,
   case MemRegion::NonParamVarRegionKind:
   case MemRegion::ParamVarRegionKind:
   case MemRegion::FieldRegionKind:
-  case MemRegion::ObjCIvarRegionKind: {
-    Optional<SVal> Tmp = getCStringLengthForRegion(State, MR);
-    if (Tmp.hasValue())
-      return Tmp.getValue();
-    return cstring::createCStringLength(State, Ctx, Ex, MR);
-  }
+  case MemRegion::ObjCIvarRegionKind:
+    if (const SVal *RecordedLength = State->get<CStringLengthMap>(MR))
+      return *RecordedLength;
+    return llvm::None;
   case MemRegion::CompoundLiteralRegionKind:
     // FIXME: Can we track this? Is it necessary?
     return UnknownVal();
@@ -162,7 +153,7 @@ SVal cstring::getCStringLength(CheckerContext &Ctx, ProgramStateRef &State,
   }
 }
 
-void cstring::dumpCStringLengths(ProgramStateRef State, raw_ostream &Out,
+void cstring::dumpCStringLengths(const ProgramStateRef State, raw_ostream &Out,
                                  const char *NL, const char *Sep) {
   const CStringLengthMapTy Items = State->get<CStringLengthMap>();
   if (!Items.isEmpty())
@@ -215,7 +206,7 @@ void CStringChecker::checkPreStmt(const DeclStmt *DS, CheckerContext &C) const {
     SVal StrVal = C.getSVal(Init);
     assert(StrVal.isValid() && "Initializer string is unknown or undefined");
     DefinedOrUnknownSVal strLength =
-        getCStringLength(C, state, Init, StrVal).castAs<DefinedOrUnknownSVal>();
+        getCStringLength(C, state, StrVal)->castAs<DefinedOrUnknownSVal>();
 
     state = state->set<CStringLengthMap>(MR, strLength);
   }

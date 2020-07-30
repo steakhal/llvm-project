@@ -36,17 +36,15 @@ LLVM_NODISCARD ProgramStateRef setCStringLength(ProgramStateRef State,
 LLVM_NODISCARD ProgramStateRef removeCStringLength(ProgramStateRef State,
                                                    const MemRegion *MR);
 
-// FIXME: Eventually rework the interface of this function.
-LLVM_NODISCARD SVal getCStringLength(CheckerContext &Ctx,
-                                     ProgramStateRef &State, const Expr *Ex,
-                                     SVal Buf);
+LLVM_NODISCARD Optional<SVal>
+getCStringLength(CheckerContext &Ctx, const ProgramStateRef &State, SVal Buf);
 
 // TODO: Don't use.
 LLVM_NODISCARD NonLoc createCStringLength(ProgramStateRef &State,
                                           CheckerContext &Ctx, const Expr *Ex,
                                           const MemRegion *MR);
 
-LLVM_DUMP_METHOD void dumpCStringLengths(ProgramStateRef State,
+LLVM_DUMP_METHOD void dumpCStringLengths(const ProgramStateRef State,
                                          raw_ostream &Out = llvm::errs(),
                                          const char *NL = "\n",
                                          const char *Sep = " : ");
