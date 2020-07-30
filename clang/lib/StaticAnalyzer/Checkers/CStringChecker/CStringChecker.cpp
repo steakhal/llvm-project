@@ -1456,9 +1456,10 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
     // If we couldn't get a single value for the final string length,
     // we can at least bound it by the individual lengths.
     if (finalStrLength.isUnknown()) {
-      // Try to get a "hypothetical" string length symbol, which we can later
+      // Get a //hypothetical// string length symbol, which we can later
       // set as a real value if that turns out to be the case.
-      finalStrLength = getCStringLengthChecked(C, state, CE, DstVal, true);
+      finalStrLength =
+          cstring::createCStringLength(C, CE, DstVal.getAsRegion());
       assert(!finalStrLength.isUndef());
 
       if (Optional<NonLoc> finalStrLengthNL = finalStrLength.getAs<NonLoc>()) {

@@ -42,6 +42,10 @@ LLVM_NODISCARD SVal getCStringLength(CheckerContext &Ctx,
                                      ProgramStateRef &State, const Expr *Ex,
                                      SVal Buf, bool Hypothetical = false);
 
+// TODO: Don't use.
+LLVM_NODISCARD NonLoc createCStringLength(CheckerContext &Ctx, const Expr *Ex,
+                                          const MemRegion *MR);
+
 LLVM_DUMP_METHOD void dumpCStringLengths(ProgramStateRef State,
                                          raw_ostream &Out = llvm::errs(),
                                          const char *NL = "\n",
