@@ -106,6 +106,8 @@ public:
   void checkPreStmt(const DeclStmt *DS, CheckerContext &C) const;
   void checkLiveSymbols(ProgramStateRef state, SymbolReaper &SR) const;
   void checkDeadSymbols(SymbolReaper &SR, CheckerContext &C) const;
+  void printState(raw_ostream &Out, ProgramStateRef State, const char *NL,
+                  const char *Sep) const override;
 
   ProgramStateRef
     checkRegionChanges(ProgramStateRef state,
@@ -733,6 +735,25 @@ ProgramStateRef CStringChecker::setCStringLength(ProgramStateRef state,
     return state->remove<CStringLength>(MR);
 
   return state->set<CStringLength>(MR, strLength);
+}
+
+// TODO: remove this; only for debugging.
+static void dumpCStringLengths(ProgramStateRef State,
+                               raw_ostream &Out = llvm::errs(),
+                               const char *NL = "\n", const char *Sep = ": ") {
+  const CStringLengthTy Items = State->get<CStringLength>();
+  if (!Items.isEmpty())
+    Out << "CString lengths:" << NL;
+  for (const auto &Item : Items) {
+    Item.first->dumpToStream(Out);
+    Out << ": ";
+    Item.second.dumpToStream(Out);
+    Out << NL;
+  }
+}
+void CStringChecker::printState(raw_ostream &Out, ProgramStateRef State,
+                                const char *NL, const char *Sep) const {
+  dumpCStringLengths(State, Out, NL, Sep);
 }
 
 SVal CStringChecker::getCStringLengthForRegion(CheckerContext &C,
