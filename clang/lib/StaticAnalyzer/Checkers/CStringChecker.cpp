@@ -731,9 +731,6 @@ ProgramStateRef CStringChecker::setCStringLength(ProgramStateRef state,
     return state;
   }
 
-  if (strLength.isUnknown())
-    return state->remove<CStringLength>(MR);
-
   return state->set<CStringLength>(MR, strLength);
 }
 
