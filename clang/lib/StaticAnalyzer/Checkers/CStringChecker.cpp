@@ -775,6 +775,7 @@ SVal CStringChecker::getCStringLengthForRegion(CheckerContext &C,
                                                     MR, Ex, sizeTy,
                                                     C.getLocationContext(),
                                                     C.blockCount());
+  llvm::errs() << "created metadata symbol '" << strLength << "'\n";
 
   if (!hypothetical) {
     if (Optional<NonLoc> strLn = strLength.getAs<NonLoc>()) {
@@ -1383,6 +1384,10 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C, const CallExpr *CE,
   ProgramStateRef state = C.getState();
   const LocationContext *LCtx = C.getLocationContext();
 
+  llvm::errs() << "evalstrLength common BEGIN State.dump: ";
+  state->dump();
+  llvm::errs() << "\n";
+
   if (IsStrnlen) {
     const Expr *maxlenExpr = CE->getArg(1);
     SVal maxlenVal = state->getSVal(maxlenExpr, LCtx);
@@ -1493,6 +1498,8 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C, const CallExpr *CE,
   assert(!result.isUnknown() && "Should have conjured a value by now");
   state = state->BindExpr(CE, LCtx, result);
   C.addTransition(state);
+
+  llvm::errs() << "evalstrLengthCommon returns: '" << result << "'\n";
 }
 
 void CStringChecker::evalStrcpy(CheckerContext &C, const CallExpr *CE) const {
@@ -1934,6 +1941,11 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
   }
   // Set the return value.
   state = state->BindExpr(CE, LCtx, Result);
+
+  llvm::errs() << "strcpy common END State.dump: ";
+  state->dump();
+  llvm::errs() << "\n";
+
   C.addTransition(state);
 }
 
@@ -2434,8 +2446,12 @@ void CStringChecker::checkLiveSymbols(ProgramStateRef state,
     SVal Len = I.getData();
 
     for (SymExpr::symbol_iterator si = Len.symbol_begin(),
-        se = Len.symbol_end(); si != se; ++si)
+                                  se = Len.symbol_end();
+         si != se; ++si) {
       SR.markInUse(*si);
+      llvm::errs() << "CStringChecker::checkLiveSymbols marks '" << *si
+                   << "' in use\n";
+    }
   }
 }
 
@@ -2451,8 +2467,12 @@ void CStringChecker::checkDeadSymbols(SymbolReaper &SR,
       I != E; ++I) {
     SVal Len = I.getData();
     if (SymbolRef Sym = Len.getAsSymbol()) {
-      if (SR.isDead(Sym))
+      if (SR.isDead(Sym)) {
         Entries = F.remove(Entries, I.getKey());
+        llvm::errs() << "CStringChecker::checkDeadSymbols finds the '" << Sym
+                     << "' as dead; so removes the mapping from '" << I.getKey()
+                     << "'\n";
+      }
     }
   }
 
