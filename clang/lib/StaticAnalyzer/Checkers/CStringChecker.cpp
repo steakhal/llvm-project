@@ -789,6 +789,17 @@ SVal CStringChecker::getCStringLengthForRegion(CheckerContext &C,
       SVal evalLength = svalBuilder.evalBinOpNN(state, BO_LE, *strLn,
                                                 maxLength, sizeTy);
       state = state->assume(evalLength.castAs<DefinedOrUnknownSVal>(), true);
+
+      // Record that the cstring length must be less then the extent of the
+      // memory region.
+      DefinedOrUnknownSVal Extent = getDynamicSize(state, MR, svalBuilder);
+      if (!Extent.isUnknown()) {
+        SVal LengthLessThenExtent = svalBuilder.evalBinOpNN(
+            state, BO_LT, *strLn, Extent.castAs<NonLoc>(),
+            svalBuilder.getContext().BoolTy);
+        state = state->assume(
+            LengthLessThenExtent.castAs<DefinedOrUnknownSVal>(), true);
+      }
     }
     state = state->set<CStringLength>(MR, strLength);
   }
