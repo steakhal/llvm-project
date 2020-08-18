@@ -104,8 +104,7 @@ NonLoc cstring::createCStringLength(ProgramStateRef &State, CheckerContext &Ctx,
 }
 
 Optional<SVal> cstring::getCStringLength(CheckerContext &Ctx,
-                                         const ProgramStateRef &State,
-                                         SVal Buf) {
+                                         ProgramStateRef State, SVal Buf) {
   if (Buf.isUnknownOrUndef())
     return Buf;
 
@@ -153,7 +152,7 @@ Optional<SVal> cstring::getCStringLength(CheckerContext &Ctx,
   }
 }
 
-void cstring::dumpCStringLengths(const ProgramStateRef State, raw_ostream &Out,
+void cstring::dumpCStringLengths(ProgramStateRef State, raw_ostream &Out,
                                  const char *NL, const char *Sep) {
   const CStringLengthMapTy Items = State->get<CStringLengthMap>();
   if (!Items.isEmpty())

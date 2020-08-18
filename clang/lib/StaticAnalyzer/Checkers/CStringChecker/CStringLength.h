@@ -38,8 +38,8 @@ LLVM_NODISCARD ProgramStateRef removeCStringLength(ProgramStateRef State,
 
 /// Gets the associated cstring length of a region.
 /// If no such exists, None returned.
-LLVM_NODISCARD Optional<SVal>
-getCStringLength(CheckerContext &Ctx, const ProgramStateRef &State, SVal Buf);
+LLVM_NODISCARD Optional<SVal> getCStringLength(CheckerContext &Ctx,
+                                               ProgramStateRef State, SVal Buf);
 
 /// Creates a metadata symbol, tracking the cstring length of the given region.
 /// It implicitly applies certain constraints to the created value.
@@ -47,10 +47,10 @@ LLVM_NODISCARD NonLoc createCStringLength(ProgramStateRef &State,
                                           CheckerContext &Ctx, const Expr *Ex,
                                           const MemRegion *MR);
 
-LLVM_DUMP_METHOD void dumpCStringLengths(const ProgramStateRef State,
+LLVM_DUMP_METHOD void dumpCStringLengths(ProgramStateRef State,
                                          raw_ostream &Out = llvm::errs(),
                                          const char *NL = "\n",
-                                         const char *Sep = " : ");
+                                         const char *Sep = ": ");
 } // namespace cstring
 } // namespace ento
 } // namespace clang
