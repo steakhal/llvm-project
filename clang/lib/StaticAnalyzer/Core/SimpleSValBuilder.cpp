@@ -1017,31 +1017,29 @@ SVal SimpleSValBuilder::evalBinOpLL(ProgramStateRef state,
       }
     }
 
-    // Handle: \forall MemRegion X, \forall NonLoc n, m:
+    // We simplify the binary expressions of the following forms, by evaluating
+    // the operator.
+    // \forall MemRegion X, \forall NonLoc n, m:
     //  - Element{X,n} OP Element{X,m}
     //  - Element{X,n} OP X
     //  -            X OP Element{X,n}
-    // We don't handle here nested ElementRegions like in the this expression:
+    // Where the OP is an equality or subtraction operator. Eg:
+    //   - Element{X,n} - Element{X,m} => n-m
+    //   - Element{X,0} == X           => true
+    //   - Element{X,1} == X           => false
+    // We don't simplify the nested ElementRegions here, such as:
     // Element{Element{x,3,int [10]},5,int}  ==  Element{x,35,int}
     {
-      // Calculates the byte offset within the memory region to the referred
-      // element. E.g if the Element Region refers to an array of `T buf[n]`.
-      // The result would be the offset in bytes to the item:
-      //   Element{buf,2} --> 2 * sizeof(T)
-      const auto ByteOffsetOfElement =
-          [this, state](const ElementRegion *ElemReg) -> NonLoc {
-        NonLoc Index = evalCastFromNonLoc(ElemReg->getIndex(), ArrayIndexTy)
-                           .castAs<NonLoc>();
-        CharUnits SingleElementSize =
-            ElemReg->getContext().getTypeSizeInChars(ElemReg->getElementType());
-        return evalBinOpNN(state, BO_Mul, Index,
-                           makeArrayIndex(SingleElementSize.getQuantity()),
-                           ArrayIndexTy)
-            .castAs<NonLoc>();
-      };
-
-      // If both has the same memory region, and the index has a concrete value,
-      // we can evaluate equality operators.
+      // For a situation, where `a` and `b` are memory regions, and `OP` is an
+      // equality operator, we can infer the result for known `Index` values. We
+      // are able to do this because:
+      //  - If we check for equality:
+      //    The answer is `true` if and only if both regions are the same and
+      //    the `Index` is zero (so the ElementRegion refers to the same item),
+      //    `false` otherwise.
+      //  - If we check for inequality:
+      //    The answer is `true` if and only if either the regions are different
+      //    or the `Index` is known to be non-zero.
       const auto EvaluateEqualityOperators =
           [this, state, op, resultTy](NonLoc Index,
                                       bool HasSameMemRegions) -> SVal {
@@ -1064,11 +1062,11 @@ SVal SimpleSValBuilder::evalBinOpLL(ProgramStateRef state,
         // give the correct answer.
         if (LeftER->getSuperRegion() == RightER->getSuperRegion() &&
             LeftER->getElementType() == RightER->getElementType()) {
-          return evalBinOpNN(state, op, ByteOffsetOfElement(LeftER),
-                             ByteOffsetOfElement(RightER), resultTy);
+          return evalBinOpNN(state, op, LeftER->getIndex(), RightER->getIndex(),
+                             resultTy);
         }
       } else if (LeftER && !RightER) {
-        NonLoc LeftIndex = ByteOffsetOfElement(LeftER);
+        NonLoc LeftIndex = LeftER->getIndex();
         const bool HasSameMemRegions = LeftER->getSuperRegion() == RightMR;
 
         if (BinaryOperator::isEqualityOp(op))
@@ -1078,7 +1076,7 @@ SVal SimpleSValBuilder::evalBinOpLL(ProgramStateRef state,
           return LeftIndex;
         return UnknownVal();
       } else if (!LeftER && RightER) {
-        NonLoc RightIndex = ByteOffsetOfElement(RightER);
+        NonLoc RightIndex = RightER->getIndex();
         const bool HasSameMemRegions = LeftMR == RightER->getSuperRegion();
 
         if (BinaryOperator::isEqualityOp(op))
