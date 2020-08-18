@@ -85,7 +85,7 @@ void simplify_symregion_and_elementregion_pointer_arithmetic_and_comparison(int 
   clang_analyzer_dump_int(p - p0);       // expected-warning {{0 S32b}}
   clang_analyzer_dump_int(p - p1);       // expected-warning {{-1 S32b}}
   clang_analyzer_dump_int(p - pn);       // expected-warning-re {{0 - (reg_${{[0-9]+}}<int n>)}}
-  clang_analyzer_dump_int((p + 1) - q);  // expected-warning {{Unknown}} // FIXME: Might point to the same region, we should hold the expression 'p+1+q' instead.
+  clang_analyzer_dump_int((p + 1) - q);  // expected-warning {{Unknown}} // FIXME: Might point to the same region, we should hold the expression '(p+1)-q' instead.
   clang_analyzer_dump_int((p + 1) - p);  // expected-warning {{1 S32b}}
   clang_analyzer_dump_int((p + 1) - p0); // expected-warning {{1 S32b}}
   clang_analyzer_dump_int((p + 1) - p1); // expected-warning {{0 S32b}}
@@ -97,7 +97,7 @@ void simplify_symregion_and_elementregion_pointer_arithmetic_and_comparison(int 
   clang_analyzer_dump_int(p0 - p);       // expected-warning {{0 S32b}}
   clang_analyzer_dump_int(p1 - p);       // expected-warning {{1 S32b}}
   clang_analyzer_dump_int(pn - p);       // expected-warning-re {{reg_${{[0-9]+}}<int n>}}
-  clang_analyzer_dump_int(q - (p + 1));  // expected-warning {{Unknown}} // FIXME: Might point to the same region, we should hold the expression 'p+1+q' instead.
+  clang_analyzer_dump_int(q - (p + 1));  // expected-warning {{Unknown}} // FIXME: Might point to the same region, we should hold the expression 'q-(p+1)' instead.
   clang_analyzer_dump_int(p - (p + 1));  // expected-warning {{-1 S32b}}
   clang_analyzer_dump_int(p0 - (p + 1)); // expected-warning {{-1 S32b}}
   clang_analyzer_dump_int(p1 - (p + 1)); // expected-warning {{0 S32b}}
