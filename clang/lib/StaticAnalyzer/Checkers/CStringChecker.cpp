@@ -2451,6 +2451,11 @@ void CStringChecker::checkLiveSymbols(ProgramStateRef state,
       SR.markInUse(*si);
       llvm::errs() << "CStringChecker::checkLiveSymbols marks '" << *si
                    << "' in use\n";
+      if (const auto *Meta = dyn_cast<SymbolMetadata>(*si)) {
+        llvm::errs() << "  which was a metadata symbol refering to a "
+                     << (SR.isLiveRegion(Meta->getRegion()) ? "live" : "dead")
+                     << " memory region\n";
+      }
     }
   }
 }
