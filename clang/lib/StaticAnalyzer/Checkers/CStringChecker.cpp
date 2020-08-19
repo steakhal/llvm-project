@@ -106,6 +106,8 @@ public:
   void checkPreStmt(const DeclStmt *DS, CheckerContext &C) const;
   void checkLiveSymbols(ProgramStateRef state, SymbolReaper &SR) const;
   void checkDeadSymbols(SymbolReaper &SR, CheckerContext &C) const;
+  void printState(raw_ostream &Out, ProgramStateRef State, const char *NL,
+                  const char *Sep) const override;
 
   ProgramStateRef
     checkRegionChanges(ProgramStateRef state,
@@ -735,6 +737,25 @@ ProgramStateRef CStringChecker::setCStringLength(ProgramStateRef state,
   return state->set<CStringLength>(MR, strLength);
 }
 
+// TODO: remove this; only for debugging.
+static void dumpCStringLengths(ProgramStateRef State,
+                               raw_ostream &Out = llvm::errs(),
+                               const char *NL = "\n", const char *Sep = ": ") {
+  const CStringLengthTy Items = State->get<CStringLength>();
+  if (!Items.isEmpty())
+    Out << "CString lengths:" << NL;
+  for (const auto &Item : Items) {
+    Item.first->dumpToStream(Out);
+    Out << ": ";
+    Item.second.dumpToStream(Out);
+    Out << NL;
+  }
+}
+void CStringChecker::printState(raw_ostream &Out, ProgramStateRef State,
+                                const char *NL, const char *Sep) const {
+  dumpCStringLengths(State, Out, NL, Sep);
+}
+
 SVal CStringChecker::getCStringLengthForRegion(CheckerContext &C,
                                                ProgramStateRef &state,
                                                const Expr *Ex,
@@ -754,6 +775,7 @@ SVal CStringChecker::getCStringLengthForRegion(CheckerContext &C,
                                                     MR, Ex, sizeTy,
                                                     C.getLocationContext(),
                                                     C.blockCount());
+  llvm::errs() << "created metadata symbol '" << strLength << "'\n";
 
   if (!hypothetical) {
     if (Optional<NonLoc> strLn = strLength.getAs<NonLoc>()) {
@@ -1362,6 +1384,10 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C, const CallExpr *CE,
   ProgramStateRef state = C.getState();
   const LocationContext *LCtx = C.getLocationContext();
 
+  llvm::errs() << "evalstrLength common BEGIN State.dump: ";
+  state->dump();
+  llvm::errs() << "\n";
+
   if (IsStrnlen) {
     const Expr *maxlenExpr = CE->getArg(1);
     SVal maxlenVal = state->getSVal(maxlenExpr, LCtx);
@@ -1472,6 +1498,8 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C, const CallExpr *CE,
   assert(!result.isUnknown() && "Should have conjured a value by now");
   state = state->BindExpr(CE, LCtx, result);
   C.addTransition(state);
+
+  llvm::errs() << "evalstrLengthCommon returns: '" << result << "'\n";
 }
 
 void CStringChecker::evalStrcpy(CheckerContext &C, const CallExpr *CE) const {
@@ -1913,6 +1941,11 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
   }
   // Set the return value.
   state = state->BindExpr(CE, LCtx, Result);
+
+  llvm::errs() << "strcpy common END State.dump: ";
+  state->dump();
+  llvm::errs() << "\n";
+
   C.addTransition(state);
 }
 
@@ -2413,8 +2446,12 @@ void CStringChecker::checkLiveSymbols(ProgramStateRef state,
     SVal Len = I.getData();
 
     for (SymExpr::symbol_iterator si = Len.symbol_begin(),
-        se = Len.symbol_end(); si != se; ++si)
+                                  se = Len.symbol_end();
+         si != se; ++si) {
       SR.markInUse(*si);
+      llvm::errs() << "CStringChecker::checkLiveSymbols marks '" << *si
+                   << "' in use\n";
+    }
   }
 }
 
@@ -2430,8 +2467,12 @@ void CStringChecker::checkDeadSymbols(SymbolReaper &SR,
       I != E; ++I) {
     SVal Len = I.getData();
     if (SymbolRef Sym = Len.getAsSymbol()) {
-      if (SR.isDead(Sym))
+      if (SR.isDead(Sym)) {
         Entries = F.remove(Entries, I.getKey());
+        llvm::errs() << "CStringChecker::checkDeadSymbols finds the '" << Sym
+                     << "' as dead; so removes the mapping from '" << I.getKey()
+                     << "'\n";
+      }
     }
   }
 
