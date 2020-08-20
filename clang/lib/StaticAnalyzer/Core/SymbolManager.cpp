@@ -399,11 +399,6 @@ void SymbolReaper::markElementIndicesLive(const MemRegion *region) {
   }
 }
 
-void SymbolReaper::markInUse(SymbolRef sym) {
-  if (isa<SymbolMetadata>(sym))
-    MetadataInUse.insert(sym);
-}
-
 bool SymbolReaper::isLiveRegion(const MemRegion *MR) {
   // TODO: For now, liveness of a memory region is equivalent to liveness of its
   // base region. In fact we can do a bit better: say, if a particular FieldDecl
@@ -461,10 +456,7 @@ bool SymbolReaper::isLive(SymbolRef sym) {
     KnownLive = isLiveRegion(cast<SymbolExtent>(sym)->getRegion());
     break;
   case SymExpr::SymbolMetadataKind:
-    KnownLive = MetadataInUse.count(sym) &&
-                isLiveRegion(cast<SymbolMetadata>(sym)->getRegion());
-    if (KnownLive)
-      MetadataInUse.erase(sym);
+    KnownLive = isLiveRegion(cast<SymbolMetadata>(sym)->getRegion());
     break;
   case SymExpr::SymIntExprKind:
     KnownLive = isLive(cast<SymIntExpr>(sym)->getLHS());

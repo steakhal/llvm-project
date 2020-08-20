@@ -495,7 +495,6 @@ class SymbolReaper {
   using RegionSetTy = llvm::DenseSet<const MemRegion *>;
 
   SymbolMapTy TheLiving;
-  SymbolSetTy MetadataInUse;
 
   RegionSetTy RegionRoots;
 
@@ -529,6 +528,7 @@ public:
   /// This should never be
   /// used by checkers, only by the state infrastructure such as the store and
   /// environment. Checkers should instead use metadata symbols and markInUse.
+  /// TODO: update this comment!!!
   void markLive(SymbolRef sym);
 
   /// Marks a symbol as important to a checker.
@@ -538,7 +538,8 @@ public:
   /// live. For other symbols, this has no effect; checkers are not permitted
   /// to influence the life of other symbols. This should be used before any
   /// symbol marking has occurred, i.e. in the MarkLiveSymbols callback.
-  void markInUse(SymbolRef sym);
+  // TODO: remove this function!!!
+  // void markInUse(SymbolRef sym);
 
   using region_iterator = RegionSetTy::const_iterator;
 

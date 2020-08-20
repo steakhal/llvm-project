@@ -2410,8 +2410,10 @@ void CStringChecker::checkLiveSymbols(ProgramStateRef state,
     SVal Len = I.getData();
 
     for (SymExpr::symbol_iterator si = Len.symbol_begin(),
-        se = Len.symbol_end(); si != se; ++si)
-      SR.markInUse(*si);
+                                  se = Len.symbol_end();
+         si != se; ++si) {
+      // SR.markInUse(*si); TODO: rework this function according to the plan!!!
+    }
   }
 }
 
