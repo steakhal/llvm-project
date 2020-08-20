@@ -750,10 +750,8 @@ SVal CStringChecker::getCStringLengthForRegion(CheckerContext &C,
   // Otherwise, get a new symbol and update the state.
   SValBuilder &svalBuilder = C.getSValBuilder();
   QualType sizeTy = svalBuilder.getContext().getSizeType();
-  SVal strLength = svalBuilder.getMetadataSymbolVal(CStringChecker::getTag(),
-                                                    MR, Ex, sizeTy,
-                                                    C.getLocationContext(),
-                                                    C.blockCount());
+  SVal strLength =
+      svalBuilder.getMetadataSymbolVal(CStringChecker::getTag(), MR, sizeTy);
 
   if (!hypothetical) {
     if (Optional<NonLoc> strLn = strLength.getAs<NonLoc>()) {
@@ -1098,8 +1096,7 @@ bool CStringChecker::memsetAux(const Expr *DstBuffer, SVal CharVal,
                                svalBuilder.makeZeroVal(Ctx.getSizeType()));
     } else if (!StateNullChar && StateNonNullChar) {
       SVal NewStrLen = svalBuilder.getMetadataSymbolVal(
-          CStringChecker::getTag(), MR, DstBuffer, Ctx.getSizeType(),
-          C.getLocationContext(), C.blockCount());
+          CStringChecker::getTag(), MR, Ctx.getSizeType());
 
       // If the value of second argument is not zero, then the string length
       // is at least the size argument.

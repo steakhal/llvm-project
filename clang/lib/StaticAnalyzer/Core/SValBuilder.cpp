@@ -203,13 +203,10 @@ SValBuilder::getConjuredHeapSymbolVal(const Expr *E,
 
 DefinedSVal SValBuilder::getMetadataSymbolVal(const void *symbolTag,
                                               const MemRegion *region,
-                                              const Expr *expr, QualType type,
-                                              const LocationContext *LCtx,
-                                              unsigned count) {
+                                              QualType type) {
   assert(SymbolManager::canSymbolicate(type) && "Invalid metadata symbol type");
 
-  SymbolRef sym =
-      SymMgr.getMetadataSymbol(region, expr, type, LCtx, count, symbolTag);
+  SymbolRef sym = SymMgr.getMetadataSymbol(region, type, symbolTag);
 
   if (Loc::isLocType(type))
     return loc::MemRegionVal(MemMgr.getSymbolicRegion(sym));

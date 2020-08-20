@@ -221,17 +221,16 @@ SymbolManager::getExtentSymbol(const SubRegion *R) {
   return cast<SymbolExtent>(SD);
 }
 
-const SymbolMetadata *
-SymbolManager::getMetadataSymbol(const MemRegion* R, const Stmt *S, QualType T,
-                                 const LocationContext *LCtx,
-                                 unsigned Count, const void *SymbolTag) {
+const SymbolMetadata *SymbolManager::getMetadataSymbol(const MemRegion *R,
+                                                       QualType T,
+                                                       const void *SymbolTag) {
   llvm::FoldingSetNodeID profile;
-  SymbolMetadata::Profile(profile, R, S, T, LCtx, Count, SymbolTag);
+  SymbolMetadata::Profile(profile, R, T, SymbolTag);
   void *InsertPos;
   SymExpr *SD = DataSet.FindNodeOrInsertPos(profile, InsertPos);
   if (!SD) {
     SD = (SymExpr*) BPAlloc.Allocate<SymbolMetadata>();
-    new (SD) SymbolMetadata(SymbolCounter, R, S, T, LCtx, Count, SymbolTag);
+    new (SD) SymbolMetadata(SymbolCounter, R, T, SymbolTag);
     DataSet.InsertNode(SD, InsertPos);
     ++SymbolCounter;
   }

@@ -208,28 +208,17 @@ public:
 ///  Intended for use by checkers.
 class SymbolMetadata : public SymbolData {
   const MemRegion* R;
-  const Stmt *S;
   QualType T;
-  const LocationContext *LCtx;
-  unsigned Count;
   const void *Tag;
 
 public:
-  SymbolMetadata(SymbolID sym, const MemRegion* r, const Stmt *s, QualType t,
-                 const LocationContext *LCtx, unsigned count, const void *tag)
-      : SymbolData(SymbolMetadataKind, sym), R(r), S(s), T(t), LCtx(LCtx),
-        Count(count), Tag(tag) {
-      assert(r);
-      assert(s);
-      assert(isValidTypeForSymbol(t));
-      assert(LCtx);
-      assert(tag);
-    }
+  SymbolMetadata(SymbolID sym, const MemRegion *r, QualType t, const void *tag)
+      : SymbolData(SymbolMetadataKind, sym), R(r), T(t), Tag(tag) {
+    assert(isValidTypeForSymbol(t));
+    assert(tag);
+  }
 
   const MemRegion *getRegion() const { return R; }
-  const Stmt *getStmt() const { return S; }
-  const LocationContext *getLocationContext() const { return LCtx; }
-  unsigned getCount() const { return Count; }
   const void *getTag() const { return Tag; }
 
   QualType getType() const override;
@@ -238,20 +227,16 @@ public:
 
   void dumpToStream(raw_ostream &os) const override;
 
-  static void Profile(llvm::FoldingSetNodeID& profile, const MemRegion *R,
-                      const Stmt *S, QualType T, const LocationContext *LCtx,
-                      unsigned Count, const void *Tag) {
+  static void Profile(llvm::FoldingSetNodeID &profile, const MemRegion *R,
+                      QualType T, const void *Tag) {
     profile.AddInteger((unsigned) SymbolMetadataKind);
     profile.AddPointer(R);
-    profile.AddPointer(S);
     profile.Add(T);
-    profile.AddPointer(LCtx);
-    profile.AddInteger(Count);
     profile.AddPointer(Tag);
   }
 
   void Profile(llvm::FoldingSetNodeID& profile) override {
-    Profile(profile, R, S, T, LCtx, Count, Tag);
+    Profile(profile, R, T, Tag);
   }
 
   // Implement isa<T> support.
@@ -462,10 +447,7 @@ public:
   ///
   /// VisitCount can be used to differentiate regions corresponding to
   /// different loop iterations, thus, making the symbol path-dependent.
-  const SymbolMetadata *getMetadataSymbol(const MemRegion *R, const Stmt *S,
-                                          QualType T,
-                                          const LocationContext *LCtx,
-                                          unsigned VisitCount,
+  const SymbolMetadata *getMetadataSymbol(const MemRegion *R, QualType T,
                                           const void *SymbolTag = nullptr);
 
   const SymbolCast* getCastSymbol(const SymExpr *Operand,
