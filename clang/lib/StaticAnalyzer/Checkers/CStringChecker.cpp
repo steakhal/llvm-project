@@ -2405,15 +2405,13 @@ void CStringChecker::checkLiveSymbols(ProgramStateRef state,
   // Mark all symbols in our string length map as valid.
   CStringLengthTy Entries = state->get<CStringLength>();
 
-  for (CStringLengthTy::iterator I = Entries.begin(), E = Entries.end();
-      I != E; ++I) {
-    SVal Len = I.getData();
-
-    for (SymExpr::symbol_iterator si = Len.symbol_begin(),
-                                  se = Len.symbol_end();
-         si != se; ++si) {
-      // SR.markInUse(*si); TODO: rework this function according to the plan!!!
-    }
+  for (const auto &Entry : Entries) {
+    SVal AssociatedLength = Entry.second;
+    const auto SymbolRange = llvm::make_range(AssociatedLength.symbol_begin(),
+                                              AssociatedLength.symbol_end());
+    for (SymbolRef SubSym : SymbolRange)
+      if (isa<SymbolData>(SubSym))
+        SR.markLive(SubSym);
   }
 }
 
