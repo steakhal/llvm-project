@@ -1,4 +1,4 @@
-FROM ubuntu:bionic
+FROM ubuntu:bionic-20200526
 
 RUN apt-get update && apt-get install -y \
     apt-transport-https \
@@ -16,8 +16,8 @@ RUN apt-get update && apt-get install -y \
     git=1:2.17.1-1ubuntu0.7 \
     gettext=0.19.8.1-6ubuntu0.3 \
     python3=3.6.7-1~18.04 \
-    python3-pip=9.0.1-2.3~ubuntu1.18.04.1 \
-    cmake=3.17.3-0kitware1 \
+    python3-pip=9.0.1-2.3~ubuntu1.18.04.2 \
+    cmake=3.18.2-0kitware1 \
     ninja-build=1.8.2-1
 
 # box2d dependencies
