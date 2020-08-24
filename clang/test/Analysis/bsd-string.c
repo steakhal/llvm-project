@@ -103,7 +103,7 @@ void f9(int unknown_size, char* unknown_src, char* unknown_dst){
 }
 
 // Continue the f9 test, but with a fresh 'buf' variable.
-void f9_extra(int unknown_size, char* unknown_src, char* unknown_dst) {
+void f9_extra(int unknown_size, char *unknown_src, char *unknown_dst) {
   char buf[8];
   size_t len;
 

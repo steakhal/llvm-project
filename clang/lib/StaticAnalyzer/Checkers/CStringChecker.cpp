@@ -2375,14 +2375,14 @@ CStringChecker::checkRegionChanges(ProgramStateRef state,
 
   CStringLengthTy::Factory &F = state->get_context<CStringLength>();
 
-  // Then loop over the entries in the current state.
-  for (CStringLengthTy::iterator I = Entries.begin(),
-      E = Entries.end(); I != E; ++I) {
-    const MemRegion *MR = I.getKey();
+  // Overwrite the associated cstring length values of the invalidated regions.
+  for (const auto &Entry : Entries) {
+    const MemRegion *MR = Entry.first;
 
     // Is this entry for a super-region of a changed region?
     if (SuperRegions.count(MR)) {
       Entries = F.remove(Entries, MR);
+      Entries = F.add(Entries, MR, UnknownVal());
       continue;
     }
 
@@ -2392,6 +2392,7 @@ CStringChecker::checkRegionChanges(ProgramStateRef state,
       Super = SR->getSuperRegion();
       if (Invalidated.count(Super)) {
         Entries = F.remove(Entries, MR);
+        Entries = F.add(Entries, MR, UnknownVal());
         break;
       }
     }
@@ -2403,9 +2404,7 @@ CStringChecker::checkRegionChanges(ProgramStateRef state,
 void CStringChecker::checkLiveSymbols(ProgramStateRef state,
     SymbolReaper &SR) const {
   // Mark all symbols in our string length map as valid.
-  CStringLengthTy Entries = state->get<CStringLength>();
-
-  for (const auto &Entry : Entries) {
+  for (const auto &Entry : state->get<CStringLength>()) {
     SVal AssociatedLength = Entry.second;
     const auto SymbolRange = llvm::make_range(AssociatedLength.symbol_begin(),
                                               AssociatedLength.symbol_end());
@@ -2417,23 +2416,23 @@ void CStringChecker::checkLiveSymbols(ProgramStateRef state,
 
 void CStringChecker::checkDeadSymbols(SymbolReaper &SR,
     CheckerContext &C) const {
-  ProgramStateRef state = C.getState();
-  CStringLengthTy Entries = state->get<CStringLength>();
+  ProgramStateRef State = C.getState();
+  CStringLengthTy Entries = State->get<CStringLength>();
   if (Entries.isEmpty())
     return;
 
-  CStringLengthTy::Factory &F = state->get_context<CStringLength>();
-  for (CStringLengthTy::iterator I = Entries.begin(), E = Entries.end();
-      I != E; ++I) {
-    SVal Len = I.getData();
+  CStringLengthTy::Factory &F = State->get_context<CStringLength>();
+  for (const auto &Entry : Entries) {
+    const MemRegion *MR = Entry.first;
+    SVal Len = Entry.second;
     if (SymbolRef Sym = Len.getAsSymbol()) {
       if (SR.isDead(Sym))
-        Entries = F.remove(Entries, I.getKey());
+        Entries = F.remove(Entries, MR);
     }
   }
 
-  state = state->set<CStringLength>(Entries);
-  C.addTransition(state);
+  State = State->set<CStringLength>(Entries);
+  C.addTransition(State);
 }
 
 void ento::registerCStringModeling(CheckerManager &Mgr) {

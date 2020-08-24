@@ -1515,23 +1515,12 @@ void explicit_bzero3_out_ofbound() {
   free(privkey);
 }
 
-//===----------------------------------------------------------------------===
-// FIXMEs
-//===----------------------------------------------------------------------===
-
-// The analyzer_eval call below should evaluate to true. We are being too
-// aggressive in marking the (length of) src symbol dead. The length of dst
-// depends on src. This could be explicitly specified in the checker or the
-// logic for handling MetadataSymbol in SymbolManager needs to change.
 void strcat_symbolic_src_length(char *src) {
-	char dst[8] = "1234";
-	strcat(dst, src);
-  clang_analyzer_eval(strlen(dst) >= 4); // expected-warning{{UNKNOWN}}
+  char dst[8] = "1234";
+  strcat(dst, src);
+  clang_analyzer_eval(strlen(dst) >= 4); // expected-warning{{TRUE}}
 }
 
-
-// The analyzer_eval call below should evaluate to true. Most likely the same
-// issue as the test above.
 void strncpy_exactly_matching_buffer2(char *y) {
 	if (strlen(y) >= 4)
 		return;
@@ -1540,8 +1529,12 @@ void strncpy_exactly_matching_buffer2(char *y) {
 	strncpy(x, y, 4); // no-warning
 
 	// This time, we know that y fits in x anyway.
-  clang_analyzer_eval(strlen(x) <= 3); // expected-warning{{UNKNOWN}}
+  clang_analyzer_eval(strlen(x) <= 3); // expected-warning{{TRUE}}
 }
+
+//===----------------------------------------------------------------------===
+// FIXMEs
+//===----------------------------------------------------------------------===
 
 void memset7_char_array_nonnull() {
   char str[5] = "abcd";
