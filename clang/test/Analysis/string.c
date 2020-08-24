@@ -502,6 +502,11 @@ void strcat_too_big(char *dst, char *src) {
 	strcat(dst, src);
 }
 
+void strcat_models_dst_length_even_if_src_dies(char *src) {
+  char dst[8] = "1234";
+  strcat(dst, src);
+  clang_analyzer_eval(strlen(dst) >= 4); // expected-warning{{TRUE}}
+}
 
 //===----------------------------------------------------------------------===
 // strncpy()
