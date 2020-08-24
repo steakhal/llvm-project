@@ -100,6 +100,12 @@ void f9(int unknown_size, char* unknown_src, char* unknown_dst){
   len = strlcpy(unknown_dst,"abbc",unknown_size);
   clang_analyzer_eval(len==4);// expected-warning{{TRUE}}
   clang_analyzer_eval(strlen(unknown_dst));// expected-warning{{UNKNOWN}}
+}
+
+// Continue the f9 test, but with a fresh 'buf' variable.
+void f9_extra(int unknown_size, char* unknown_src, char* unknown_dst) {
+  char buf[8];
+  size_t len;
 
   //src is unknown
   len = strlcpy(buf,unknown_src, sizeof(buf));
