@@ -29,9 +29,9 @@ namespace clang {
 namespace ento {
 namespace cstring {
 
-auto CStringChecker::createOutOfBoundErrorMsg(StringRef FunctionDescription,
-                                              AccessKind Access)
-    -> ErrorMessage {
+CStringChecker::ErrorMessage
+CStringChecker::createOutOfBoundErrorMsg(StringRef FunctionDescription,
+                                         AccessKind Access) {
   ErrorMessage Message;
   llvm::raw_svector_ostream Os(Message);
 

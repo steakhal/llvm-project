@@ -299,7 +299,6 @@ ProgramStateRef CStringChecker::checkRegionChanges(
   return state->set<CStringLengthMap>(Entries);
 }
 
-// TODO: Is it useful?
 void CStringChecker::printState(raw_ostream &Out, ProgramStateRef State,
                                 const char *NL, const char *Sep) const {
   dumpCStringLengths(State, Out, NL, Sep);

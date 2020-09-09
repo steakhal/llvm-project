@@ -65,7 +65,6 @@ public:
   checkRegionChanges(ProgramStateRef, const InvalidatedSymbols *,
                      ArrayRef<const MemRegion *>, ArrayRef<const MemRegion *>,
                      const LocationContext *, const CallEvent *) const;
-  // TODO: Is it useful?
   void printState(raw_ostream &Out, ProgramStateRef State, const char *NL,
                   const char *Sep) const;
 
