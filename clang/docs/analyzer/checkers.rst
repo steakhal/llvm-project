@@ -2122,6 +2122,8 @@ alpha.security.ArrayBoundV2 (C)
 """""""""""""""""""""""""""""""
 Warn about buffer overflows (newer checker).
 
+TODO: Update the documentation.
+
 .. code-block:: c
 
  void test() {
