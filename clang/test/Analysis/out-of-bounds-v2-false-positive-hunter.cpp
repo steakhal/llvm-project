@@ -1,12 +1,11 @@
-// RUN: %clang_analyze_cc1 -std=c++20 -analyzer-checker=core,alpha.security.ArrayBoundV2,debug.ExprInspection \
+// RUN: %clang_analyze_cc1 -triple i686-unknown-linux -std=c++17 \
+// RUN:   -analyzer-checker=core,alpha.security.ArrayBoundV2,debug.ExprInspection \
 // RUN:   -analyzer-config eagerly-assume=false -verify %s
 
-constexpr void clang_analyzer_eval(int) {}
-constexpr void clang_analyzer_printState() {}
+void clang_analyzer_eval(int);
+void clang_analyzer_printState();
+template <typename T> void clang_analyzer_dump(T);
 
-template <typename T> constexpr void clang_analyzer_dump(T) {}
-
-// constexpr void clang_analyzer_addNoteTagIf(const char*, const char*) {}
 
 template <typename T, typename U> struct is_same {
   static constexpr bool value = false;
@@ -22,11 +21,6 @@ template <typename T> constexpr bool is_unsigned() {
 template <typename T, int N> constexpr int array_size(const T (&)[N]) {
   return N;
 }
-
-using size_t = unsigned long long;
-
-template <auto V>
-auto show();
 
 /// Expression tree
 struct sym {};
@@ -113,9 +107,6 @@ struct range {
 template <typename SubscriptExpression, typename ExpectedRange, typename ArrayT, typename SymbolType>
 void valid(SymbolType x) {
   static_assert(ExpectedRange::upperbound - ExpectedRange::lowerbound > 1, "Ranges require at least 3 elements for automatic testing.");
-
-  //const char *p = "Out of bound memory access";
-  //clang_analyzer_addNoteTagIf(__PRETTY_FUNCTION__, p);
 
   // Using constexpr to prevent this from compilation if underflow/overflow UB happens.
   constexpr auto after_lowerbound = ExpectedRange::lowerbound + 1;
@@ -291,20 +282,19 @@ template void valid<x_plus_minus_3, range<3, 11>, int[9]>(long x);
 template void valid<x_plus_minus_3, range<3, 11>, int[9]>(long long x);
 template void valid<x_plus_minus_3, range<3, 11>, int[9]>(unsigned char x);
 template void valid<x_plus_minus_3, range<3, 11>, int[9]>(unsigned short x);
-
-// Same testcase, but integer promotion kicks in and the unary negated value wraps around.
+// The uint, ulong, ulonglong, needs spacial attention:
+// Integer promotion kicks in and the unary negated value wraps around.
 //
-// 0 <= x + -3 < 9                    [ equivalent assuming integer promotion ]
-// 0 <= x + 0xfffffffd < 9            [ add unsigned(-3), aka. 0xfffffffd (32 bits) ]
-// 0xfffffffd <= x < 9 + 0xfffffffd
-// 0xfffffffd <= x < 0x100000006  (33 bits)
-// x can represent at most 0xffffffff, so upper bound clamped to that range.
-// x in [0xfffffffd, 0xffffffff]
+// 0 <= x + -3 < 9                    [ equivalent, due to integer promotion ]
+// 0 <= x + 4294967293 < 9            [ subtract 4294967293 aka. unsigned(-3) ]
+// While rearranging, we will assume that the expression 'x + 4294967293' did not overflow,
+// thus x must be in [0, 2] at this point.
+//
+// -4294967293 (33 bits) <= x < -4294967284 (33 bits)
+// There is no possible x value to be in the given range, without considering wrapping,
+// thus the simplification fails.
+// The same happens for ulong and ulonglong as well.
 
-// Simplification fails.
-//template void valid<x_plus_minus_3, range<0xfffffffd, 0xffffffff>, int[9]>(unsigned int x);
-//template void valid<x_plus_minus_3, range<0xfffffffffffffffd, 0xffffffff>, int[9]>(unsigned long x);
-//template void valid<x_plus_minus_3, range<0xfffffffffffffffd, 0xffffffff>, int[9]>(unsigned long long x);
 
 //------- buf[x- -6] ------
 // 0 <= x - -6 < 9
@@ -322,17 +312,18 @@ template void valid<x_minus_minus_6, range<-6, 2>, int[9]>(long x);
 template void valid<x_minus_minus_6, range<-6, 2>, int[9]>(long long x);
 template void valid<x_minus_minus_6, range<0, 2>, int[9]>(unsigned char x);
 template void valid<x_minus_minus_6, range<0, 2>, int[9]>(unsigned short x);
-
-// Same testcase, but integer promotion kicks in to match the unsigned type
-// so the unary negated value wraps around to a huge unsigned value.
+// The uint, ulong, ulonglong, needs spacial attention:
+// Integer promotion kicks in and the unary negated value wraps around.
 //
-// 0 <= x - -6 < 9                    [ equivalent assuming integer promotion ]
-// 0 <= x - 0xfffffffa < 9            [ add unsigned(-6), aka. 0xfffffffa (32 bits) ]
-// 0xfffffffa <= x < 9 + 0x0fffffff
-// 0xfffffffa <= x < 0x100000003  (33 bits)
-// x can represent at most 0xffffffff, so upper bound clamped to that range.
+// 0 <= x - -6 < 9                    [ equivalent, due to integer promotion ]
+// 0 <= x - 4294967290 < 9            [ add 4294967290 aka. unsigned(-6) ]
+// While rearranging, we will assume that the expression 'x - 4294967290' did not underflow,
+// thus x must be in [4294967290, 4294967295] at this point.
+//
+// 4294967290 (33 bits) <= x < 4294967299 (33 bits)
 // x in [0xfffffffa, 0xffffffff]
+// The same happens for ulong and ulonglong as well, but with their bit width.
 template void valid<x_minus_minus_6, range<0xfffffffa, 0xffffffff>, int[9]>(unsigned int x);
-template void valid<x_minus_minus_6, range<0xfffffffffffffffa, 0xffffffffffffffff>, int[9]>(unsigned long x);
+template void valid<x_minus_minus_6, range<0xfffffffa, 0xffffffff>, int[9]>(unsigned long x);
 template void valid<x_minus_minus_6, range<0xfffffffffffffffa, 0xffffffffffffffff>, int[9]>(unsigned long long x);
 

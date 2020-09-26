@@ -1,4 +1,8 @@
-// RUN: %clang_analyze_cc1 -std=c++11 -Wno-array-bounds -analyzer-checker=unix,core,alpha.security.ArrayBoundV2 -verify %s
+// RUN: %clang_analyze_cc1 -std=c++11 -Wno-array-bounds \
+// RUN:   -analyzer-checker=unix,core,alpha.security.ArrayBoundV2,debug.ExprInspection \
+// RUN:   -analyzer-config eagerly-assume=false -verify %s
+
+void clang_analyzer_eval(int);
 
 // Tests doing an out-of-bounds access after the end of an array using:
 // - constant integer index
@@ -120,14 +124,26 @@ void test2_multi_2(int x) {
 
 // Tests normal access of
 // a multi-dimensional array
-void test2_multi_ok(int x) {
+void test2_multi_ok(int x, int y, int z) {
   auto buf = new int[100][100];
-  buf[0][0] = 1; // no-warning
+  buf[0][0] = 1;  // no-warning
+
+  // The single symbol gets the constraint.
+  buf[x][99] = 1; // no-warning
+  clang_analyzer_eval(0 <= x && x <= 99); // expected-warning{{TRUE}}
+
+  // The lexically present complex symbol gets the constraint:
+  buf[x+y][99] = 1; // no-warning
+  clang_analyzer_eval(0 <= x+y && x+y <= 99); // expected-warning{{TRUE}}
+
+  // The lexically equivalent pair of the expression is still unknown.
+  // We are not smart enough to deal with such cases...
+  clang_analyzer_eval(0 <= y+x); // expected-warning{{UNKNOWN}}
 }
 
 // Tests over-indexing using different types
 // array
-void test_diff_types(int x) {
+void test_diff_types() {
   int *buf = new int[10]; //10*sizeof(int) Bytes allocated
   char *cptr = (char *)buf;
   cptr[sizeof(int) * 9] = 1;  // no-warning
@@ -136,7 +152,7 @@ void test_diff_types(int x) {
 
 // Tests over-indexing
 //if the allocated area is non-array
-void test_non_array(int x) {
+void test_non_array() {
   int *ip = new int;
   ip[0] = 1; // no-warning
   ip[1] = 2; // expected-warning{{Out of bound memory access}}
@@ -146,11 +162,38 @@ void test_non_array(int x) {
 //if the allocated area size is a runtime parameter
 void test_dynamic_size(int s) {
   int *buf = new int[s];
-  buf[0] = 1; // no-warning
+  buf[0] = 1;     // no-warning
+  buf[s - 1] = 1; // no-warning
+  buf[s] = 1;     // no-warning
 }
+
+void test_dynamic_size2(unsigned s) {
+  int *buf = new int[s];
+  buf[0] = 1;     // no-warning
+  buf[s - 1] = 1; // no-warning
+  buf[s] = 1;     // no-warning
+}
+
 //Tests complex arithmetic
-//in new expression
-void test_dynamic_size2(unsigned m,unsigned n){
-  unsigned *U = nullptr;
-  U = new unsigned[m + n + 1];
+//in new expression, signed
+void test_dynamic_size3(int m, int n, int z){
+  // The extent is symbolic, thus we check the lower bound...
+  unsigned *U = new unsigned[m + 1];
+  U[99999] = 1; // no-warning
+  U[n] = 1;     // no-warning
+  // We don't constrain the acces with the symbolic access.
+  // FIXME: With some smart, we could cover this case as well.
+  clang_analyzer_eval(n <= m + 1); // expected-warning{{UNKNOWN}}
+
+  // Constrain z to be negative.
+  if (z >= 0)
+    return;
+
+  // We know that we access an element at a negative index.
+  U[z] = 1; // expected-warning {{Out of bound memory access (accessed memory precedes memory block)}}
 }
+
+// TODO: Add tests covering VLAs, mutlidim VLAs, partially known VLAs.
+// TODO: Add tests showing that the given symbolic expression gets the proper constraints.
+// TODO: Add test using taint.
+
