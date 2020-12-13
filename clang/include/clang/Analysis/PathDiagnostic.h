@@ -46,9 +46,14 @@ class ConditionalOperator;
 class Decl;
 class Expr;
 class LocationContext;
+class MacroExpansionContext;
 class MemberExpr;
 class ProgramPoint;
 class SourceManager;
+
+namespace cross_tu {
+class CrossTranslationUnitContext;
+} // namespace cross_tu
 
 namespace ento {
 
@@ -903,6 +908,12 @@ public:
   void FullProfile(llvm::FoldingSetNodeID &ID) const;
 };
 
+void createHTMLSingleFileDiagnosticConsumer(
+    PathDiagnosticConsumerOptions DiagOpts,
+    std::vector<PathDiagnosticConsumer *> &C, const std::string &OutputDir,
+    const Preprocessor &PP,
+    const clang::cross_tu::CrossTranslationUnitContext &CTU,
+    const clang::MacroExpansionContext &MacroExpansions);
 } // namespace ento
 } // namespace clang
 
