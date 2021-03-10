@@ -1,5 +1,5 @@
 // RUN: %clang_analyze_cc1 -verify %s \
-// RUN:   -analyzer-checker=core,debug.ExprInspection \
+// RUN:   -analyzer-checker=core,debug.ExprInspection,debug.ValidateAssumptions \
 // RUN:   -analyzer-config eagerly-assume=false
 
 #define NULL (void *)0

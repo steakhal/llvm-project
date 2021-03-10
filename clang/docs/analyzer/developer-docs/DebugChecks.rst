@@ -297,6 +297,24 @@ ExprInspection checks
       return n;
     }
 
+Validation
+==========
+
+The debug.ValidateAssumptions checker checks the analyzer's state after each
+assume call for satisfiability. When the constraints of the state is
+unsatisfiable, dumps every useful information. Use the dumps to manually
+determine whether this (unfeasible) state should be possible due to the
+limitations of the constraint solver or it is an undesirable state which
+should be fixed.
+
+Yet again, an unfeasible state is not necessarily a bug, although it could
+reveal a potential improvement opportunity.
+
+It could be useful for finding defects in:
+
+ - the constraint handing of the analyzer
+ - the refutation (crosscheck) facilities
+
 Statistics
 ==========
 

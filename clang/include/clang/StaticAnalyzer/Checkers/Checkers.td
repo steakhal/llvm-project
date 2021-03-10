@@ -1550,6 +1550,11 @@ def DebugIteratorModeling : Checker<"DebugIteratorModeling">,
   Dependencies<[DebugContainerModeling, IteratorModeling]>,
   Documentation<NotDocumented>;
 
+def DebugValidateAssumptions : Checker<"ValidateAssumptions">,
+  HelpText<"Check the analyzer's state after each assume call for "
+           "satisfiability">,
+  Documentation<NotDocumented>;
+
 def StdCLibraryFunctionsTesterChecker : Checker<"StdCLibraryFunctionsTester">,
   HelpText<"Add test functions to the summary map, so testing of individual "
            "summary constituents becomes possible.">,
