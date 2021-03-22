@@ -310,6 +310,7 @@ ProgramStateRef ExprEngine::createTemporaryRegionIfNeeded(
     ProgramStateRef State, const LocationContext *LC,
     const Expr *InitWithAdjustments, const Expr *Result,
     const SubRegion **OutRegionWithAdjustments) {
+  ProgramStateRef OriginalState = State;
   // FIXME: This function is a hack that works around the quirky AST
   // we're often having with respect to C++ temporaries. If only we modelled
   // the actual execution order of statements properly in the CFG,
@@ -450,7 +451,7 @@ ProgramStateRef ExprEngine::createTemporaryRegionIfNeeded(
   }
 
   // Notify checkers once for two bindLoc()s.
-  State = processRegionChange(State, TR, LC);
+  State = processRegionChange(OriginalState, State, TR, LC);
 
   if (OutRegionWithAdjustments)
     *OutRegionWithAdjustments = cast<SubRegion>(Reg.getAsRegion());
@@ -539,16 +540,13 @@ ProgramStateRef ExprEngine::processAssume(ProgramStateRef state,
   return getCheckerManager().runCheckersForEvalAssume(state, cond, assumption);
 }
 
-ProgramStateRef
-ExprEngine::processRegionChanges(ProgramStateRef state,
-                                 const InvalidatedSymbols *invalidated,
-                                 ArrayRef<const MemRegion *> Explicits,
-                                 ArrayRef<const MemRegion *> Regions,
-                                 const LocationContext *LCtx,
-                                 const CallEvent *Call) {
-  return getCheckerManager().runCheckersForRegionChanges(state, invalidated,
-                                                         Explicits, Regions,
-                                                         LCtx, Call);
+ProgramStateRef ExprEngine::processRegionChanges(
+    ProgramStateRef Beforeinvalidation, ProgramStateRef state,
+    const InvalidatedSymbols *invalidated,
+    ArrayRef<const MemRegion *> Explicits, ArrayRef<const MemRegion *> Regions,
+    const LocationContext *LCtx, const CallEvent *Call) {
+  return getCheckerManager().runCheckersForRegionChanges(
+      Beforeinvalidation, state, invalidated, Explicits, Regions, LCtx, Call);
 }
 
 static void

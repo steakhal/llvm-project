@@ -400,13 +400,12 @@ public:
   ///   i.e. all regions that may have been touched by this change.
   /// \param Call The call expression wrapper if the regions are invalidated
   ///   by a call.
-  ProgramStateRef
-  runCheckersForRegionChanges(ProgramStateRef state,
-                              const InvalidatedSymbols *invalidated,
-                              ArrayRef<const MemRegion *> ExplicitRegions,
-                              ArrayRef<const MemRegion *> Regions,
-                              const LocationContext *LCtx,
-                              const CallEvent *Call);
+  ProgramStateRef runCheckersForRegionChanges(
+      ProgramStateRef Beforeinvalidation, ProgramStateRef state,
+      const InvalidatedSymbols *invalidated,
+      ArrayRef<const MemRegion *> ExplicitRegions,
+      ArrayRef<const MemRegion *> Regions, const LocationContext *LCtx,
+      const CallEvent *Call);
 
   /// Run checkers when pointers escape.
   ///

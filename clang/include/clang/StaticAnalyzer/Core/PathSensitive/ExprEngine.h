@@ -393,18 +393,19 @@ public:
   /// processRegionChanges - Called by ProgramStateManager whenever a change is made
   ///  to the store. Used to update checkers that track region values.
   ProgramStateRef
-  processRegionChanges(ProgramStateRef state,
+  processRegionChanges(ProgramStateRef Beforeinvalidation,
+                       ProgramStateRef state,
                        const InvalidatedSymbols *invalidated,
                        ArrayRef<const MemRegion *> ExplicitRegions,
                        ArrayRef<const MemRegion *> Regions,
-                       const LocationContext *LCtx,
-                       const CallEvent *Call);
+                       const LocationContext *LCtx, const CallEvent *Call);
 
-  inline ProgramStateRef
-  processRegionChange(ProgramStateRef state,
-                      const MemRegion* MR,
-                      const LocationContext *LCtx) {
-    return processRegionChanges(state, nullptr, MR, MR, LCtx, nullptr);
+  inline ProgramStateRef processRegionChange(ProgramStateRef Beforeinvalidation,
+                                             ProgramStateRef state,
+                                             const MemRegion *MR,
+                                             const LocationContext *LCtx) {
+    return processRegionChanges(Beforeinvalidation, state, nullptr, MR, MR,
+                                LCtx, nullptr);
   }
 
   /// printJson - Called by ProgramStateManager to print checker-specific data.

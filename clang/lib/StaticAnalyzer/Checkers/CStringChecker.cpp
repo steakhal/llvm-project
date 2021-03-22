@@ -2349,12 +2349,10 @@ void CStringChecker::checkPreStmt(const DeclStmt *DS, CheckerContext &C) const {
   C.addTransition(state);
 }
 
-ProgramStateRef
-CStringChecker::checkRegionChanges(ProgramStateRef state,
-    const InvalidatedSymbols *,
+ProgramStateRef CStringChecker::checkRegionChanges(
+    ProgramStateRef state, const InvalidatedSymbols *,
     ArrayRef<const MemRegion *> ExplicitRegions,
-    ArrayRef<const MemRegion *> Regions,
-    const LocationContext *LCtx,
+    ArrayRef<const MemRegion *> Regions, const LocationContext *LCtx,
     const CallEvent *Call) const {
   CStringLengthTy Entries = state->get<CStringLength>();
   if (Entries.isEmpty())

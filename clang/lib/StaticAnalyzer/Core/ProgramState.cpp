@@ -119,11 +119,13 @@ ProgramStateRef ProgramState::bindLoc(Loc LV,
                                       const LocationContext *LCtx,
                                       bool notifyChanges) const {
   ProgramStateManager &Mgr = getStateManager();
+  ProgramStateRef Beforeinvalidation = this;
   ProgramStateRef newState = makeWithStore(Mgr.StoreMgr->Bind(getStore(),
                                                              LV, V));
   const MemRegion *MR = LV.getAsRegion();
   if (MR && notifyChanges)
-    return Mgr.getOwningEngine().processRegionChange(newState, MR, LCtx);
+    return Mgr.getOwningEngine().processRegionChange(Beforeinvalidation,
+                                                     newState, MR, LCtx);
 
   return newState;
 }
@@ -132,19 +134,23 @@ ProgramStateRef
 ProgramState::bindDefaultInitial(SVal loc, SVal V,
                                  const LocationContext *LCtx) const {
   ProgramStateManager &Mgr = getStateManager();
+  ProgramStateRef Beforeinvalidation = this;
   const MemRegion *R = loc.castAs<loc::MemRegionVal>().getRegion();
   const StoreRef &newStore = Mgr.StoreMgr->BindDefaultInitial(getStore(), R, V);
   ProgramStateRef new_state = makeWithStore(newStore);
-  return Mgr.getOwningEngine().processRegionChange(new_state, R, LCtx);
+  return Mgr.getOwningEngine().processRegionChange(Beforeinvalidation,
+                                                   new_state, R, LCtx);
 }
 
 ProgramStateRef
 ProgramState::bindDefaultZero(SVal loc, const LocationContext *LCtx) const {
   ProgramStateManager &Mgr = getStateManager();
+  ProgramStateRef Beforeinvalidation = this;
   const MemRegion *R = loc.castAs<loc::MemRegionVal>().getRegion();
   const StoreRef &newStore = Mgr.StoreMgr->BindDefaultZero(getStore(), R);
   ProgramStateRef new_state = makeWithStore(newStore);
-  return Mgr.getOwningEngine().processRegionChange(new_state, R, LCtx);
+  return Mgr.getOwningEngine().processRegionChange(Beforeinvalidation,
+                                                   new_state, R, LCtx);
 }
 
 typedef ArrayRef<const MemRegion *> RegionList;
@@ -201,6 +207,9 @@ ProgramState::invalidateRegionsImpl(ValueList Values,
 
   StoreManager::InvalidatedRegions TopLevelInvalidated;
   StoreManager::InvalidatedRegions Invalidated;
+
+  ProgramStateRef Beforeinvalidation = this;
+
   const StoreRef &newStore
   = Mgr.StoreMgr->invalidateRegions(getStore(), Values, E, Count, LCtx, Call,
                                     *IS, *ITraits, &TopLevelInvalidated,
@@ -215,8 +224,8 @@ ProgramState::invalidateRegionsImpl(ValueList Values,
                                                  *ITraits);
   }
 
-  return Eng.processRegionChanges(newState, IS, TopLevelInvalidated,
-                                  Invalidated, LCtx, Call);
+  return Eng.processRegionChanges(Beforeinvalidation, newState, IS,
+                                  TopLevelInvalidated, Invalidated, LCtx, Call);
 }
 
 ProgramStateRef ProgramState::killBinding(Loc LV) const {
