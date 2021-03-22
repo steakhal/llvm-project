@@ -587,8 +587,15 @@ bool GenericTaintChecker::addFiltersPre(const CallEvent &Call,
 
     const Expr *Arg = Call.getArgExpr(ArgNum);
     Optional<SVal> V = getPointeeOf(C, Arg);
-    if (V)
+    if (V) {
       State = removeTaint(State, *V);
+      if (SymbolRef Sym = V->getAsSymbol()) {
+        const auto symbols =
+            llvm::make_range(Sym->symbol_begin(), Sym->symbol_end());
+        for (SymbolRef SubSym : symbols)
+          State = taint::removeTaint(State, SubSym);
+      }
+    }
   }
 
   if (State != C.getState()) {
