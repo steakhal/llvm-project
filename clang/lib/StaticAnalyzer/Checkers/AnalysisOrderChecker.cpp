@@ -195,7 +195,7 @@ public:
   }
 
   ProgramStateRef
-  checkRegionChanges(ProgramStateRef State,
+  checkRegionChanges(ProgramStateRef Beforeinvalidation, ProgramStateRef State,
                      const InvalidatedSymbols *Invalidated,
                      ArrayRef<const MemRegion *> ExplicitRegions,
                      ArrayRef<const MemRegion *> Regions,

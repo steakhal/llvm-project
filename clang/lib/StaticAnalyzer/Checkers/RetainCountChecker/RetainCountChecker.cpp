@@ -1181,7 +1181,8 @@ ProgramStateRef RetainCountChecker::evalAssume(ProgramStateRef state,
 }
 
 ProgramStateRef RetainCountChecker::checkRegionChanges(
-    ProgramStateRef state, const InvalidatedSymbols *invalidated,
+    ProgramStateRef Beforeinvalidation, ProgramStateRef state,
+    const InvalidatedSymbols *invalidated,
     ArrayRef<const MemRegion *> ExplicitRegions,
     ArrayRef<const MemRegion *> Regions, const LocationContext *LCtx,
     const CallEvent *Call) const {

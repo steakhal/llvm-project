@@ -515,13 +515,11 @@ public:
 
   using CheckLiveSymbolsFunc = CheckerFn<void (ProgramStateRef,SymbolReaper &)>;
 
-  using CheckRegionChangesFunc =
-      CheckerFn<ProgramStateRef (ProgramStateRef,
-                                 const InvalidatedSymbols *symbols,
-                                 ArrayRef<const MemRegion *> ExplicitRegions,
-                                 ArrayRef<const MemRegion *> Regions,
-                                 const LocationContext *LCtx,
-                                 const CallEvent *Call)>;
+  using CheckRegionChangesFunc = CheckerFn<ProgramStateRef(
+      ProgramStateRef, ProgramStateRef, const InvalidatedSymbols *symbols,
+      ArrayRef<const MemRegion *> ExplicitRegions,
+      ArrayRef<const MemRegion *> Regions, const LocationContext *LCtx,
+      const CallEvent *Call)>;
 
   using CheckPointerEscapeFunc =
       CheckerFn<ProgramStateRef (ProgramStateRef,

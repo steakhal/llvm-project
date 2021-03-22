@@ -48,7 +48,7 @@ public:
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
   void checkDeadSymbols(SymbolReaper &SymReaper, CheckerContext &C) const;
   ProgramStateRef
-  checkRegionChanges(ProgramStateRef State,
+  checkRegionChanges(ProgramStateRef Beforeinvalidation, ProgramStateRef State,
                      const InvalidatedSymbols *Invalidated,
                      ArrayRef<const MemRegion *> ExplicitRegions,
                      ArrayRef<const MemRegion *> Regions,
@@ -305,7 +305,8 @@ void SmartPtrModeling::printState(raw_ostream &Out, ProgramStateRef State,
 }
 
 ProgramStateRef SmartPtrModeling::checkRegionChanges(
-    ProgramStateRef State, const InvalidatedSymbols *Invalidated,
+    ProgramStateRef Beforeinvalidation, ProgramStateRef State,
+    const InvalidatedSymbols *Invalidated,
     ArrayRef<const MemRegion *> ExplicitRegions,
     ArrayRef<const MemRegion *> Regions, const LocationContext *LCtx,
     const CallEvent *Call) const {

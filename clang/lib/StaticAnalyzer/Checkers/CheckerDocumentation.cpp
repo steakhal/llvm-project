@@ -270,12 +270,11 @@ public:
   ///
   /// check::RegionChanges
   ProgramStateRef
-    checkRegionChanges(ProgramStateRef State,
-                       const InvalidatedSymbols *Invalidated,
-                       ArrayRef<const MemRegion *> ExplicitRegions,
-                       ArrayRef<const MemRegion *> Regions,
-                       const LocationContext *LCtx,
-                       const CallEvent *Call) const {
+  checkRegionChanges(ProgramStateRef Beforeinvalidation, ProgramStateRef State,
+                     const InvalidatedSymbols *Invalidated,
+                     ArrayRef<const MemRegion *> ExplicitRegions,
+                     ArrayRef<const MemRegion *> Regions,
+                     const LocationContext *LCtx, const CallEvent *Call) const {
     return State;
   }
 

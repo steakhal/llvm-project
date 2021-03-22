@@ -316,12 +316,11 @@ public:
                                  bool Assumption) const;
 
   ProgramStateRef
-  checkRegionChanges(ProgramStateRef state,
+  checkRegionChanges(ProgramStateRef Beforeinvalidation, ProgramStateRef state,
                      const InvalidatedSymbols *invalidated,
                      ArrayRef<const MemRegion *> ExplicitRegions,
                      ArrayRef<const MemRegion *> Regions,
-                     const LocationContext* LCtx,
-                     const CallEvent *Call) const;
+                     const LocationContext *LCtx, const CallEvent *Call) const;
 
   ExplodedNode* checkReturnWithRetEffect(const ReturnStmt *S, CheckerContext &C,
                                 ExplodedNode *Pred, RetEffect RE, RefVal X,

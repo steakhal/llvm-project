@@ -607,8 +607,8 @@ ProgramStateRef CheckerManager::runCheckersForRegionChanges(
     // bail out.
     if (!state)
       return nullptr;
-    state = RegionChangesChecker(state, invalidated, ExplicitRegions, Regions,
-                                 LCtx, Call);
+    state = RegionChangesChecker(Beforeinvalidation, state, invalidated,
+                                 ExplicitRegions, Regions, LCtx, Call);
   }
   return state;
 }

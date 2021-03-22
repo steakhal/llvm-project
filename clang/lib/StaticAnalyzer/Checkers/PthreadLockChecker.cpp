@@ -215,7 +215,8 @@ public:
   void checkPostCall(const CallEvent &Call, CheckerContext &C) const;
   void checkDeadSymbols(SymbolReaper &SymReaper, CheckerContext &C) const;
   ProgramStateRef
-  checkRegionChanges(ProgramStateRef State, const InvalidatedSymbols *Symbols,
+  checkRegionChanges(ProgramStateRef Beforeinvalidation, ProgramStateRef State,
+                     const InvalidatedSymbols *Symbols,
                      ArrayRef<const MemRegion *> ExplicitRegions,
                      ArrayRef<const MemRegion *> Regions,
                      const LocationContext *LCtx, const CallEvent *Call) const;
@@ -661,7 +662,8 @@ void PthreadLockChecker::checkDeadSymbols(SymbolReaper &SymReaper,
 }
 
 ProgramStateRef PthreadLockChecker::checkRegionChanges(
-    ProgramStateRef State, const InvalidatedSymbols *Symbols,
+    ProgramStateRef Beforeinvalidation, ProgramStateRef State,
+    const InvalidatedSymbols *Symbols,
     ArrayRef<const MemRegion *> ExplicitRegions,
     ArrayRef<const MemRegion *> Regions, const LocationContext *LCtx,
     const CallEvent *Call) const {

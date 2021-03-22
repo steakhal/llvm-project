@@ -54,7 +54,7 @@ public:
   void checkPostCall(const CallEvent &MC, CheckerContext &C) const;
   void checkDeadSymbols(SymbolReaper &SR, CheckerContext &C) const;
   ProgramStateRef
-  checkRegionChanges(ProgramStateRef State,
+  checkRegionChanges(ProgramStateRef Beforeinvalidation, ProgramStateRef State,
                      const InvalidatedSymbols *Invalidated,
                      ArrayRef<const MemRegion *> RequestedRegions,
                      ArrayRef<const MemRegion *> InvalidatedRegions,
@@ -694,10 +694,11 @@ void MoveChecker::checkDeadSymbols(SymbolReaper &SymReaper,
 }
 
 ProgramStateRef MoveChecker::checkRegionChanges(
-    ProgramStateRef State, const InvalidatedSymbols *Invalidated,
+    ProgramStateRef Beforeinvalidation, ProgramStateRef State,
+    const InvalidatedSymbols *Invalidated,
     ArrayRef<const MemRegion *> RequestedRegions,
-    ArrayRef<const MemRegion *> InvalidatedRegions,
-    const LocationContext *LCtx, const CallEvent *Call) const {
+    ArrayRef<const MemRegion *> InvalidatedRegions, const LocationContext *LCtx,
+    const CallEvent *Call) const {
   if (Call) {
     // Relax invalidation upon function calls: only invalidate parameters
     // that are passed directly via non-const pointers or non-const references
