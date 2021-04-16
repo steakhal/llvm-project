@@ -7,6 +7,7 @@ add_clang_library(clangTidyMiscModule
   DefinitionsInHeadersCheck.cpp
   MiscTidyModule.cpp
   MisplacedConstCheck.cpp
+  MisusedConfigurationDefineCheck.cpp
   NewDeleteOverloadsCheck.cpp
   NoRecursionCheck.cpp
   NonCopyableObjects.cpp

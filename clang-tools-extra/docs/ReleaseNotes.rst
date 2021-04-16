@@ -112,6 +112,11 @@ New checks
 
   Finds calls to ``new`` with missing exception handler for ``std::bad_alloc``.
 
+- New :doc:`misc-misused-configuration-define
+  <clang-tidy/checks/misc-misused-configuration-define>` check.
+
+  FIXME: add release notes.
+
 New check aliases
 ^^^^^^^^^^^^^^^^^
 

@@ -206,6 +206,7 @@ Clang-Tidy Checks
    `llvmlibc-restrict-system-libc-headers <llvmlibc-restrict-system-libc-headers.html>`_, "Yes"
    `misc-definitions-in-headers <misc-definitions-in-headers.html>`_, "Yes"
    `misc-misplaced-const <misc-misplaced-const.html>`_,
+   `misc-misused-configuration-define <misc-misused-configuration-define.html>`_,
    `misc-new-delete-overloads <misc-new-delete-overloads.html>`_,
    `misc-no-recursion <misc-no-recursion.html>`_,
    `misc-non-copyable-objects <misc-non-copyable-objects.html>`_,
