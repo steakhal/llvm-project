@@ -93,6 +93,9 @@ public:
     DefaultBool CheckCStringBufferOverlap;
     DefaultBool CheckCStringNotNullTerm;
 
+    // Taint makes no sense for NullArg, BufferOverlap and NotNullTerm checks.
+    DefaultBool ConsiderTaintForCStringOutOfBounds;
+
     CheckerNameRef CheckNameCStringNullArg;
     CheckerNameRef CheckNameCStringOutOfBounds;
     CheckerNameRef CheckNameCStringBufferOverlap;
@@ -2456,7 +2459,19 @@ bool ento::shouldRegisterCStringModeling(const CheckerManager &mgr) {
                                                                                \
   bool ento::shouldRegister##name(const CheckerManager &mgr) { return true; }
 
+#define REGISTER_CHECKER_WITH_TAINT(name)                                      \
+  void ento::register##name(CheckerManager &mgr) {                             \
+    CStringChecker *checker = mgr.getChecker<CStringChecker>();                \
+    checker->Filter.Check##name = true;                                        \
+    checker->Filter.CheckName##name = mgr.getCurrentCheckerName();             \
+    checker->Filter.ConsiderTaintFor##name =                                   \
+        mgr.getAnalyzerOptions().getCheckerBooleanOption(                      \
+            mgr.getCurrentCheckerName().getName(), "ConsiderTaint");           \
+  }                                                                            \
+                                                                               \
+  bool ento::shouldRegister##name(const CheckerManager &mgr) { return true; }
+
 REGISTER_CHECKER(CStringNullArg)
-REGISTER_CHECKER(CStringOutOfBounds)
 REGISTER_CHECKER(CStringBufferOverlap)
 REGISTER_CHECKER(CStringNotNullTerm)
+REGISTER_CHECKER_WITH_TAINT(CStringOutOfBounds)
