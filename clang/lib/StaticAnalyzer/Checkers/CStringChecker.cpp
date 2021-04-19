@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "InterCheckerAPI.h"
+#include "Taint.h"
 #include "clang/Basic/CharInfo.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
@@ -55,7 +56,8 @@ using ErrorMessage = SmallString<128>;
 enum class AccessKind { write, read };
 
 static ErrorMessage createOutOfBoundErrorMsg(StringRef FunctionDescription,
-                                             AccessKind Access) {
+                                             AccessKind Access,
+                                             bool IsTainted = false) {
   ErrorMessage Message;
   llvm::raw_svector_ostream Os(Message);
 
@@ -64,9 +66,9 @@ static ErrorMessage createOutOfBoundErrorMsg(StringRef FunctionDescription,
      << &FunctionDescription.data()[1];
 
   if (Access == AccessKind::write) {
-    Os << " overflows the destination buffer";
+    Os << (IsTainted ? " might" : "") << " overflows the destination buffer";
   } else { // read access
-    Os << " accesses out-of-bound array element";
+    Os << (IsTainted ? " might" : "") << " accesses out-of-bound array element";
   }
 
   return Message;
@@ -369,6 +371,15 @@ ProgramStateRef CStringChecker::CheckLocation(CheckerContext &C,
         createOutOfBoundErrorMsg(CurrentFunctionDescription, Access);
     emitOutOfBoundsBug(C, StOutBound, Buffer.Expression, Message);
     return nullptr;
+  } else if (Filter.CheckCStringOutOfBounds &&
+             Filter.ConsiderTaintForCStringOutOfBounds && StOutBound &&
+             StInBound &&
+             (taint::isTainted(state, Idx) || taint::isTainted(state, Size))) {
+    // FIXME: Explain whether the index or the extent was tainted.
+    // FIXME: Add a visitor explaining where the taint was introduced.
+    ErrorMessage Message = createOutOfBoundErrorMsg(CurrentFunctionDescription,
+                                                    Access, /*IsTainted=*/true);
+    emitOutOfBoundsBug(C, StOutBound, Buffer.Expression, Message);
   }
 
   // Array bound check succeeded.  From this point forward the array bound
