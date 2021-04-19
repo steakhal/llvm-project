@@ -46,6 +46,7 @@
 
 #include "AllocationState.h"
 #include "InterCheckerAPI.h"
+#include "Taint.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
@@ -1720,6 +1721,15 @@ StateAndPred MallocChecker::MallocMemAux(CheckerContext &C,
   // Set the region's extent.
   State = setDynamicExtent(State, RetVal.getAsRegion(),
                            Size.castAs<DefinedOrUnknownSVal>(), svalBuilder);
+  if (taint::isTainted(State, Size)) {
+    const NoteTag *Note =
+        C.getNoteTag([Size](PathSensitiveBugReport &BR) -> std::string {
+          if (BR.isInteresting(Size))
+            return "Allocating tainted amount of memory";
+          return "";
+        });
+    Pred = C.addTransition(State, Pred, Note);
+  }
 
   return MallocUpdateRefState(C, CE, State, Pred, Family);
 }
