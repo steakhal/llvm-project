@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Taint.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
@@ -23,20 +24,24 @@ using namespace ento;
 namespace {
   class BoolAssignmentChecker : public Checker< check::Bind > {
     mutable std::unique_ptr<BuiltinBug> BT;
-    void emitReport(ProgramStateRef state, CheckerContext &C) const;
+    void emitReport(ProgramStateRef state, CheckerContext &C,
+                    bool IsTainted = false) const;
+
   public:
     void checkBind(SVal loc, SVal val, const Stmt *S, CheckerContext &C) const;
   };
 } // end anonymous namespace
 
-void BoolAssignmentChecker::emitReport(ProgramStateRef state,
-                                       CheckerContext &C) const {
+void BoolAssignmentChecker::emitReport(ProgramStateRef state, CheckerContext &C,
+                                       bool IsTainted) const {
   if (ExplodedNode *N = C.generateNonFatalErrorNode(state)) {
     if (!BT)
       BT.reset(new BuiltinBug(this, "Assignment of a non-Boolean value"));
 
-    C.emitReport(
-        std::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N));
+    // FIXME: Reword the message.
+    StringRef Msg = IsTainted ? "Might assigns a tainted non-Boolean value"
+                              : "Assignment of a non-Boolean value";
+    C.emitReport(std::make_unique<PathSensitiveBugReport>(*BT, Msg, N));
   }
 }
 
@@ -90,6 +95,8 @@ void BoolAssignmentChecker::checkBind(SVal loc, SVal val, const Stmt *S,
 
   if (!StIn)
     emitReport(StOut, C);
+  if (StIn && StOut && taint::isTainted(state, *NV))
+    emitReport(StOut, C, /*IsTainted=*/true);
 }
 
 void ento::registerBoolAssignmentChecker(CheckerManager &mgr) {
