@@ -51,6 +51,7 @@
 
 #include "Taint.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
@@ -120,6 +121,11 @@ class StdLibraryFunctionsChecker
                                   CheckerContext &C) const = 0;
     virtual ValueConstraintPtr negate() const {
       llvm_unreachable("Not implemented");
+    }
+
+    virtual void markInteresting(const CallEvent &Call,
+                                 PathSensitiveBugReport &BR) const {
+      BR.markInteresting(getArgSVal(Call, getArgNo()));
     }
 
     virtual bool dependsOnTaintedValue(const CallEvent &Call,
@@ -254,6 +260,12 @@ class StdLibraryFunctionsChecker
     ProgramStateRef apply(ProgramStateRef State, const CallEvent &Call,
                           const Summary &Summary,
                           CheckerContext &C) const override;
+
+    void markInteresting(const CallEvent &Call,
+                         PathSensitiveBugReport &BR) const override {
+      BR.markInteresting(getArgSVal(Call, getArgNo()));
+      BR.markInteresting(getArgSVal(Call, getOtherArgNo()));
+    }
 
     bool dependsOnTaintedValue(const CallEvent &Call,
                                CheckerContext &C) const override {
@@ -398,6 +410,15 @@ class StdLibraryFunctionsChecker
       BufferSizeConstraint Tmp(*this);
       Tmp.Op = BinaryOperator::negateComparisonOp(Op);
       return std::make_shared<BufferSizeConstraint>(Tmp);
+    }
+
+    void markInteresting(const CallEvent &Call,
+                         PathSensitiveBugReport &BR) const override {
+      BR.markInteresting(getArgSVal(Call, getArgNo()));
+      if (SizeArgN.hasValue())
+        BR.markInteresting(getArgSVal(Call, SizeArgN.getValue()));
+      if (SizeMultiplierArgN.hasValue())
+        BR.markInteresting(getArgSVal(Call, SizeMultiplierArgN.getValue()));
     }
 
     bool dependsOnTaintedValue(const CallEvent &Call,
@@ -654,7 +675,6 @@ private:
           CheckNames[CK_StdCLibraryFunctionArgsChecker],
           "Unsatisfied argument constraints", categories::LogicError);
 
-    SVal Arg = getArgSVal(Call, VC->getArgNo());
     auto R = std::make_unique<PathSensitiveBugReport>(*BT_InvalidArg, Msg, N);
 
     for (ArgNo ArgN : VC->getArgsToTrack())
@@ -662,12 +682,14 @@ private:
 
     // Highlight the range of the argument that was violated.
     R->addRange(Call.getArgSourceRange(VC->getArgNo()));
-    R->markInteresting(Arg);
 
     // Describe the argument constraint in a note.
     R->addNote(VC->describe(C.getState(), Summary), R->getLocation(),
                Call.getArgSourceRange(VC->getArgNo()));
 
+    // FIXME: What if we don't want to mark every part interesting but only a
+    // smaller portion of it.
+    VC->markInteresting(Call, *R);
     C.emitReport(std::move(R));
   }
 };
