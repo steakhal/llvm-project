@@ -19,6 +19,7 @@
 #include "clang/AST/Attr.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
@@ -26,6 +27,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/YAMLTraits.h"
 
 #include <limits>
@@ -428,11 +430,25 @@ template <> struct ScalarEnumerationTraits<TaintConfiguration::VariadicType> {
 } // namespace yaml
 } // namespace llvm
 
-/// A set which is used to pass information from call pre-visit instruction
-/// to the call post-visit. The values are signed integers, which are either
-/// ReturnValueIndex, or indexes of the pointer/reference argument, which
-/// points to data, which should be tainted on return.
-REGISTER_SET_WITH_PROGRAMSTATE(TaintArgsOnPostVisit, ArgIdxTy)
+namespace {
+struct FunctionParameter {
+  SVal Value;
+  ArgIdxTy Index;
+  FunctionParameter(SVal Value, ArgIdxTy Index) : Value{Value}, Index{Index} {}
+
+  void Profile(llvm::FoldingSetNodeID &ID) const {
+    Value.Profile(ID);
+    ID.AddInteger(Index);
+  }
+};
+} // namespace
+
+REGISTER_TRAIT_WITH_PROGRAMSTATE(ReturnsTainted, bool)
+
+/// A list which is used to pass information from call pre-visit program point
+/// to the call post-visit. Contains the symbolic value of the tainted
+/// pointer/reference parameter and its index.
+REGISTER_LIST_WITH_PROGRAMSTATE(TaintedFunctionParameters, FunctionParameter)
 
 void GenericTaintRuleParser::validateArgVector(const std::string &Option,
                                                const ArgVecTy &Args) const {
@@ -683,30 +699,77 @@ void GenericTaintChecker::checkPostCall(const CallEvent &Call,
   // Set the marked values as tainted. The return value only accessible from
   // checkPostStmt.
   ProgramStateRef State = C.getState();
+  ExplodedNode *Pred = C.getPredecessor();
 
   // Depending on what was tainted at pre-visit, we determined a set of
   // arguments which should be tainted after the function returns. These are
   // stored in the state as TaintArgsOnPostVisit set.
-  TaintArgsOnPostVisitTy TaintArgs = State->get<TaintArgsOnPostVisit>();
-  if (TaintArgs.isEmpty())
+
+  if (State->get<ReturnsTainted>()) {
+    State = State->set<ReturnsTainted>(false);
+    State = taint::addTaint(State, Call.getReturnValue());
+    const NoteTag *Note =
+        C.getNoteTag([RetVal = Call.getReturnValue()](
+                         PathSensitiveBugReport &BR) -> std::string {
+          return BR.isInteresting(RetVal) ? "Returned tainted value" : "";
+        });
+    Pred = C.addTransition(State, Pred, Note);
+  }
+
+  TaintedFunctionParametersTy TaintedParams =
+      State->get<TaintedFunctionParameters>();
+  if (TaintedParams.isEmpty())
     return;
 
-  for (ArgIdxTy ArgNum : TaintArgs) {
-    // Special handling for the tainted return value.
-    if (ArgNum == ReturnValueIndex) {
-      State = addTaint(State, Call.getReturnValue());
-      continue;
-    }
-
+  struct Pack {
+    SVal PreValue;
+    SVal PostValue;
+    ArgIdxTy Index;
+  };
+  SmallVector<Pack, 6> ActualTaintedParams;
+  for (FunctionParameter Param : TaintedParams) {
     // The arguments are pointer arguments. The data they are pointing at is
     // tainted after the call.
-    if (auto V = getPointeeOf(C, Call.getArgSVal(ArgNum)))
+    if (auto V = getPointeeOf(C, Call.getArgSVal(Param.Index))) {
       State = addTaint(State, *V);
+      ActualTaintedParams.push_back({Param.Value, V.getValue(), Param.Index});
+    }
   }
 
   // Clear up the taint info from the state.
-  State = State->remove<TaintArgsOnPostVisit>();
-  C.addTransition(State);
+  State = State->remove<TaintedFunctionParameters>();
+  const NoteTag *Note = [&]() -> const NoteTag * {
+    if (ActualTaintedParams.empty())
+      return nullptr;
+    return C.getNoteTag(
+        [ActualTaintedParams](PathSensitiveBugReport &BR) -> std::string {
+          const auto Interesting = [&BR](const auto &Param) -> bool {
+            return BR.isInteresting(Param.PostValue);
+          };
+
+          auto InterestingTaintedParams =
+              llvm::make_filter_range(ActualTaintedParams, Interesting);
+
+          if (InterestingTaintedParams.empty())
+            return "";
+
+          SmallVector<std::string, 6> MsgParts;
+          for (const auto &Param : InterestingTaintedParams) {
+            BR.markInteresting(Param.PreValue);
+            const auto ParamOrdinal = Param.Index + 1;
+            MsgParts.emplace_back((Twine(std::to_string(ParamOrdinal)) +
+                                   llvm::getOrdinalSuffix(ParamOrdinal))
+                                      .str());
+          }
+
+          return (Twine("Propagated taint to the ") +
+                  llvm::join(std::move(MsgParts), ", ") +
+                  (MsgParts.size() == 1 ? " parameter" : " parameters"))
+              .str();
+        });
+  }();
+
+  C.addTransition(State, Pred, Note);
 }
 
 void GenericTaintChecker::printState(raw_ostream &Out, ProgramStateRef State,
@@ -746,11 +809,18 @@ void GenericTaintRule::process(const GenericTaintChecker &Checker,
   /// A rule is relevant if PropSrcArgs is empty, or if any of its signified
   /// args are tainted in context of the current CallEvent.
   bool IsMatching = PropSrcArgs.isEmpty();
-  ForEachCallArg(
-      [this, &C, &IsMatching, &State](ArgIdxTy I, const Expr *E, SVal) {
-        IsMatching = IsMatching || (PropSrcArgs.contains(I) &&
-                                    isTaintedOrPointsToTainted(E, State, C));
-      });
+  ArgIdxTy TaintedArgIdx;
+  ForEachCallArg([this, &C, &IsMatching, &State,
+                  &TaintedArgIdx](ArgIdxTy I, const Expr *E, SVal) {
+    if (IsMatching)
+      return;
+
+    IsMatching =
+        PropSrcArgs.contains(I) && isTaintedOrPointsToTainted(E, State, C);
+
+    if (IsMatching)
+      TaintedArgIdx = I;
+  });
 
   if (!IsMatching)
     return;
@@ -766,17 +836,28 @@ void GenericTaintRule::process(const GenericTaintChecker &Checker,
     return IsNonConstRef || IsNonConstPtr;
   };
 
+  struct Pack {
+    SVal PreValue;
+    SVal PostValue;
+    unsigned Index;
+  };
+  SmallVector<Pack, 6> ActualTaintedParams;
+
   /// Propagate taint where it is necessary.
   ForEachCallArg(
       [this, &State, WouldEscape](ArgIdxTy I, const Expr *E, SVal V) {
-        if (PropDstArgs.contains(I))
-          State = State->add<TaintArgsOnPostVisit>(I);
+        if (PropDstArgs.contains(I)) {
+          State = I == ReturnValueIndex
+                      ? State->set<ReturnsTainted>(true)
+                      : State->add<TaintedFunctionParameters>({V, I});
+          return;
+        }
 
         // TODO: We should traverse all reachable memory regions via the
         // escaping parameter. Instead of doing that we simply mark only the
         // referred memory region as tainted.
         if (WouldEscape(V, E->getType()))
-          State = State->add<TaintArgsOnPostVisit>(I);
+          State = State->add<TaintedFunctionParameters>({V, I});
       });
 
   C.addTransition(State);
@@ -800,7 +881,7 @@ bool GenericTaintChecker::generateReportIfTainted(const Expr *E, StringRef Msg,
   if (ExplodedNode *N = C.generateNonFatalErrorNode()) {
     auto report = std::make_unique<PathSensitiveBugReport>(BT, Msg, N);
     report->addRange(E->getSourceRange());
-    report->addVisitor(std::make_unique<TaintBugVisitor>(*TaintedSVal));
+    report->markInteresting(*TaintedSVal);
     C.emitReport(std::move(report));
     return true;
   }
@@ -869,7 +950,7 @@ void GenericTaintChecker::taintUnsafeSocketProtocol(const CallEvent &Call,
   if (SafeProtocol)
     return;
 
-  C.addTransition(C.getState()->add<TaintArgsOnPostVisit>(ReturnValueIndex));
+  C.addTransition(C.getState()->set<ReturnsTainted>(true));
 }
 
 /// Checker registration
