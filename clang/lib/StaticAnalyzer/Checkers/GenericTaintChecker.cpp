@@ -378,12 +378,60 @@ REGISTER_SET_WITH_PROGRAMSTATE(TaintArgsOnPostVisit, unsigned)
 // HACK
 REGISTER_TRAIT_WITH_PROGRAMSTATE(DisappearedTaint, bool)
 
+class DisappearedTaintVisitor final : public BugReporterVisitor {
+  const ProgramStateRef State;
+  bool IsActivated = false;
+  bool Satisfied = false;
+
+public:
+  explicit DisappearedTaintVisitor(ProgramStateRef State) : State{State} {}
+  void Profile(llvm::FoldingSetNodeID &ID) const override {
+    static char X;
+    ID.AddPointer(&X);
+    ID.AddBoolean(Satisfied);
+  }
+
+  PathDiagnosticPieceRef VisitNode(const ExplodedNode *N,
+                                   BugReporterContext &BRC,
+                                   PathSensitiveBugReport &BR) override {
+    if (Satisfied)
+      return nullptr;
+
+    if (N->getState() == State)
+      IsActivated = true;
+
+    if (!IsActivated)
+      return nullptr;
+
+    unsigned Curr = N->getState()->get<DisappearedTaint>();
+    unsigned Prev = N->getFirstPred()->getState()->get<DisappearedTaint>();
+
+    if (Satisfied || Curr == Prev || Prev)
+      return nullptr;
+
+    Satisfied = true;
+    const Stmt *S = N->getStmtForDiagnostics();
+    if (!S)
+      return nullptr;
+
+    const LocationContext *NCtx = N->getLocationContext();
+    PathDiagnosticLocation L =
+        PathDiagnosticLocation::createBegin(S, BRC.getSourceManager(), NCtx);
+    if (!L.isValid() || !L.asLocation().isValid())
+      return nullptr;
+
+    return std::make_shared<PathDiagnosticEventPiece>(
+        L, "Tainted data would disappear exactly here");
+  }
+};
+
 void GenericTaintChecker::checkPostStmt(const Stmt *S,
                                         CheckerContext &C) const {
   if (!WarnForDisappearingTaint)
     return;
 
   ProgramStateRef State = C.getState();
+  ProgramStateRef OriginalState = State;
   if (!State->get<DisappearedTaint>())
     return;
 
@@ -394,8 +442,10 @@ void GenericTaintChecker::checkPostStmt(const Stmt *S,
       DisappearedTaintBT.reset(new BugType(this, "Tainted data", "General"));
 
     auto Report = std::make_unique<PathSensitiveBugReport>(
-        *DisappearedTaintBT, "Tainted data would disappear", N);
-    Report->addRange(S->getSourceRange());
+        *DisappearedTaintBT,
+        "Tainted data would disappear due to regionChanges", N);
+    Report->addVisitor(
+        std::make_unique<DisappearedTaintVisitor>(OriginalState));
     C.emitReport(std::move(Report));
   } else {
     C.addTransition(State);
