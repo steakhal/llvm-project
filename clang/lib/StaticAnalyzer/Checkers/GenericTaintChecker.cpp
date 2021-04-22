@@ -701,7 +701,7 @@ ProgramStateRef GenericTaintChecker::checkRegionChanges(
         RemovedTaint = true;
         // FIXME: isTainted peels of the first region. We should do the same
         // before adding taint.
-        // After = addTaint(After, NewVal); // Mark the new symbol tainted.
+        After = addTaint(After, NewVal); // Mark the new symbol tainted.
       }
     }
   }
