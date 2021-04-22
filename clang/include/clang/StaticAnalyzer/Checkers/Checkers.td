@@ -987,6 +987,11 @@ def GenericTaintChecker : Checker<"TaintPropagation">,
                   "Specifies the name of the configuration file.",
                   "",
                   InAlpha>,
+    CmdLineOption<Boolean,
+                  "WarnForDisappearingTaint",
+                  "Warns for disappearing taint",
+                  "false",
+                  InAlpha>,
   ]>,
   Documentation<HasAlphaDocumentation>;
 

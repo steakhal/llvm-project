@@ -38,12 +38,24 @@ using namespace ento;
 using namespace taint;
 
 namespace {
-class GenericTaintChecker : public Checker<check::PreCall, check::PostCall> {
+class GenericTaintChecker
+    : public Checker<check::PreCall, check::PostCall, check::PostStmt<Stmt>,
+                     check::PreStmt<BinaryOperator>, check::RegionChanges> {
+
 public:
   static void *getTag() {
     static int Tag;
     return &Tag;
   }
+
+  ProgramStateRef checkRegionChanges(ProgramStateRef, ProgramStateRef,
+                                     const InvalidatedSymbols *,
+                                     ArrayRef<const MemRegion *>,
+                                     ArrayRef<const MemRegion *>,
+                                     const LocationContext *,
+                                     const CallEvent *) const;
+  void checkPreStmt(const BinaryOperator *BO, CheckerContext &C) const;
+  void checkPostStmt(const Stmt *S, CheckerContext &C) const;
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
   void checkPostCall(const CallEvent &Call, CheckerContext &C) const;
@@ -93,8 +105,12 @@ public:
   static const unsigned ReturnValueIndex{std::numeric_limits<unsigned>::max() -
                                          1};
 
+  bool WarnForDisappearingTaint;
+
 private:
   mutable std::unique_ptr<BugType> BT;
+  mutable std::unique_ptr<BugType> DisappearedTaintBT;
+
   void initBugType() const {
     if (!BT)
       BT = std::make_unique<BugType>(this, "Use of Untrusted Data",
@@ -359,6 +375,69 @@ template <> struct MappingTraits<TaintConfig::NameScopeArgs> {
 /// points to data, which should be tainted on return.
 REGISTER_SET_WITH_PROGRAMSTATE(TaintArgsOnPostVisit, unsigned)
 
+// HACK
+REGISTER_TRAIT_WITH_PROGRAMSTATE(DisappearedTaint, bool)
+
+void GenericTaintChecker::checkPostStmt(const Stmt *S,
+                                        CheckerContext &C) const {
+  if (!WarnForDisappearingTaint)
+    return;
+
+  ProgramStateRef State = C.getState();
+  if (!State->get<DisappearedTaint>())
+    return;
+
+  State = State->set<DisappearedTaint>(false);
+
+  if (ExplodedNode *N = C.generateNonFatalErrorNode(State)) {
+    if (!DisappearedTaintBT)
+      DisappearedTaintBT.reset(new BugType(this, "Tainted data", "General"));
+
+    auto Report = std::make_unique<PathSensitiveBugReport>(
+        *DisappearedTaintBT, "Tainted data would disappear", N);
+    Report->addRange(S->getSourceRange());
+    C.emitReport(std::move(Report));
+  } else {
+    C.addTransition(State);
+  }
+}
+
+void GenericTaintChecker::checkPreStmt(const BinaryOperator *BO,
+                                       CheckerContext &C) const {
+  if (!WarnForDisappearingTaint)
+    return;
+  SVal LHS = C.getSVal(BO->getLHS());
+  SVal RHS = C.getSVal(BO->getRHS());
+  ProgramStateRef State = C.getState();
+
+  // At least one of the arguments is interesting.
+  if (!LHS.isUnknownOrUndef() && !RHS.isUnknownOrUndef())
+    return;
+
+  // At least one of them is tainted.
+  bool LHSTainted = isTainted(State, LHS);
+  bool RHSTainted = isTainted(State, RHS);
+  assert(!(LHSTainted && RHSTainted) &&
+         "Cannot be both tainted at the same time!");
+  if (!LHSTainted && !RHSTainted)
+    return;
+
+  // But the result will not be tainted anymore :(
+  if (ExplodedNode *N = C.generateNonFatalErrorNode(State)) {
+    if (!DisappearedTaintBT)
+      DisappearedTaintBT.reset(new BugType(this, "Tainted data", "General"));
+
+    auto Report = std::make_unique<PathSensitiveBugReport>(
+        *DisappearedTaintBT, "Tainted data would disappear due to binop", N);
+
+    Report->addRange(
+        (LHSTainted ? BO->getLHS() : BO->getRHS())->getSourceRange());
+    C.emitReport(std::move(Report));
+  } else {
+    C.addTransition(State);
+  }
+}
+
 GenericTaintChecker::ArgVector
 GenericTaintChecker::convertToArgVector(CheckerManager &Mgr,
                                         const std::string &Option,
@@ -522,6 +601,38 @@ GenericTaintChecker::TaintPropagationRule::getTaintPropagationRule(
   if (It != CustomPropagations.end())
     return It->second.second;
   return {};
+}
+
+ProgramStateRef GenericTaintChecker::checkRegionChanges(
+    ProgramStateRef Before, ProgramStateRef After,
+    const InvalidatedSymbols *Syms, ArrayRef<const MemRegion *>,
+    ArrayRef<const MemRegion *> InvalidatedRegions, const LocationContext *,
+    const CallEvent *Call) const {
+  if (!WarnForDisappearingTaint || !Call)
+    return After;
+
+  assert(!After->get<DisappearedTaint>());
+  bool RemovedTaint = false;
+  for (const MemRegion *R : InvalidatedRegions) {
+    if (const auto *TR = dyn_cast<TypedValueRegion>(R)) {
+      const SVal PrevVal = Before->getSVal(R, TR->getValueType());
+      const SVal NewVal = After->getSVal(R, TR->getValueType());
+      const bool TaintDisappeared =
+          isTainted(Before, PrevVal) && !isTainted(After, NewVal);
+      if (TaintDisappeared) {
+        RemovedTaint = true;
+        // FIXME: isTainted peels of the first region. We should do the same
+        // before adding taint.
+        // After = addTaint(After, NewVal); // Mark the new symbol tainted.
+      }
+    }
+  }
+
+  if (RemovedTaint) {
+    After = After->set<DisappearedTaint>(true);
+  }
+
+  return After;
 }
 
 void GenericTaintChecker::checkPreCall(const CallEvent &Call,
@@ -951,6 +1062,10 @@ bool GenericTaintChecker::checkCustomSinks(const CallEvent &Call,
 
 void ento::registerGenericTaintChecker(CheckerManager &Mgr) {
   auto *Checker = Mgr.registerChecker<GenericTaintChecker>();
+  Checker->WarnForDisappearingTaint =
+      Mgr.getAnalyzerOptions().getCheckerBooleanOption(
+          Checker, "WarnForDisappearingTaint");
+
   std::string Option{"Config"};
   StringRef ConfigFile =
       Mgr.getAnalyzerOptions().getCheckerStringOption(Checker, Option);
