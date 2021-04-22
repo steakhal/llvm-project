@@ -26,6 +26,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
 #include "llvm/Support/YAMLTraits.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <limits>
@@ -37,10 +38,13 @@ using namespace clang;
 using namespace ento;
 using namespace taint;
 
+static llvm::StringMap<std::pair<StringRef, unsigned>>
+    InvalidatingFunctionCalls;
 namespace {
 class GenericTaintChecker
     : public Checker<check::PreCall, check::PostCall, check::PostStmt<Stmt>,
-                     check::PreStmt<BinaryOperator>, check::RegionChanges> {
+                     check::PreStmt<BinaryOperator>, check::RegionChanges,
+                     check::EndOfTranslationUnit> {
 
 public:
   static void *getTag() {
@@ -59,6 +63,29 @@ public:
 
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
   void checkPostCall(const CallEvent &Call, CheckerContext &C) const;
+
+  void checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
+                                 AnalysisManager &Mgr, BugReporter &BR) const {
+    if (InvalidatingFunctionCalls.empty())
+      return;
+    const auto &SM = Mgr.getSourceManager();
+    StringRef SrcFileName =
+        SM.getFileEntryRefForID(SM.getMainFileID())->getName();
+    std::string DumpFile = (Twine(SrcFileName) + ".invalidated").str();
+
+    std::error_code ec;
+    llvm::raw_fd_stream OS(DumpFile, ec);
+
+    if (ec) {
+      llvm::errs() << "ERROR opening " << DumpFile << " file: " << ec.message()
+                   << "\n";
+      return;
+    }
+    for (const auto &Pair : InvalidatingFunctionCalls) {
+      OS << Pair.getKey() << ' ' << Pair.getValue().first << ':'
+         << Pair.getValue().second << '\n';
+    }
+  }
 
   void printState(raw_ostream &Out, ProgramStateRef State, const char *NL,
                   const char *Sep) const override;
@@ -662,6 +689,7 @@ ProgramStateRef GenericTaintChecker::checkRegionChanges(
     return After;
 
   assert(!After->get<DisappearedTaint>());
+
   bool RemovedTaint = false;
   for (const MemRegion *R : InvalidatedRegions) {
     if (const auto *TR = dyn_cast<TypedValueRegion>(R)) {
@@ -680,6 +708,15 @@ ProgramStateRef GenericTaintChecker::checkRegionChanges(
 
   if (RemovedTaint) {
     After = After->set<DisappearedTaint>(true);
+
+    const SourceManager &SM = After->getAnalysisManager().getSourceManager();
+    auto PLoc = SM.getPresumedLoc(Call->getSourceRange().getBegin());
+    assert(PLoc.isValid());
+
+    if (const auto *II = Call->getCalleeIdentifier()) {
+      std::pair<StringRef, unsigned> Data{PLoc.getFilename(), PLoc.getLine()};
+      InvalidatingFunctionCalls.try_emplace(II->getName(), std::move(Data));
+    }
   }
 
   return After;
