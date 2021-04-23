@@ -38,8 +38,15 @@ using namespace clang;
 using namespace ento;
 using namespace taint;
 
-static llvm::StringMap<std::pair<StringRef, unsigned>>
-    InvalidatingFunctionCalls;
+namespace {
+struct InvalidationRecord {
+  StringRef Filename;
+  unsigned Line;
+  SmallVector<int, 2> LaunderedParamIndices;
+};
+} // namespace
+
+static llvm::StringMap<InvalidationRecord> InvalidatingFunctionCalls;
 namespace {
 class GenericTaintChecker
     : public Checker<check::PreCall, check::PostCall, check::PostStmt<Stmt>,
@@ -82,8 +89,12 @@ public:
       return;
     }
     for (const auto &Pair : InvalidatingFunctionCalls) {
-      OS << Pair.getKey() << ' ' << Pair.getValue().first << ':'
-         << Pair.getValue().second << '\n';
+      OS << Pair.getKey() << ' ' << Pair.getValue().Filename << ':'
+         << Pair.getValue().Line;
+      for (int Idx : Pair.getValue().LaunderedParamIndices) {
+        OS << ' ' << Idx;
+      };
+      OS << '\n';
     }
   }
 
@@ -690,18 +701,16 @@ ProgramStateRef GenericTaintChecker::checkRegionChanges(
 
   assert(!After->get<DisappearedTaint>());
 
+  SmallVector<int, 8> DisappearedTaintIndices;
   bool RemovedTaint = false;
-  for (const MemRegion *R : InvalidatedRegions) {
-    if (const auto *TR = dyn_cast<TypedValueRegion>(R)) {
-      const SVal PrevVal = Before->getSVal(R, TR->getValueType());
-      const SVal NewVal = After->getSVal(R, TR->getValueType());
-      const bool TaintDisappeared =
-          isTainted(Before, PrevVal) && !isTainted(After, NewVal);
-      if (TaintDisappeared) {
+  // Call->dump();
+  for (int Idx = 0, Count = Call->getNumArgs(); Idx < Count; ++Idx) {
+    if (const MemRegion *ParamReg = Call->getArgSVal(Idx).getAsRegion()) {
+      if (llvm::find(InvalidatedRegions, ParamReg) !=
+          std::end(InvalidatedRegions)) {
         RemovedTaint = true;
-        // FIXME: isTainted peels of the first region. We should do the same
-        // before adding taint.
-        After = addTaint(After, NewVal); // Mark the new symbol tainted.
+        DisappearedTaintIndices.push_back(Idx);
+        After = addTaint(After, ParamReg); // Mark the new symbol tainted.
       }
     }
   }
@@ -714,8 +723,9 @@ ProgramStateRef GenericTaintChecker::checkRegionChanges(
     assert(PLoc.isValid());
 
     if (const auto *II = Call->getCalleeIdentifier()) {
-      std::pair<StringRef, unsigned> Data{PLoc.getFilename(), PLoc.getLine()};
-      InvalidatingFunctionCalls.try_emplace(II->getName(), std::move(Data));
+      InvalidationRecord Record{PLoc.getFilename(), PLoc.getLine(),
+                                std::move(DisappearedTaintIndices)};
+      InvalidatingFunctionCalls.try_emplace(II->getName(), std::move(Record));
     }
   }
 
