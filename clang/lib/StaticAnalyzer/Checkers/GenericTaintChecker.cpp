@@ -706,8 +706,13 @@ ProgramStateRef GenericTaintChecker::checkRegionChanges(
   // Call->dump();
   for (int Idx = 0, Count = Call->getNumArgs(); Idx < Count; ++Idx) {
     if (const MemRegion *ParamReg = Call->getArgSVal(Idx).getAsRegion()) {
-      if (llvm::find(InvalidatedRegions, ParamReg) !=
-          std::end(InvalidatedRegions)) {
+      const bool ParamWasInvalidated =
+          llvm::find(InvalidatedRegions, ParamReg) !=
+          std::end(InvalidatedRegions);
+      const bool ParamWasTainted = taint::isTainted(Before, ParamReg);
+      if (ParamWasInvalidated && ParamWasTainted) {
+        // assert(!taint::isTainted(After, ParamReg) &&
+        //        "After invalidation it shouldn't not have taint.");
         RemovedTaint = true;
         DisappearedTaintIndices.push_back(Idx);
         After = addTaint(After, ParamReg); // Mark the new symbol tainted.
