@@ -89,6 +89,14 @@ New checks
   Finds potentially incorrect calls to ``memcmp()`` based on properties of the
   arguments.
 
+- New :doc:`cert-msc24-c
+  <clang-tidy/checks/cert-msc24-c>` check.
+
+  Checks for deprecated and obsolescent functions listed in
+  CERT C Coding Standard Recommendation MSC24-C. For the listed functions,
+  an alternative, more secure replacement is suggested, if available. The checker heavily
+  relies on the functions from annex K (Bounds-checking interfaces) of C11.
+
 - New :doc:`cppcoreguidelines-virtual-class-destructor
   <clang-tidy/checks/cppcoreguidelines-virtual-class-destructor>` check.
 

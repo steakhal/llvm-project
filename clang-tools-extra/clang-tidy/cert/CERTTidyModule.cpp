@@ -32,6 +32,7 @@
 #include "LimitedRandomnessCheck.h"
 #include "MutatingCopyCheck.h"
 #include "NonTrivialTypesLibcMemoryCallsCheck.h"
+#include "ObsolescentFunctionsCheck.h"
 #include "PostfixOperatorCheck.h"
 #include "ProperlySeededRandomGeneratorCheck.h"
 #include "SetLongJmpCheck.h"
@@ -301,6 +302,7 @@ public:
     // FIO
     CheckFactories.registerCheck<misc::NonCopyableObjectsCheck>("cert-fio38-c");
     // MSC
+    CheckFactories.registerCheck<ObsolescentFunctionsCheck>("cert-msc24-c");
     CheckFactories.registerCheck<LimitedRandomnessCheck>("cert-msc30-c");
     CheckFactories.registerCheck<ProperlySeededRandomGeneratorCheck>(
         "cert-msc32-c");
