@@ -843,3 +843,66 @@ int TestAssignSideEffect(int i) {
 
   return 2;
 }
+
+template <bool V>
+struct boolean_value {
+  static constexpr bool value = V;
+};
+template <typename T>
+struct my_trait : boolean_value<true> {};
+
+bool respect_nested_name_specifiers(bool sink) {
+  sink |= my_trait<char>::value || my_trait<int>::value; // no-warning
+
+  sink |= my_trait<char>::value || my_trait<char>::value;
+  // CHECK-MESSAGES: :[[@LINE-1]]:33: warning: both sides of operator are equivalent
+
+  using my_char = char;
+  sink |= my_trait<char>::value || my_trait<my_char>::value;
+  // CHECK-MESSAGES: :[[@LINE-1]]:33: warning: both sides of operator are equivalent
+
+  sink |= my_trait<char>::value || ::my_trait<my_char>::value;
+  // CHECK-MESSAGES: :[[@LINE-1]]:33: warning: both sides of operator are equivalent
+
+  using my_trait_alias = my_trait<my_char>;
+  sink |= my_trait<char>::value || my_trait_alias::value;
+  // CHECK-MESSAGES: :[[@LINE-1]]:33: warning: both sides of operator are equivalent
+
+  return sink;
+}
+
+static void static_function() {}
+namespace my {
+int fn(int = 1);
+}
+void respect_namespaces(bool coin) {
+  namespace other = my;
+  namespace other2 = other;
+  using namespace other;
+
+  coin ? my::fn(1) : my::fn(2);    // no-warning
+  coin ? my::fn(1) : other::fn(2); // no-warning
+
+  // CHECK-MESSAGES: :[[@LINE+5]]:20: warning: 'true' and 'false' expressions are equivalent
+  // CHECK-MESSAGES: :[[@LINE+5]]:20: warning: 'true' and 'false' expressions are equivalent
+  // CHECK-MESSAGES: :[[@LINE+5]]:20: warning: 'true' and 'false' expressions are equivalent
+  // CHECK-MESSAGES: :[[@LINE+5]]:20: warning: 'true' and 'false' expressions are equivalent
+  // CHECK-MESSAGES: :[[@LINE+5]]:16: warning: 'true' and 'false' expressions are equivalent
+  coin ? my::fn(1) : my::fn(1);
+  coin ? my::fn(1) : other::fn(1);
+  coin ? my::fn(1) : fn(1);
+  coin ? my::fn(1) : other2::fn(1);
+  coin ? fn(1) : other2::fn(1);
+
+  coin ? my::fn(1) : fn(); // FIXME: We should have a warning for this: the default parameter is also 1.
+
+  // CHECK-MESSAGES: :[[@LINE+2]]:13: warning: both sides of operator are equivalent [misc-redundant-expression]
+  // CHECK-MESSAGES: :[[@LINE+2]]:13: warning: both sides of operator are equivalent [misc-redundant-expression]
+  my::fn(1) & my::fn(1);
+  my::fn(1) & other::fn(1);
+
+  // CHECK-MESSAGES: :[[@LINE+2]]:30: warning: 'true' and 'false' expressions are equivalent
+  // CHECK-MESSAGES: :[[@LINE+2]]:30: warning: 'true' and 'false' expressions are equivalent
+  coin ? ::static_function() : ::static_function();
+  coin ? ::static_function() : static_function();
+}

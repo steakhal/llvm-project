@@ -1562,3 +1562,62 @@ void test_nowarn_inner_if_1(int x) {
       ;
   }
 }
+
+template <bool V> struct boolean_value {
+  static constexpr bool value = V;
+};
+template <typename T> struct my_trait : boolean_value<true> {};
+
+bool respect_nested_name_specifiers(bool sink) {
+  sink |= my_trait<char>::value || my_trait<int>::value; // no-warning
+
+  sink |= my_trait<char>::value || my_trait<char>::value;
+  // expected-warning@-1 {{identical expressions on both sides of logical operator}}
+
+  using my_char = char;
+  sink |= my_trait<char>::value || my_trait<my_char>::value;
+  // expected-warning@-1 {{identical expressions on both sides of logical operator}}
+
+  sink |= my_trait<char>::value || ::my_trait<my_char>::value;
+  // expected-warning@-1 {{identical expressions on both sides of logical operator}}
+
+  using my_trait_alias = my_trait<my_char>;
+  sink |= my_trait<char>::value || my_trait_alias::value;
+  // expected-warning@-1 {{identical expressions on both sides of logical operator}}
+
+  return sink;
+}
+
+static void static_function() {}
+namespace my {
+int fn(int = 1);
+}
+void respect_namespaces(bool coin) {
+  namespace other = my;
+  namespace other2 = other;
+  using namespace other;
+
+  coin ? my::fn(1) : my::fn(2);    // no-warning
+  coin ? my::fn(1) : other::fn(2); // no-warning
+
+  // expected-warning@+5 {{identical expressions on both sides of ':' in conditional expression}}
+  // expected-warning@+5 {{identical expressions on both sides of ':' in conditional expression}}
+  // expected-warning@+5 {{identical expressions on both sides of ':' in conditional expression}}
+  // expected-warning@+5 {{identical expressions on both sides of ':' in conditional expression}}
+  // expected-warning@+5 {{identical expressions on both sides of ':' in conditional expression}}
+  coin ? my::fn(1) : my::fn(1);
+  coin ? my::fn(1) : other::fn(1);
+  coin ? my::fn(1) : fn(1);
+  coin ? my::fn(1) : other2::fn(1);
+  coin ? fn(1) : other2::fn(1);
+
+  coin ? my::fn(1) : fn(); // FIXME: We should have a warning for this: the default parameter is also 1.
+
+  my::fn(1) & my::fn(1);    // no-warning
+  my::fn(1) & other::fn(1); // no-warning
+
+  // expected-warning@+2 {{identical expressions on both sides of ':' in conditional expression}}
+  // expected-warning@+2 {{identical expressions on both sides of ':' in conditional expression}}
+  coin ? ::static_function() : ::static_function();
+  coin ? ::static_function() : static_function();
+}
