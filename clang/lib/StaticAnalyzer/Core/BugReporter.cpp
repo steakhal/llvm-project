@@ -21,6 +21,7 @@
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/StmtObjC.h"
+#include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Analysis/AnalysisDeclContext.h"
 #include "clang/Analysis/CFG.h"
 #include "clang/Analysis/CFGStmtMap.h"
@@ -2821,6 +2822,42 @@ generateVisitorsDiagnostics(PathSensitiveBugReport *R,
   return Notes;
 }
 
+/// Suppresses the bugreport if it happened in constexpr context, where
+/// generally no undefined behavior should occur in a valid source code.
+/// \returns true if it suppressed the bugreport
+static bool suppressReportsFromConstexprContext(PathSensitiveBugReport &BR) {
+  // TODO: Maybe pass the ASTContext as a parameter?
+  ASTContext &ACtx =
+      BR.getErrorNode()->getState()->getStateManager().getContext();
+  const StackFrameContext *Frame =
+      BR.getErrorNode()->getLocationContext()->getStackFrame();
+
+  const StringRef BindName = "decl";
+  using namespace clang::ast_matchers;
+  static const auto Matcher = callExpr(hasAncestor(declStmt().bind(BindName)));
+
+  while (Frame && !Frame->inTopFrame()) {
+    // CallSite is null for destructors.
+    if (const Stmt *CallSite = Frame->getCallSite()) {
+      // Locs are invalid for synthetized call bodies produced by BodyFarm.
+      if (CallSite->getSourceRange().isValid()) {
+        const auto Matches = match(Matcher, *CallSite, ACtx);
+        if (!Matches.empty()) {
+          const auto *DS = Matches[0].getNodeAs<DeclStmt>(BindName);
+          // Assumption: The CFG has one DeclStmt per Decl.
+          const auto *Var = dyn_cast_or_null<VarDecl>(*DS->decl_begin());
+          if (Var && Var->isConstexpr()) {
+            BR.markInvalid("happened in constexpr context", nullptr);
+            return true;
+          }
+        }
+      }
+    }
+    Frame = Frame->getParent()->getStackFrame();
+  }
+  return false;
+}
+
 Optional<PathDiagnosticBuilder> PathDiagnosticBuilder::findValidReport(
     ArrayRef<PathSensitiveBugReport *> &bugReports,
     PathSensitiveBugReporter &Reporter) {
@@ -2833,6 +2870,12 @@ Optional<PathDiagnosticBuilder> PathDiagnosticBuilder::findValidReport(
     assert(R && "No original report found for sliced graph.");
     assert(R->isValid() && "Report selected by trimmed graph marked invalid.");
     const ExplodedNode *ErrorNode = BugPath->ErrorNode;
+
+    // Suppress reports materialized within constexpr context.
+    // FIXME: Maybe introduce an analyzer option for disabling this?
+    if (Reporter.getContext().getLangOpts().CPlusPlus)
+      if (suppressReportsFromConstexprContext(*R))
+        return {};
 
     // Register refutation visitors first, if they mark the bug invalid no
     // further analysis is required
