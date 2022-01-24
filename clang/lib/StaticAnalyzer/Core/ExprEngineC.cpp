@@ -926,8 +926,21 @@ void ExprEngine::handleUOExtension(ExplodedNodeSet::iterator I,
   const Expr *Ex = U->getSubExpr()->IgnoreParens();
   ProgramStateRef state = (*I)->getState();
   const LocationContext *LCtx = (*I)->getLocationContext();
-  Bldr.generateNode(U, *I, state->BindExpr(U, LCtx,
-                                           state->getSVal(Ex, LCtx)));
+  const SVal Val = state->getSVal(Ex, LCtx);
+  state = state->BindExpr(U, LCtx, Val);
+
+  // Taking the address of an lvalue should never result in a null-pointer.
+  if (U->getOpcode() == UO_AddrOf) {
+    if (auto DefinedVal = Val.getAs<DefinedSVal>()) {
+      if (ProgramStateRef NonNull = state->assume(*DefinedVal, true))
+        state = NonNull;
+      else
+        state = state->BindExpr(U, LCtx, UndefinedVal());
+    }
+  }
+
+  assert(state);
+  Bldr.generateNode(U, *I, state);
 }
 
 void ExprEngine::VisitUnaryOperator(const UnaryOperator* U, ExplodedNode *Pred,

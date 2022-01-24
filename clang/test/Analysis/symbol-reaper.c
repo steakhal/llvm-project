@@ -126,7 +126,7 @@ void test_region_referenced_only_through_field_in_store_value(void) {
   // The exit() call invalidates globals. The symbol will die here because
   // the exit() statement itself is already over and there's no better statement
   // to put the diagnostic on.
-} // expected-warning{{SYMBOL DEAD}}
+}
 
 void test_zombie_referenced_only_through_field_in_store_value(void) {
   struct S1 *s = conjure_S1();

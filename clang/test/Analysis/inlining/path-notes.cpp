@@ -251,15 +251,10 @@ public:
   void bar() const {}
 };
 const A& testDeclRefExprToReferenceInGetDerefExpr(const A *ptr) {
-  const A& val = *ptr; //expected-note {{'val' initialized here}}
+  const A& val = *ptr;
 
-  // This is not valid C++; if 'ptr' were null, creating 'ref' would be illegal.
-  // However, this is not checked at runtime, so this branch is actually
-  // possible.
-  if (&val == 0) { //expected-note {{Assuming pointer value is null}}
-                   // expected-note@-1 {{Taking true branch}}
-    val.bar(); // expected-warning {{Called C++ object pointer is null}}
-               // expected-note@-1 {{Called C++ object pointer is null}}
+  if (&val == 0) {
+    val.bar(); // no-warning
   }
 
   return val;
