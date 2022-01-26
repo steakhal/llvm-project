@@ -173,12 +173,7 @@ public:
 
   /// Retrieve the identifier stored in this nested name
   /// specifier.
-  IdentifierInfo *getAsIdentifier() const {
-    if (Prefix.getInt() == StoredIdentifier)
-      return (IdentifierInfo *)Specifier;
-
-    return nullptr;
-  }
+  IdentifierInfo *getAsIdentifier() const;
 
   /// Retrieve the namespace stored in this nested name
   /// specifier.
@@ -202,6 +197,20 @@ public:
   }
 
   NestedNameSpecifierDependence getDependence() const;
+
+  /// TODO: Add doc comment.
+  /// Returns whether this refers to the same sequence of identifiers/canonical
+  /// declarations as \c Other.  (Then I would repeat the std::is_same example
+  /// here, since that really makes the issue clear.  And also describe what
+  /// this returns when other is nullptr or when getPrefix() is nullptr while
+  /// other->getPrefix() is non-null -- maybe add a parameter if its not clear
+  /// in general what the behavior should be.)
+  bool isSemanticallyEquivalentTo(const NestedNameSpecifier *Other,
+                                  bool RecurseToPrefix = true) const;
+
+  /// TODO: Add doc comment.
+  bool isSyntacticallyEquivalentTo(const NestedNameSpecifier *Other,
+                                   bool RecurseToPrefix = true) const;
 
   /// Whether this nested name specifier refers to a dependent
   /// type or not.

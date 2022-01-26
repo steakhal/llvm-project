@@ -28,6 +28,7 @@ add_clang_unittest(ASTTests
   RandstructTest.cpp
   RecursiveASTVisitorTest.cpp
   SizelessTypesTest.cpp
+  SemanticallyOrSyntacticallyEquivalentASTNodes.cpp
   SourceLocationTest.cpp
   StmtPrinterTest.cpp
   StructuralEquivalenceTest.cpp

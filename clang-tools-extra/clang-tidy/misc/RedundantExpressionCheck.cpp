@@ -49,89 +49,6 @@ static bool incrementWithoutOverflow(const APSInt &Value, APSInt &Result) {
   return Value < Result;
 }
 
-static const NamespaceDecl *lookingThroughAliases(const NamedDecl *D) {
-  while (const auto *Alias = dyn_cast<NamespaceAliasDecl>(D))
-    D = Alias->getAliasedNamespace();
-  return cast_or_null<NamespaceDecl>(D);
-}
-
-static bool areEquivalentNameSpecifier(const NestedNameSpecifier *Left,
-                                       const NestedNameSpecifier *Right) {
-  const auto TryCompareAsNamespaces =
-      [](const NestedNameSpecifier *Left,
-         const NestedNameSpecifier *Right) -> Optional<bool> {
-    const NamespaceDecl *LeftAsNS = Left->getAsNamespace();
-    const NamespaceDecl *RightAsNS = Right->getAsNamespace();
-    if (const auto *LeftAlias = Left->getAsNamespaceAlias())
-      LeftAsNS = lookingThroughAliases(LeftAlias);
-    if (const auto *RightAlias = Left->getAsNamespaceAlias())
-      RightAsNS = lookingThroughAliases(RightAlias);
-
-    if (!LeftAsNS || !RightAsNS)
-      return None;
-    return LeftAsNS == RightAsNS;
-  };
-
-  const auto TryCompareAsTypes =
-      [](const NestedNameSpecifier *Left,
-         const NestedNameSpecifier *Right) -> Optional<bool> {
-    const Type *LeftAsTy = Left->getAsType();
-    const Type *RightAsTy = Right->getAsType();
-
-    if (!LeftAsTy || !RightAsTy)
-      return None;
-
-    LeftAsTy = LeftAsTy->getCanonicalTypeUnqualified().getTypePtr();
-    RightAsTy = RightAsTy->getCanonicalTypeUnqualified().getTypePtr();
-    return LeftAsTy == RightAsTy;
-  };
-
-  const auto TryCompareAsIdentifier =
-      [](const NestedNameSpecifier *Left,
-         const NestedNameSpecifier *Right) -> Optional<bool> {
-    const IdentifierInfo *LeftAsII = Left->getAsIdentifier();
-    const IdentifierInfo *RightAsII = Right->getAsIdentifier();
-    if (!LeftAsII || !RightAsII)
-      return None;
-    return LeftAsII == RightAsII;
-  };
-
-  while (Left && Right) {
-    if (!TryCompareAsNamespaces(Left, Right).getValueOr(true))
-      return false;
-    if (!TryCompareAsTypes(Left, Right).getValueOr(true))
-      return false;
-    if (!TryCompareAsIdentifier(Left, Right).getValueOr(true))
-      return false;
-
-    // Ignoring Global and Super NestedNameSpecifier kinds.
-    Left = Left->getPrefix();
-    Right = Right->getPrefix();
-  }
-
-  // We already know that the declrefs are refering to the same entity.
-  return true;
-}
-
-static bool areEquivalentDeclRefs(const DeclRefExpr *Left,
-                                  const DeclRefExpr *Right) {
-  if (Left->getDecl()->getCanonicalDecl() !=
-      Right->getDecl()->getCanonicalDecl()) {
-    return false;
-  }
-
-  return areEquivalentNameSpecifier(Left->getQualifier(),
-                                    Right->getQualifier());
-}
-
-static bool areEquivalentDeclRefs(const DependentScopeDeclRefExpr *Left,
-                                  const DependentScopeDeclRefExpr *Right) {
-  if (Left->getDeclName() != Right->getDeclName())
-    return false;
-  return areEquivalentNameSpecifier(Left->getQualifier(),
-                                    Right->getQualifier());
-}
-
 static bool areEquivalentExpr(const Expr *Left, const Expr *Right) {
   if (!Left || !Right)
     return !Left && !Right;
@@ -180,11 +97,11 @@ static bool areEquivalentExpr(const Expr *Left, const Expr *Right) {
     return cast<CXXOperatorCallExpr>(Left)->getOperator() ==
            cast<CXXOperatorCallExpr>(Right)->getOperator();
   case Stmt::DependentScopeDeclRefExprClass:
-    return areEquivalentDeclRefs(cast<DependentScopeDeclRefExpr>(Left),
-                                 cast<DependentScopeDeclRefExpr>(Right));
+    return cast<DependentScopeDeclRefExpr>(Left)->isSemanticallyEquivalentTo(
+        cast<DependentScopeDeclRefExpr>(Right));
   case Stmt::DeclRefExprClass:
-    return areEquivalentDeclRefs(cast<DeclRefExpr>(Left),
-                                 cast<DeclRefExpr>(Right));
+    return cast<DeclRefExpr>(Left)->isSemanticallyEquivalentTo(
+        cast<DeclRefExpr>(Right));
   case Stmt::MemberExprClass:
     return cast<MemberExpr>(Left)->getMemberDecl() ==
            cast<MemberExpr>(Right)->getMemberDecl();

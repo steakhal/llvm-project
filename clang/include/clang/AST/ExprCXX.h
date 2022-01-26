@@ -3333,6 +3333,13 @@ public:
     return getLocation();
   }
 
+  // TODO: Add doc comments.
+  bool isSemanticallyEquivalentTo(const DependentScopeDeclRefExpr *Other) const;
+
+  // TODO: Add doc comments.
+  bool
+  isSyntacticallyEquivalentTo(const DependentScopeDeclRefExpr *Other) const;
+
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == DependentScopeDeclRefExprClass;
   }

@@ -524,6 +524,28 @@ SourceLocation DeclRefExpr::getEndLoc() const {
   return getNameInfo().getEndLoc();
 }
 
+bool DeclRefExpr::isSemanticallyEquivalentTo(const DeclRefExpr *Other) const {
+  if (getDecl()->getCanonicalDecl() != Other->getDecl()->getCanonicalDecl())
+    return false;
+
+  // We already know that the declrefs are refering to the same entity.
+  if (!getQualifier() || !Other->getQualifier())
+    return true;
+
+  return getQualifier()->isSemanticallyEquivalentTo(Other->getQualifier());
+}
+
+bool DeclRefExpr::isSyntacticallyEquivalentTo(const DeclRefExpr *Other) const {
+  if (getDecl()->getCanonicalDecl() != Other->getDecl()->getCanonicalDecl())
+    return false;
+
+  // We already know that the declrefs are refering to the same entity.
+  if (!getQualifier() || !Other->getQualifier())
+    return true;
+
+  return getQualifier()->isSyntacticallyEquivalentTo(Other->getQualifier());
+}
+
 SYCLUniqueStableNameExpr::SYCLUniqueStableNameExpr(SourceLocation OpLoc,
                                                    SourceLocation LParen,
                                                    SourceLocation RParen,

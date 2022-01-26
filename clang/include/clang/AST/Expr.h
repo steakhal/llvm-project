@@ -1426,6 +1426,26 @@ public:
     return DeclRefExprBits.RefersToEnclosingVariableOrCapture;
   }
 
+  /// TODO: Finish this doc comment.
+  /// Returns whether this \c DeclRefExpr
+  ///   a. refers to the same canonical declaration as \c Other and
+  ///   b. if it has a qualifier, that qualifier refers to the same canonical
+  ///       declarations as those of \c Other.
+  ///
+  /// Consider these two DeclRefExprs:
+  /// \code
+  ///   std::is_same<char, int>::value
+  ///   std::is_same<char, long>::value;
+  /// \endcode
+  ///
+  /// We can see that the value static members are different, but in fact
+  /// the \c getDecl() of these two returns the same \c VarDecl, which is the
+  /// \c value member of \c std::false_type class.
+  bool isSemanticallyEquivalentTo(const DeclRefExpr *Other) const;
+
+  /// TODO: Add doc comment.
+  bool isSyntacticallyEquivalentTo(const DeclRefExpr *Other) const;
+
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == DeclRefExprClass;
   }

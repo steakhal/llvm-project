@@ -231,6 +231,96 @@ NestedNameSpecifierDependence NestedNameSpecifier::getDependence() const {
   llvm_unreachable("Invalid NNS Kind!");
 }
 
+static bool areEquivalent(const NestedNameSpecifier *Left,
+                          const NestedNameSpecifier *Right,
+                          bool RecurseToPrefix, bool Desugar) {
+  assert(Left);
+  assert(Right);
+
+  const auto TryCompareAsNamespaces =
+      [Desugar](const NestedNameSpecifier *Left,
+                const NestedNameSpecifier *Right) -> Optional<bool> {
+    const NamespaceDecl *LeftAsNS = Left->getAsNamespace();
+    const NamespaceDecl *RightAsNS = Right->getAsNamespace();
+
+    if (Desugar) {
+      if (const auto *LeftAlias = Left->getAsNamespaceAlias())
+        LeftAsNS = cast<NamespaceDecl>(LeftAlias->getUnderlyingDecl());
+      if (const auto *RightAlias = Right->getAsNamespaceAlias())
+        RightAsNS = cast<NamespaceDecl>(RightAlias->getUnderlyingDecl());
+    }
+
+    if (!LeftAsNS || !RightAsNS)
+      return None;
+    return LeftAsNS == RightAsNS;
+  };
+
+  const auto TryCompareAsTypes =
+      [Desugar](const NestedNameSpecifier *Left,
+                const NestedNameSpecifier *Right) -> Optional<bool> {
+    const Type *LeftAsTy = Left->getAsType();
+    const Type *RightAsTy = Right->getAsType();
+
+    if (!LeftAsTy || !RightAsTy)
+      return None;
+
+    if (Desugar) {
+      LeftAsTy = LeftAsTy->getCanonicalTypeUnqualified().getTypePtr();
+      RightAsTy = RightAsTy->getCanonicalTypeUnqualified().getTypePtr();
+    }
+    return LeftAsTy == RightAsTy;
+  };
+
+  const auto TryCompareAsIdentifier =
+      [](const NestedNameSpecifier *Left,
+         const NestedNameSpecifier *Right) -> Optional<bool> {
+    const IdentifierInfo *LeftAsII = Left->getAsIdentifier();
+    const IdentifierInfo *RightAsII = Right->getAsIdentifier();
+    if (!LeftAsII || !RightAsII)
+      return None;
+    return LeftAsII == RightAsII;
+  };
+
+  if (Left == Right)
+    return true;
+
+  do {
+    Optional<bool> AreSame = None;
+    // Ignoring Global and Super NestedNameSpecifier kinds.
+    if (!AreSame.hasValue())
+      AreSame = TryCompareAsNamespaces(Left, Right);
+    if (!AreSame.hasValue())
+      AreSame = TryCompareAsTypes(Left, Right);
+    if (!AreSame.hasValue())
+      AreSame = TryCompareAsIdentifier(Left, Right);
+
+    if (AreSame.hasValue()) {
+      if (AreSame.getValue())
+        goto next_iteration;
+      return false;
+    }
+
+    next_iteration:
+      if (!RecurseToPrefix)
+        return true;
+
+      Left = Left->getPrefix();
+      Right = Right->getPrefix();
+  } while (Left && Right);
+
+  return true;
+}
+
+bool NestedNameSpecifier::isSemanticallyEquivalentTo(
+    const NestedNameSpecifier *Other, bool RecurseToPrefix /*=true*/) const {
+  return areEquivalent(this, Other, RecurseToPrefix, /*Desugar=*/true);
+}
+
+bool NestedNameSpecifier::isSyntacticallyEquivalentTo(
+    const NestedNameSpecifier *Other, bool RecurseToPrefix /*=true*/) const {
+  return areEquivalent(this, Other, RecurseToPrefix, /*Desugar=*/false);
+}
+
 bool NestedNameSpecifier::isDependent() const {
   return getDependence() & NestedNameSpecifierDependence::Dependent;
 }
@@ -345,6 +435,19 @@ LLVM_DUMP_METHOD void NestedNameSpecifier::dump() const { dump(llvm::errs()); }
 LLVM_DUMP_METHOD void NestedNameSpecifier::dump(llvm::raw_ostream &OS) const {
   LangOptions LO;
   dump(OS, LO);
+}
+
+IdentifierInfo *NestedNameSpecifier::getAsIdentifier() const {
+  if (Prefix.getInt() == StoredIdentifier) {
+    auto *II = (IdentifierInfo *)Specifier;
+    if (II) {
+      llvm::errs() << "II: " << II->getName() << "\n";
+      llvm_unreachable("aaaa dies");
+    }
+    return II;
+  }
+
+  return nullptr;
 }
 
 LLVM_DUMP_METHOD void NestedNameSpecifier::dump(llvm::raw_ostream &OS,

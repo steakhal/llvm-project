@@ -506,6 +506,41 @@ DependentScopeDeclRefExpr::CreateEmpty(const ASTContext &Context,
   return E;
 }
 
+bool DependentScopeDeclRefExpr::isSemanticallyEquivalentTo(
+    const DependentScopeDeclRefExpr *Other) const {
+  assert(Other);
+
+  if (getDeclName() != Other->getDeclName())
+    return false;
+
+  // FIXME: We should check the template arguments as well.
+  // At the first mismatch we could return false.
+
+  // We already know that the declrefs are refering to the same entity.
+  // FIXME: How could be a DependentScopeDeclRefExpr be unqualified?
+  if (!getQualifier() || !Other->getQualifier())
+    return true;
+
+  return getQualifier()->isSemanticallyEquivalentTo(Other->getQualifier());
+}
+
+bool DependentScopeDeclRefExpr::isSyntacticallyEquivalentTo(
+    const DependentScopeDeclRefExpr *Other) const {
+  assert(Other);
+
+  if (getDeclName() != Other->getDeclName())
+    return false;
+
+  // FIXME: We should check the template arguments as well.
+  // At the first mismatch we could return false.
+
+  // We already know that the declrefs are refering to the same entity.
+  if (!getQualifier() || !Other->getQualifier())
+    return true;
+
+  return getQualifier()->isSyntacticallyEquivalentTo(Other->getQualifier());
+}
+
 SourceLocation CXXConstructExpr::getBeginLoc() const {
   if (isa<CXXTemporaryObjectExpr>(this))
     return cast<CXXTemporaryObjectExpr>(this)->getBeginLoc();

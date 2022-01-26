@@ -295,81 +295,6 @@ bool FindIdenticalExprVisitor::VisitConditionalOperator(
   return true;
 }
 
-static const NamespaceDecl *lookingThroughAliases(const NamedDecl *D) {
-  while (const auto *Alias = dyn_cast<NamespaceAliasDecl>(D))
-    D = Alias->getAliasedNamespace();
-  return cast_or_null<NamespaceDecl>(D);
-}
-
-static bool areEquivalentNameSpecifier(const NestedNameSpecifier *Left,
-                                       const NestedNameSpecifier *Right) {
-  const auto TryCompareAsNamespaces =
-      [](const NestedNameSpecifier *Left,
-         const NestedNameSpecifier *Right) -> Optional<bool> {
-    const NamespaceDecl *LeftAsNS = Left->getAsNamespace();
-    const NamespaceDecl *RightAsNS = Right->getAsNamespace();
-    if (const auto *LeftAlias = Left->getAsNamespaceAlias())
-      LeftAsNS = lookingThroughAliases(LeftAlias);
-    if (const auto *RightAlias = Left->getAsNamespaceAlias())
-      RightAsNS = lookingThroughAliases(RightAlias);
-
-    if (!LeftAsNS || !RightAsNS)
-      return None;
-    return LeftAsNS == RightAsNS;
-  };
-
-  const auto TryCompareAsTypes =
-      [](const NestedNameSpecifier *Left,
-         const NestedNameSpecifier *Right) -> Optional<bool> {
-    const Type *LeftAsTy = Left->getAsType();
-    const Type *RightAsTy = Right->getAsType();
-
-    if (!LeftAsTy || !RightAsTy)
-      return None;
-
-    LeftAsTy = LeftAsTy->getCanonicalTypeUnqualified().getTypePtr();
-    RightAsTy = RightAsTy->getCanonicalTypeUnqualified().getTypePtr();
-    return LeftAsTy == RightAsTy;
-  };
-
-  const auto TryCompareAsIdentifier =
-      [](const NestedNameSpecifier *Left,
-         const NestedNameSpecifier *Right) -> Optional<bool> {
-    const IdentifierInfo *LeftAsII = Left->getAsIdentifier();
-    const IdentifierInfo *RightAsII = Right->getAsIdentifier();
-    if (!LeftAsII || !RightAsII)
-      return None;
-    return LeftAsII == RightAsII;
-  };
-
-  while (Left && Right) {
-    if (!TryCompareAsNamespaces(Left, Right).getValueOr(true))
-      return false;
-    if (!TryCompareAsTypes(Left, Right).getValueOr(true))
-      return false;
-    if (!TryCompareAsIdentifier(Left, Right).getValueOr(true))
-      return false;
-
-    // Ignoring Global and Super NestedNameSpecifier kinds.
-    Left = Left->getPrefix();
-    Right = Right->getPrefix();
-  }
-
-  // We already know that the declrefs are refering to the same entity.
-  return true;
-}
-
-static bool areEquivalentDeclRefs(const DeclRefExpr *Left,
-                                  const DeclRefExpr *Right) {
-  if (Left->getDecl()->getCanonicalDecl() !=
-      Right->getDecl()->getCanonicalDecl()) {
-    return false;
-  }
-
-  return areEquivalentNameSpecifier(Left->getQualifier(),
-                                    Right->getQualifier());
-}
-
 /// Determines whether two statement trees are identical regarding
 /// operators and symbols.
 ///
@@ -534,8 +459,8 @@ static bool isIdenticalStmt(const ASTContext &Ctx, const Stmt *Stmt1,
     return CharLit1->getValue() == CharLit2->getValue();
   }
   case Stmt::DeclRefExprClass:
-    return areEquivalentDeclRefs(cast<DeclRefExpr>(Stmt1),
-                                 cast<DeclRefExpr>(Stmt2));
+    return cast<DeclRefExpr>(Stmt1)->isSemanticallyEquivalentTo(
+        cast<DeclRefExpr>(Stmt2));
   case Stmt::IntegerLiteralClass: {
     const IntegerLiteral *IntLit1 = cast<IntegerLiteral>(Stmt1);
     const IntegerLiteral *IntLit2 = cast<IntegerLiteral>(Stmt2);
