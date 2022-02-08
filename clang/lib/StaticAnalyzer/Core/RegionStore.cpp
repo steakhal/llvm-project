@@ -1215,6 +1215,7 @@ void InvalidateRegionsWorker::VisitCluster(const MemRegion *baseR,
                                                         T,Count);
   assert(SymbolManager::canSymbolicate(T) || V.isUnknown());
   B = B.addBinding(baseR, BindingKey::Direct, V);
+  llvm::errs() << "Symbolicating " << baseR << " by associating " << V << "\n";
 }
 
 bool InvalidateRegionsWorker::isInitiallyIncludedGlobalRegion(

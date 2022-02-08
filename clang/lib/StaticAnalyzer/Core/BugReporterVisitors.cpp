@@ -3356,3 +3356,59 @@ PathDiagnosticPieceRef TagVisitor::VisitNode(const ExplodedNode *N,
 
   return nullptr;
 }
+
+void ContradictingAssumptionsInvolvingInvalidation::Profile(
+    llvm::FoldingSetNodeID &ID) const {
+  static int Tag = 0;
+  ID.AddPointer(&Tag);
+}
+
+PathDiagnosticPieceRef ContradictingAssumptionsInvolvingInvalidation::VisitNode(
+    const ExplodedNode *N, BugReporterContext &BRC,
+    PathSensitiveBugReport &BR) {
+  // Display SymbolDerived values.
+  const ProgramStateRef State = N->getState();
+  ConstraintMap Constraints = getConstraintMap(State);
+
+  if (LastProcessedConstraintMap.hasValue() &&
+      *LastProcessedConstraintMap == Constraints)
+    return nullptr;
+  LastProcessedConstraintMap = Constraints;
+
+  const auto DerivedSymbols =
+      llvm::make_filter_range(Constraints, [](const auto &Entry) -> bool {
+        return isa<SymbolDerived>(Entry.first);
+      });
+
+  if (!DerivedSymbols.empty()) {
+    llvm::errs() << "State " << State->getID()
+                 << ", constraints for derived symbols:\n";
+    // SymbolRegionValue
+
+    for (auto &&Entry : DerivedSymbols) {
+      const SymbolDerived *Derived = cast<SymbolDerived>(Entry.first);
+      llvm::errs() << "  " << Derived << " -> ";
+      Entry.second.dump(llvm::errs());
+
+      const MemRegion *R = Derived->getRegion();
+      const auto AAAA = llvm::make_filter_range(Constraints, [R](auto &&E) {
+        const auto SRV = dyn_cast<SymbolRegionValue>(E.first);
+        return SRV && SRV->getRegion() == R;
+      });
+      for (const auto &E : AAAA) {
+        llvm::errs() << ">> candidate: " << E.first << " -> ";
+        E.second.dump();
+        llvm::errs() << "\n";
+      }
+    }
+  }
+
+  // If we have a derived symbol.
+  // The parent symbol refers to something??
+
+  return nullptr;
+}
+
+void ContradictingAssumptionsInvolvingInvalidation::finalizeVisitor(
+    BugReporterContext &BRC, const ExplodedNode *EndPathNode,
+    PathSensitiveBugReport &BR) {}

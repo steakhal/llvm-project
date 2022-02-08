@@ -2834,6 +2834,8 @@ Optional<PathDiagnosticBuilder> PathDiagnosticBuilder::findValidReport(
     assert(R->isValid() && "Report selected by trimmed graph marked invalid.");
     const ExplodedNode *ErrorNode = BugPath->ErrorNode;
 
+    R->addVisitor<ContradictingAssumptionsInvolvingInvalidation>();
+
     // Register refutation visitors first, if they mark the bug invalid no
     // further analysis is required
     R->addVisitor<LikelyFalsePositiveSuppressionBRVisitor>();

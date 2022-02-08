@@ -623,6 +623,21 @@ public:
                                    PathSensitiveBugReport &R) override;
 };
 
+class ContradictingAssumptionsInvolvingInvalidation final
+    : public BugReporterVisitor {
+  Optional<ConstraintMap> LastProcessedConstraintMap;
+
+public:
+  void Profile(llvm::FoldingSetNodeID &ID) const override;
+
+  PathDiagnosticPieceRef VisitNode(const ExplodedNode *N,
+                                   BugReporterContext &BRC,
+                                   PathSensitiveBugReport &BR) override;
+
+  void finalizeVisitor(BugReporterContext &BRC, const ExplodedNode *EndPathNode,
+                       PathSensitiveBugReport &BR) override;
+};
+
 class ObjCMethodCall;
 class CXXConstructorCall;
 
