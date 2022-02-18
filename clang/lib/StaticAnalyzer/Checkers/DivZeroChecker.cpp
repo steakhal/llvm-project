@@ -23,13 +23,40 @@ using namespace ento;
 using namespace taint;
 
 namespace {
-class DivZeroChecker : public Checker< check::PreStmt<BinaryOperator> > {
+class DivZeroChecker
+    : public Checker<check::PreStmt<BinaryOperator>, check::RegionChanges> {
   mutable std::unique_ptr<BuiltinBug> BT;
   void reportBug(const char *Msg, ProgramStateRef StateZero, CheckerContext &C,
                  std::unique_ptr<BugReporterVisitor> Visitor = nullptr) const;
 
 public:
   void checkPreStmt(const BinaryOperator *B, CheckerContext &C) const;
+
+  ProgramStateRef
+  checkRegionChanges(ProgramStateRef State,
+                     const InvalidatedSymbols *Invalidated,
+                     ArrayRef<const MemRegion *> ExplicitRegions,
+                     ArrayRef<const MemRegion *> Regions,
+                     const LocationContext *LCtx, const CallEvent *Call) const {
+    if (!Call)
+      return State;
+
+    if (!ExplicitRegions.empty()) {
+      llvm::errs() << "ExplicitRegions:\n";
+      for (const MemRegion *R : ExplicitRegions) {
+        llvm::errs() << "  " << R << "\n";
+      }
+    }
+
+    if (!Regions.empty()) {
+      llvm::errs() << "Regions:\n";
+      for (const MemRegion *R : Regions) {
+        llvm::errs() << "  " << R << "\n";
+      }
+    }
+    llvm::errs() << "-----------------\n";
+    return State;
+  }
 };
 } // end anonymous namespace
 
