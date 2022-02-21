@@ -80,7 +80,7 @@ void indirect_escape(int x) {
   // reg<int x> -> [44, 44]
 
   Message msg = {&x};
-  invalidate(msg); // indirect-escape
+  invalidate(msg); // indirect-escape 'x'
 
   clang_analyzer_dump(x); // expected-warning-re {{conj_${{[0-9]+}}{int, LC1, S{{[0-9]+}}, #{{[0-9]+}}}}}
 

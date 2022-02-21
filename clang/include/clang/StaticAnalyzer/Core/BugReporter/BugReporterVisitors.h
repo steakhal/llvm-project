@@ -626,6 +626,7 @@ public:
 class ContradictingAssumptionsInvolvingInvalidation final
     : public BugReporterVisitor {
   Optional<ConstraintMap> LastProcessedConstraintMap;
+  bool Satisfied = false;
 
 public:
   void Profile(llvm::FoldingSetNodeID &ID) const override;

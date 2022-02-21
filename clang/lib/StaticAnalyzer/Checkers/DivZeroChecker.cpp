@@ -16,6 +16,7 @@
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/InvalidationRecords.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 
 using namespace clang;
@@ -41,20 +42,11 @@ public:
     if (!Call)
       return State;
 
-    if (!ExplicitRegions.empty()) {
-      llvm::errs() << "ExplicitRegions:\n";
-      for (const MemRegion *R : ExplicitRegions) {
-        llvm::errs() << "  " << R << "\n";
-      }
-    }
-
-    if (!Regions.empty()) {
-      llvm::errs() << "Regions:\n";
-      for (const MemRegion *R : Regions) {
-        llvm::errs() << "  " << R << "\n";
-      }
-    }
+    auto &F = State->get_context<InvalidationEvent::RegionSet>();
+    InvalidationEvent Event = InvalidationEvent{F, ExplicitRegions, Regions};
+    Event.dump();
     llvm::errs() << "-----------------\n";
+    State = State->add<InvalidationRecords>(Event);
     return State;
   }
 };

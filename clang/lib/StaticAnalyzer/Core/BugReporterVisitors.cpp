@@ -35,6 +35,7 @@
 #include "clang/Lex/Lexer.h"
 #include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
+#include "clang/StaticAnalyzer/Core/InvalidationRecords.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
@@ -3366,9 +3367,21 @@ void ContradictingAssumptionsInvolvingInvalidation::Profile(
 PathDiagnosticPieceRef ContradictingAssumptionsInvolvingInvalidation::VisitNode(
     const ExplodedNode *N, BugReporterContext &BRC,
     PathSensitiveBugReport &BR) {
+
+  if (Satisfied)
+    return nullptr;
+  Satisfied = true;
+
   // Display SymbolDerived values.
   const ProgramStateRef State = N->getState();
   ConstraintMap Constraints = getConstraintMap(State);
+
+  auto Records = BR.getErrorNode()->getState()->get<InvalidationRecords>();
+  for (const auto &Rec : Records) {
+    Rec.dump();
+    llvm::errs() << "-- -- -- -- --\n";
+  }
+  llvm::errs() << "-----------\n";
 
   if (LastProcessedConstraintMap.hasValue() &&
       *LastProcessedConstraintMap == Constraints)
