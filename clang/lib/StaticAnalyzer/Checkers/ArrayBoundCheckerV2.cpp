@@ -147,13 +147,21 @@ private:
           SVB.getContext().getTypeSizeInChars(ElemTy).getQuantity());
 
       const QualType ArrayIndexTy = SVB.getArrayIndexType();
-      const NonLoc ByteElementOffset =
-          SVB.evalBinOpNN(State, BO_Mul, Index, SizeofElemTy, ArrayIndexTy)
-              .castAs<NonLoc>();
+      const SVal ByteElementOffset =
+          SVB.evalBinOpNN(State, BO_Mul, Index, SizeofElemTy, ArrayIndexTy);
 
-      SVal NewByteOffset = SVB.evalBinOpNN(
-          State, BO_Add, RawOffset.getByteOffset().castAs<NonLoc>(),
-          ByteElementOffset, ArrayIndexTy);
+      // If we could not symbolically calculate, give up.
+      if (!ByteElementOffset.getAs<NonLoc>().hasValue())
+        return Leaf(nullptr);
+
+      SVal NewByteOffset =
+          SVB.evalBinOpNN(State, BO_Add, RawOffset.getByteOffset(),
+                          ByteElementOffset.castAs<NonLoc>(), ArrayIndexTy);
+      if (!NewByteOffset.getAs<NonLoc>().hasValue()) {
+        llvm::errs() << "VisitElementRegion result is not NonLoc\n";
+        llvm::errs() << "NewByteOffset: " << NewByteOffset << "\n";
+        assert(false);
+      }
       return {RawOffset.getRegion(), NewByteOffset};
     }
   };
@@ -162,7 +170,14 @@ public:
   RegionRawOffsetV2(const SubRegion *BaseRegion, SVal ByteOffset)
       : BaseRegion(BaseRegion), ByteOffset(ByteOffset) {}
 
-  NonLoc getByteOffset() const { return ByteOffset.castAs<NonLoc>(); }
+  NonLoc getByteOffset() const {
+    if (!ByteOffset.getAs<NonLoc>().hasValue()) {
+      llvm::errs() << "getByteOffset castas assertion\n";
+      llvm::errs() << "ByteOffset: " << ByteOffset << "\n";
+      assert(false);
+    }
+    return ByteOffset.castAs<NonLoc>();
+  }
   const SubRegion *getRegion() const { return BaseRegion; }
 
   static RegionRawOffsetV2 computeOffset(ProgramStateRef State,
@@ -326,12 +341,18 @@ private:
     // Type of SymMin can represent C, this conversion is fine.
     ConcreteInt SmallestPossibleSymbolValue =
         SVB.makeIntVal(SymMin + APSIntType(SymMin).convert(C));
-    const NonLoc UnderflowCheck =
+    const SVal UnderflowCheck =
         SVB.evalBinOpNN(LastValidState, BO_GE, SymbolVal(LHS),
-                        SmallestPossibleSymbolValue, SVB.getConditionType())
-            .castAs<NonLoc>();
+                        SmallestPossibleSymbolValue, SVB.getConditionType());
+
+    if (!UnderflowCheck.getAs<NonLoc>().hasValue()) {
+      llvm::errs() << "VisitSymSubIntExpr castas assertion\n";
+      llvm::errs() << "UnderflowCheck: " << UnderflowCheck << "\n";
+      assert(false);
+    }
+
     if (ProgramStateRef NoUnderflowHappened =
-            LastValidState->assume(UnderflowCheck, true)) {
+            LastValidState->assume(UnderflowCheck.castAs<NonLoc>(), true)) {
       LastValidState = NoUnderflowHappened;
       LLVM_DEBUG(llvm::dbgs() << __func__ << ": assuming that '" << LHS
                               << " >= " << SmallestPossibleSymbolValue
@@ -377,12 +398,18 @@ private:
     // Type of SymMax can represent C, this conversion is fine.
     ConcreteInt GreatestPossibleSymbolValue =
         SVB.makeIntVal(SymMax - APSIntType(SymMax).convert(C));
-    const NonLoc OverflowCheck =
+    const SVal OverflowCheck =
         SVB.evalBinOpNN(LastValidState, BO_LE, SymbolVal(LHS),
-                        GreatestPossibleSymbolValue, SVB.getConditionType())
-            .castAs<NonLoc>();
+                        GreatestPossibleSymbolValue, SVB.getConditionType());
+
+    if (!OverflowCheck.getAs<NonLoc>().hasValue()) {
+      llvm::errs() << "VisitSymAddIntExpr castas assertion\n";
+      llvm::errs() << "OverflowCheck: " << OverflowCheck << "\n";
+      assert(false);
+    }
+
     if (ProgramStateRef NoOverflowHappened =
-            LastValidState->assume(OverflowCheck, true)) {
+            LastValidState->assume(OverflowCheck.castAs<NonLoc>(), true)) {
       LastValidState = NoOverflowHappened;
       LLVM_DEBUG(llvm::dbgs() << __func__ << ": assuming that '" << LHS
                               << " <= " << GreatestPossibleSymbolValue
@@ -424,12 +451,18 @@ private:
     // Type of SymMax can represent C, this conversion is fine.
     ConcreteInt GreatestPossibleSymbolValue =
         SVB.makeIntVal(SymMax / APSIntType(SymMax).convert(C));
-    const NonLoc NoOverflowCheck =
+    const SVal NoOverflowCheck =
         SVB.evalBinOpNN(LastValidState, BO_LE, SymbolVal(LHS),
-                        GreatestPossibleSymbolValue, SVB.getConditionType())
-            .castAs<NonLoc>();
+                        GreatestPossibleSymbolValue, SVB.getConditionType());
+
+    if (!NoOverflowCheck.getAs<NonLoc>().hasValue()) {
+      llvm::errs() << "VisitSymMulIntExpr castas assertion\n";
+      llvm::errs() << "NoOverflowCheck: " << NoOverflowCheck << "\n";
+      assert(false);
+    }
+
     if (ProgramStateRef NoOverflowHappened =
-            LastValidState->assume(NoOverflowCheck, true)) {
+            LastValidState->assume(NoOverflowCheck.castAs<NonLoc>(), true)) {
       LastValidState = NoOverflowHappened;
       LLVM_DEBUG(llvm::dbgs() << __func__ << ": assuming that '" << LHS
                               << " <= " << GreatestPossibleSymbolValue
@@ -450,12 +483,18 @@ private:
     // Type of SymMin can represent C, this conversion is fine.
     ConcreteInt SmallestPossibleSymbolValue =
         SVB.makeIntVal(SymMin / APSIntType(SymMin).convert(C));
-    const NonLoc UnderflowCheck =
+    const SVal UnderflowCheck =
         SVB.evalBinOpNN(LastValidState, BO_GE, SymbolVal(LHS),
-                        SmallestPossibleSymbolValue, SVB.getConditionType())
-            .castAs<NonLoc>();
+                        SmallestPossibleSymbolValue, SVB.getConditionType());
+
+    if (!UnderflowCheck.getAs<NonLoc>().hasValue()) {
+      llvm::errs() << "VisitSymMulIntExpr castas assertion\n";
+      llvm::errs() << "UnderflowCheck: " << UnderflowCheck << "\n";
+      assert(false);
+    }
+
     if (ProgramStateRef NoUnderflowHappened =
-            LastValidState->assume(UnderflowCheck, true)) {
+            LastValidState->assume(UnderflowCheck.castAs<NonLoc>(), true)) {
       LastValidState = NoUnderflowHappened;
       LLVM_DEBUG(llvm::dbgs() << __func__ << ": assuming that '" << LHS
                               << " >= " << SmallestPossibleSymbolValue
@@ -534,6 +573,10 @@ ProgramStateRef ArrayBoundCheckerV2::checkLowerBound(
     return State;
   }
 
+  // Ignore anything but SymbolVals.
+  if (!RootExpr.getAs<SymbolVal>().hasValue())
+    return State;
+
   const bool IsRootTyUnsigned = RootExpr.castAs<SymbolVal>()
                                     .getSymbol()
                                     ->getType()
@@ -545,14 +588,19 @@ ProgramStateRef ArrayBoundCheckerV2::checkLowerBound(
   if (IsRootTyUnsigned && InclusiveLowerBound.isNegative())
     return State;
 
-  NonLoc LowerBoundCheck = SVB.evalBinOpNN(State, BO_LT, RootExpr,
-                                           SVB.makeIntVal(InclusiveLowerBound),
-                                           SVB.getConditionType())
-                               .castAs<NonLoc>();
+  SVal LowerBoundCheck = SVB.evalBinOpNN(State, BO_LT, RootExpr,
+                                         SVB.makeIntVal(InclusiveLowerBound),
+                                         SVB.getConditionType());
+
+  if (!LowerBoundCheck.getAs<NonLoc>().hasValue()) {
+    llvm::errs() << "checkLowerBound castas assertion\n";
+    llvm::errs() << "LowerBoundCheck: " << LowerBoundCheck << "\n";
+    assert(false);
+  }
 
   ProgramStateRef PrecedesLowerBound, WithinLowerBound;
   std::tie(PrecedesLowerBound, WithinLowerBound) =
-      State->assume(LowerBoundCheck);
+      State->assume(LowerBoundCheck.castAs<NonLoc>());
 
   if (PrecedesLowerBound && !WithinLowerBound) {
     reportOOB(Ctx, PrecedesLowerBound, OOB_Precedes);
@@ -583,6 +631,12 @@ ArrayBoundCheckerV2::checkUpperBound(CheckerContext &Ctx, SValBuilder &SVB,
     return State;
   }
 
+  if (!RootExpr.getAs<SymbolVal>().hasValue()) {
+    llvm::errs() << "checkUpperBound castas assertion\n";
+    llvm::errs() << "RootExpr: " << RootExpr << "\n";
+    assert(false);
+  }
+
   const bool IsRootTyUnsigned = RootExpr.castAs<SymbolVal>()
                                     .getSymbol()
                                     ->getType()
@@ -596,14 +650,19 @@ ArrayBoundCheckerV2::checkUpperBound(CheckerContext &Ctx, SValBuilder &SVB,
     return nullptr;
   }
 
-  NonLoc UpperBoundCheck = SVB.evalBinOpNN(State, BO_GE, RootExpr,
-                                           SVB.makeIntVal(ExclusiveUpperBound),
-                                           SVB.getConditionType())
-                               .castAs<NonLoc>();
+  SVal UpperBoundCheck = SVB.evalBinOpNN(State, BO_GE, RootExpr,
+                                         SVB.makeIntVal(ExclusiveUpperBound),
+                                         SVB.getConditionType());
+
+  if (!UpperBoundCheck.getAs<NonLoc>().hasValue()) {
+    llvm::errs() << "checkUpperBound castas assertion\n";
+    llvm::errs() << "UpperBoundCheck: " << UpperBoundCheck << "\n";
+    assert(false);
+  }
 
   ProgramStateRef ExceedsUpperBound, WithinUpperBound;
   std::tie(ExceedsUpperBound, WithinUpperBound) =
-      State->assume(UpperBoundCheck);
+      State->assume(UpperBoundCheck.castAs<NonLoc>());
 
   // If we are under constrained and the index variables are tainted, report.
   if (ExceedsUpperBound && WithinUpperBound) {
@@ -642,6 +701,12 @@ void ArrayBoundCheckerV2::checkLocation(SVal Location, bool, const Stmt *,
                           << '\n';);
   ProgramStateRef State = Ctx.getState();
   SValBuilder &SVB = Ctx.getSValBuilder();
+
+  // Location might be Undefined, etc.
+  // Let's ignore GotoLabels and ConcreteInts as well.
+  if (!Location.getAs<loc::MemRegionVal>().hasValue())
+    return;
+
   const RegionRawOffsetV2 RawOffset = RegionRawOffsetV2::computeOffset(
       State, SVB, Location.castAs<loc::MemRegionVal>());
   assert(RawOffset.getRegion() && "It should be a valid region.");
@@ -650,6 +715,13 @@ void ArrayBoundCheckerV2::checkLocation(SVal Location, bool, const Stmt *,
   // skip check.
   if (isa<UnknownSpaceRegion>(RawOffset.getRegion()->getMemorySpace()))
     return;
+
+  if (!SVB.makeZeroArrayIndex().getAs<ConcreteInt>().hasValue()) {
+    llvm::errs() << "makeZeroArrayIndex is not ConcreteInt?\n";
+    llvm::errs() << "makeZeroArrayIndex(): " << SVB.makeZeroArrayIndex()
+                 << "\n";
+    assert(false);
+  }
 
   const ConcreteInt Zero = SVB.makeZeroArrayIndex().castAs<ConcreteInt>();
 
