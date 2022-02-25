@@ -445,7 +445,7 @@ private:
     const QualType SymTy = LHS->getType();
     const APSInt &SymMin = SVB.getBasicValueFactory().getMinValue(SymTy);
     const APSInt &SymMax = SVB.getBasicValueFactory().getMaxValue(SymTy);
-    assert(!C.isNullValue() && "How can it be zero?");
+    assert(!C.isZero() && "How can it be zero?");
 
     // Check if 'sym * C' overflows.
     // Type of SymMax can represent C, this conversion is fine.
