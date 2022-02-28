@@ -153,6 +153,7 @@ void valid(SymbolType x) {
 // x in [-1, 3]
 using x_plus_1 = plus<sym, cons<1>>;
 template void valid<x_plus_1, range<-1, 3>, int[5]>(char x);
+/*
 template void valid<x_plus_1, range<-1, 3>, int[5]>(signed char x);
 template void valid<x_plus_1, range<-1, 3>, int[5]>(short x);
 template void valid<x_plus_1, range<-1, 3>, int[5]>(int x);
@@ -327,3 +328,4 @@ template void valid<x_minus_minus_6, range<0xfffffffa, 0xffffffff>, int[9]>(unsi
 template void valid<x_minus_minus_6, range<0xfffffffa, 0xffffffff>, int[9]>(unsigned long x);
 template void valid<x_minus_minus_6, range<0xfffffffffffffffa, 0xffffffffffffffff>, int[9]>(unsigned long long x);
 
+*/

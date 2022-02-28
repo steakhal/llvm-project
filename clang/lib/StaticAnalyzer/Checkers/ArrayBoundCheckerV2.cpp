@@ -100,13 +100,21 @@ private:
   const SubRegion *BaseRegion = nullptr;
   SVal ByteOffset = UnknownVal();
 
+public:
   RegionRawOffsetV2() = default;
 
+private:
   /// Compute a raw byte offset from a base region.
   /// Flatten the nested ElementRegion structure into a byte-offset in a
   /// SubRegion. E.g:
   ///   dereferenced location:
+  ///     void *p;
+  ///     int n;
+  ///     int *q = ((char*)p) + n;
+  ///     int *z = ((int*)q) + 3;
+  ///     *z; // dereference!
   ///     &Element{Element{Sym{reg_p}, conj{n, int}, char}, 3, int}
+  ///
   /// Finds the base region:
   ///   Region: Sym{reg_p}
   /// Builds the corresponding symbolic offset expression:
@@ -116,17 +124,13 @@ private:
     ProgramStateRef State;
     SValBuilder &SVB;
 
-    RegionRawOffsetV2 Leaf(const SubRegion *R) const {
-      return {R, SVB.makeArrayIndex(0)};
-    }
-
   public:
     RawOffsetCalculator(ProgramStateRef State, SValBuilder &SVB)
         : State(State), SVB(SVB) {}
     using MemRegionVisitor::Visit;
 
-    auto VisitMemRegion(const MemRegion *R) {
-      return Leaf(dyn_cast<SubRegion>(R));
+    RegionRawOffsetV2 VisitMemRegion(const MemRegion *R) {
+      return {dyn_cast<SubRegion>(R), SVB.makeZeroArrayIndex()};
     }
 
     RegionRawOffsetV2 VisitElementRegion(const ElementRegion *ER) {
@@ -139,9 +143,12 @@ private:
       const QualType ElemTy = ER->getElementType();
       const NonLoc Index = ER->getIndex();
 
-      // If we can not calculate the sizeof ElemTy, erase result and give up.
-      if (ElemTy->isIncompleteType())
-        return Leaf(nullptr);
+      if (ElemTy->isIncompleteType()) {
+        llvm::errs() << "How can the element type be incomplete?\n";
+        llvm::errs() << "ER: " << ER << "\n";
+        ElemTy->dump();
+        assert(false);
+      }
 
       const NonLoc SizeofElemTy = SVB.makeArrayIndex(
           SVB.getContext().getTypeSizeInChars(ElemTy).getQuantity());
@@ -150,9 +157,15 @@ private:
       const SVal ByteElementOffset =
           SVB.evalBinOpNN(State, BO_Mul, Index, SizeofElemTy, ArrayIndexTy);
 
-      // If we could not symbolically calculate, give up.
-      if (!ByteElementOffset.getAs<NonLoc>().hasValue())
-        return Leaf(nullptr);
+      // It's unlikely that we cannot represent the result of the multiplication
+      // symbolically, but it can happen sometimes.
+      // If it happens, we cannot do much about it. We failed to calculate the
+      // byte offset, thus bail out.
+      if (!ByteElementOffset.getAs<NonLoc>().hasValue()) {
+        llvm::errs() << "VisitElementRegion result is not NonLoc\n";
+        llvm::errs() << "ByteElementOffset: " << ByteElementOffset << "\n";
+        assert(false);
+      }
 
       SVal NewByteOffset =
           SVB.evalBinOpNN(State, BO_Add, RawOffset.getByteOffset(),
@@ -162,6 +175,8 @@ private:
         llvm::errs() << "NewByteOffset: " << NewByteOffset << "\n";
         assert(false);
       }
+
+      // Forward the Root region, along with the updated byte offset.
       return {RawOffset.getRegion(), NewByteOffset};
     }
   };
