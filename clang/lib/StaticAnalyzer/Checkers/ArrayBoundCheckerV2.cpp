@@ -74,6 +74,10 @@ private:
       //    Offset := Offset + sizeof(ElemTy) * ElemIdx
       const RegionRawOffsetV2 RawOffset = Visit(ER->getSuperRegion());
 
+      // If we already doomed, bail out.
+      if (!RawOffset.getRegion() || !RawOffset.getByteOffset().getAs<NonLoc>())
+        return RawOffset;
+
       const QualType ElemTy = ER->getElementType();
       const NonLoc Index = ER->getIndex();
 
@@ -85,13 +89,16 @@ private:
           SVB.getContext().getTypeSizeInChars(ElemTy).getQuantity());
 
       const QualType ArrayIndexTy = SVB.getArrayIndexType();
-      const NonLoc ByteElementOffset =
-          SVB.evalBinOpNN(State, BO_Mul, Index, SizeofElemTy, ArrayIndexTy)
-              .castAs<NonLoc>();
+      SVal ByteElementOffset =
+          SVB.evalBinOpNN(State, BO_Mul, Index, SizeofElemTy, ArrayIndexTy);
+
+      // It might be too complicated to compute, thus returning Unknown.
+      if (!ByteElementOffset.getAs<NonLoc>())
+        return Leaf(nullptr);
 
       SVal NewByteOffset = SVB.evalBinOpNN(
           State, BO_Add, RawOffset.getByteOffset().castAs<NonLoc>(),
-          ByteElementOffset, ArrayIndexTy);
+          ByteElementOffset.castAs<NonLoc>(), ArrayIndexTy);
       return {RawOffset.getRegion(), NewByteOffset};
     }
   };
@@ -228,15 +235,17 @@ ArrayBoundCheckerV2::checkLowerBound(CheckerContext &Ctx, SValBuilder &SVB,
         ConstantFoldedRHS.castAs<ConcreteInt>().getValue().isNegative())
       return State;
 
-  NonLoc LowerBoundCheck =
-      SVB.evalBinOpNN(State, BO_LT, RootNonLoc.castAs<NonLoc>(),
-                      ConstantFoldedRHS.castAs<ConcreteInt>(),
-                      SVB.getConditionType())
-          .castAs<NonLoc>();
+  SVal LowerBoundCheck = SVB.evalBinOpNN(
+      State, BO_LT, RootNonLoc.castAs<NonLoc>(),
+      ConstantFoldedRHS.castAs<ConcreteInt>(), SVB.getConditionType());
+
+  // It might be too complicated to compute, thus returning Unknown.
+  if (!LowerBoundCheck.getAs<NonLoc>())
+    return State;
 
   ProgramStateRef PrecedesLowerBound, WithinLowerBound;
   std::tie(PrecedesLowerBound, WithinLowerBound) =
-      State->assume(LowerBoundCheck);
+      State->assume(LowerBoundCheck.castAs<NonLoc>());
 
   if (PrecedesLowerBound && !WithinLowerBound) {
     reportOOB(Ctx, PrecedesLowerBound, OOB_Precedes);
@@ -265,14 +274,17 @@ ArrayBoundCheckerV2::checkUpperBound(CheckerContext &Ctx, SValBuilder &SVB,
         simplify(SVB, RawOffset.getByteOffset(), *ExtentInt);
   }
 
-  NonLoc UpperBoundCheck =
+  SVal UpperBoundCheck =
       SVB.evalBinOpNN(State, BO_GE, RawByteOffset, Extent.castAs<NonLoc>(),
-                      SVB.getConditionType())
-          .castAs<NonLoc>();
+                      SVB.getConditionType());
+
+  // It might be too complicated to compute, thus returning Unknown.
+  if (!UpperBoundCheck.getAs<NonLoc>())
+    return State;
 
   ProgramStateRef ExceedsUpperBound, WithinUpperBound;
   std::tie(ExceedsUpperBound, WithinUpperBound) =
-      State->assume(UpperBoundCheck);
+      State->assume(UpperBoundCheck.castAs<NonLoc>());
 
   // If we are under constrained and the index variables are tainted, report.
   if (ExceedsUpperBound && WithinUpperBound) {
@@ -318,7 +330,10 @@ void ArrayBoundCheckerV2::checkLocation(SVal Location, bool, const Stmt *,
   SValBuilder &SVB = Ctx.getSValBuilder();
   const RegionRawOffsetV2 RawOffset = RegionRawOffsetV2::computeOffset(
       State, SVB, Location.castAs<loc::MemRegionVal>());
-  assert(RawOffset.getRegion() && "It should be a valid region.");
+
+  // If the computation failed, bail out.
+  if (!RawOffset.getRegion() || !RawOffset.getByteOffset().getAs<NonLoc>())
+    return;
 
   // Is byteOffset < extent begin?
   // If so, we are doing a load/store before the first valid offset in the
