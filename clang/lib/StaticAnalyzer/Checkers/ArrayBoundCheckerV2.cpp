@@ -309,6 +309,11 @@ void ArrayBoundCheckerV2::checkLocation(SVal Location, bool, const Stmt *,
   //  - Why would anyone use this 'experimental logic' if it does not handle
   //    overflows?
   //  - "we can achieve various levels of conservatism" What?
+
+  // Ignore anything but this specific locs.
+  if (!Location.getAs<loc::MemRegionVal>())
+    return;
+
   ProgramStateRef State = Ctx.getState();
   SValBuilder &SVB = Ctx.getSValBuilder();
   const RegionRawOffsetV2 RawOffset = RegionRawOffsetV2::computeOffset(
