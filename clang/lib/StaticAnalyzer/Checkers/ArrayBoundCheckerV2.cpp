@@ -222,6 +222,12 @@ ArrayBoundCheckerV2::checkLowerBound(CheckerContext &Ctx, SValBuilder &SVB,
   std::tie(RootNonLoc, ConstantFoldedRHS) =
       simplify(SVB, RawOffset.getByteOffset(), Zero);
 
+  // No unsigned symbolic value can be less then a negative constant.
+  if (const auto SymbolicRoot = RootNonLoc.getAs<SymbolVal>())
+    if (SymbolicRoot->getSymbol()->getType()->isUnsignedIntegerType() &&
+        ConstantFoldedRHS.castAs<ConcreteInt>().getValue().isNegative())
+      return State;
+
   NonLoc LowerBoundCheck =
       SVB.evalBinOpNN(State, BO_LT, RootNonLoc.castAs<NonLoc>(),
                       ConstantFoldedRHS.castAs<ConcreteInt>(),
