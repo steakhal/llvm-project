@@ -174,3 +174,7 @@ void test_assume_after_access2(unsigned long x) {
   clang_analyzer_eval(x <= 99); // expected-warning{{TRUE}}
 }
 
+extern int c[][256];
+void test_256_large_arrays(char e) {
+  (void)c[e][0]; // no-crash
+}

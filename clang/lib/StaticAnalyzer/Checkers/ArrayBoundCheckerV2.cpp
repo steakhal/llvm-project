@@ -460,12 +460,22 @@ private:
     const QualType SymTy = LHS->getType();
     const APSInt &SymMin = SVB.getBasicValueFactory().getMinValue(SymTy);
     const APSInt &SymMax = SVB.getBasicValueFactory().getMaxValue(SymTy);
-    assert(!C.isZero() && "How can it be zero?");
+    const APSInt CAsSymMin = APSIntType(SymMin).convert(C);
+    const APSInt CAsSymMax = APSIntType(SymMax).convert(C);
+
+    // If SymMax is 127 and C is 1024, then CAsSymMax will become zero.
+    if (CAsSymMax.isZero() || CAsSymMin.isZero()) {
+      // Huh, we almost divided by zero.
+      // TODO: Explain why.
+      SimplificationFailed = true;
+      return;
+    }
 
     // Check if 'sym * C' overflows.
     // Type of SymMax can represent C, this conversion is fine.
     ConcreteInt GreatestPossibleSymbolValue =
-        SVB.makeIntVal(SymMax / APSIntType(SymMax).convert(C));
+        SVB.makeIntVal(SymMax / CAsSymMax);
+
     const SVal NoOverflowCheck =
         SVB.evalBinOpNN(LastValidState, BO_LE, SymbolVal(LHS),
                         GreatestPossibleSymbolValue, SVB.getConditionType());
@@ -497,7 +507,7 @@ private:
     // Check if 'sym * C' underflows.
     // Type of SymMin can represent C, this conversion is fine.
     ConcreteInt SmallestPossibleSymbolValue =
-        SVB.makeIntVal(SymMin / APSIntType(SymMin).convert(C));
+        SVB.makeIntVal(SymMin / CAsSymMin);
     const SVal UnderflowCheck =
         SVB.evalBinOpNN(LastValidState, BO_GE, SymbolVal(LHS),
                         SmallestPossibleSymbolValue, SVB.getConditionType());
