@@ -130,7 +130,7 @@ private:
     using MemRegionVisitor::Visit;
 
     RegionRawOffsetV2 VisitMemRegion(const MemRegion *R) {
-      return {dyn_cast<SubRegion>(R), SVB.makeZeroArrayIndex()};
+      return {cast<SubRegion>(R), SVB.makeZeroArrayIndex()};
     }
 
     RegionRawOffsetV2 VisitElementRegion(const ElementRegion *ER) {
@@ -142,13 +142,7 @@ private:
 
       const QualType ElemTy = ER->getElementType();
       const NonLoc Index = ER->getIndex();
-
-      if (ElemTy->isIncompleteType()) {
-        llvm::errs() << "How can the element type be incomplete?\n";
-        llvm::errs() << "ER: " << ER << "\n";
-        ElemTy->dump();
-        assert(false);
-      }
+      assert(!ElemTy->isIncompleteType());
 
       const NonLoc SizeofElemTy = SVB.makeArrayIndex(
           SVB.getContext().getTypeSizeInChars(ElemTy).getQuantity());
@@ -161,20 +155,18 @@ private:
       // symbolically, but it can happen sometimes.
       // If it happens, we cannot do much about it. We failed to calculate the
       // byte offset, thus bail out.
-      if (!ByteElementOffset.getAs<NonLoc>().hasValue()) {
-        llvm::errs() << "VisitElementRegion result is not NonLoc\n";
-        llvm::errs() << "ByteElementOffset: " << ByteElementOffset << "\n";
-        assert(false);
-      }
+      if (ByteElementOffset.isUnknownOrUndef())
+        return VisitMemRegion(ER);
 
       SVal NewByteOffset =
           SVB.evalBinOpNN(State, BO_Add, RawOffset.getByteOffset(),
                           ByteElementOffset.castAs<NonLoc>(), ArrayIndexTy);
-      if (!NewByteOffset.getAs<NonLoc>().hasValue()) {
-        llvm::errs() << "VisitElementRegion result is not NonLoc\n";
-        llvm::errs() << "NewByteOffset: " << NewByteOffset << "\n";
-        assert(false);
-      }
+      if (NewByteOffset.isUnknownOrUndef())
+        return VisitMemRegion(ER);
+
+      assert(RawOffset.getRegion());
+      assert(isa<SubRegion>(RawOffset.getRegion()));
+      assert(NewByteOffset.getAs<NonLoc>());
 
       // Forward the Root region, along with the updated byte offset.
       return {RawOffset.getRegion(), NewByteOffset};
@@ -185,14 +177,7 @@ public:
   RegionRawOffsetV2(const SubRegion *BaseRegion, SVal ByteOffset)
       : BaseRegion(BaseRegion), ByteOffset(ByteOffset) {}
 
-  NonLoc getByteOffset() const {
-    if (!ByteOffset.getAs<NonLoc>().hasValue()) {
-      llvm::errs() << "getByteOffset castas assertion\n";
-      llvm::errs() << "ByteOffset: " << ByteOffset << "\n";
-      assert(false);
-    }
-    return ByteOffset.castAs<NonLoc>();
-  }
+  NonLoc getByteOffset() const { return ByteOffset.castAs<NonLoc>(); }
   const SubRegion *getRegion() const { return BaseRegion; }
 
   static RegionRawOffsetV2 computeOffset(ProgramStateRef State,
@@ -360,10 +345,9 @@ private:
         SVB.evalBinOpNN(LastValidState, BO_GE, SymbolVal(LHS),
                         SmallestPossibleSymbolValue, SVB.getConditionType());
 
-    if (!UnderflowCheck.getAs<NonLoc>().hasValue()) {
-      llvm::errs() << "VisitSymSubIntExpr castas assertion\n";
-      llvm::errs() << "UnderflowCheck: " << UnderflowCheck << "\n";
-      assert(false);
+    if (UnderflowCheck.isUnknownOrUndef()) {
+      SimplificationFailed = true;
+      return;
     }
 
     if (ProgramStateRef NoUnderflowHappened =
@@ -417,10 +401,9 @@ private:
         SVB.evalBinOpNN(LastValidState, BO_LE, SymbolVal(LHS),
                         GreatestPossibleSymbolValue, SVB.getConditionType());
 
-    if (!OverflowCheck.getAs<NonLoc>().hasValue()) {
-      llvm::errs() << "VisitSymAddIntExpr castas assertion\n";
-      llvm::errs() << "OverflowCheck: " << OverflowCheck << "\n";
-      assert(false);
+    if (OverflowCheck.isUnknownOrUndef()) {
+      SimplificationFailed = true;
+      return;
     }
 
     if (ProgramStateRef NoOverflowHappened =
@@ -480,10 +463,9 @@ private:
         SVB.evalBinOpNN(LastValidState, BO_LE, SymbolVal(LHS),
                         GreatestPossibleSymbolValue, SVB.getConditionType());
 
-    if (!NoOverflowCheck.getAs<NonLoc>().hasValue()) {
-      llvm::errs() << "VisitSymMulIntExpr castas assertion\n";
-      llvm::errs() << "NoOverflowCheck: " << NoOverflowCheck << "\n";
-      assert(false);
+    if (NoOverflowCheck.isUnknownOrUndef()) {
+      SimplificationFailed = true;
+      return;
     }
 
     if (ProgramStateRef NoOverflowHappened =
@@ -512,10 +494,9 @@ private:
         SVB.evalBinOpNN(LastValidState, BO_GE, SymbolVal(LHS),
                         SmallestPossibleSymbolValue, SVB.getConditionType());
 
-    if (!UnderflowCheck.getAs<NonLoc>().hasValue()) {
-      llvm::errs() << "VisitSymMulIntExpr castas assertion\n";
-      llvm::errs() << "UnderflowCheck: " << UnderflowCheck << "\n";
-      assert(false);
+    if (UnderflowCheck.isUnknownOrUndef()) {
+      SimplificationFailed = true;
+      return;
     }
 
     if (ProgramStateRef NoUnderflowHappened =
