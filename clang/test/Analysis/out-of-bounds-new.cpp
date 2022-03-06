@@ -193,6 +193,15 @@ void test_dynamic_size3(int m, int n, int z) {
   U[z] = 1; // expected-warning {{Out of bound memory access (accessed memory precedes memory block)}}
 }
 
+using ULL = unsigned long long;
+const char array[] = "false positive";
+char f(ULL len) {
+  if (len < 2) {
+    return array[len + 2];
+  }
+  return array[len + 1];
+}
+
 // TODO: Add tests covering VLAs, mutlidim VLAs, partially known VLAs.
 // TODO: Add tests showing that the given symbolic expression gets the proper constraints.
 // TODO: Add test using taint.
