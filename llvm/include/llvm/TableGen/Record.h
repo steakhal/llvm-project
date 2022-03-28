@@ -1796,6 +1796,11 @@ public:
   /// value is not the right type.
   int64_t getValueAsInt(StringRef FieldName) const;
 
+  /// This method looks up the specified field and returns
+  /// its value as an int64_t, throwing an exception if the field does not exist
+  /// and returns llvm::None if the field left "uninitialized".
+  llvm::Optional<int64_t> getValueAsOptionalInt(StringRef FieldName) const;
+
   /// This method looks up the specified field and returns its value as an Dag,
   /// throwing an exception if the field does not exist or if the value is not
   /// the right type.

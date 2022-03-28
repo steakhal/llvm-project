@@ -2596,6 +2596,23 @@ int64_t Record::getValueAsInt(StringRef FieldName) const {
                                 R->getValue()->getAsString());
 }
 
+llvm::Optional<int64_t>
+Record::getValueAsOptionalInt(StringRef FieldName) const {
+  const RecordVal *R = getValue(FieldName);
+  if (!R || !R->getValue())
+    return llvm::None;
+  if (isa<UnsetInit>(R->getValue()))
+    return llvm::None;
+
+  if (auto *II = dyn_cast<IntInit>(R->getValue()))
+    return II->getValue();
+
+  PrintFatalError(getLoc(), Twine("Record `") + getName() + "', field `" +
+                                FieldName +
+                                "' exists but does not have an int value: " +
+                                R->getValue()->getAsString());
+}
+
 std::vector<int64_t>
 Record::getValueAsListOfInts(StringRef FieldName) const {
   ListInit *List = getValueAsListInit(FieldName);
