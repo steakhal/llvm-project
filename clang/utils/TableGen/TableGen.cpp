@@ -56,6 +56,7 @@ enum ActionType {
   GenClangTypeWriter,
   GenClangOpcodes,
   GenClangSACheckers,
+  GenClangSAConfigs,
   GenClangSyntaxNodeList,
   GenClangSyntaxNodeClasses,
   GenClangCommentHTMLTags,
@@ -175,6 +176,8 @@ cl::opt<ActionType> Action(
                    "Generate Clang constexpr interpreter opcodes"),
         clEnumValN(GenClangSACheckers, "gen-clang-sa-checkers",
                    "Generate Clang Static Analyzer checkers"),
+        clEnumValN(GenClangSAConfigs, "gen-clang-sa-configs",
+                   "Generate Clang Static Analyzer Configs"),
         clEnumValN(GenClangSyntaxNodeList, "gen-clang-syntax-node-list",
                    "Generate list of Clang Syntax Tree node types"),
         clEnumValN(GenClangSyntaxNodeClasses, "gen-clang-syntax-node-classes",
@@ -361,6 +364,9 @@ bool ClangTableGenMain(raw_ostream &OS, RecordKeeper &Records) {
     break;
   case GenClangSACheckers:
     EmitClangSACheckers(Records, OS);
+    break;
+  case GenClangSAConfigs:
+    EmitClangSAConfigs(Records, OS);
     break;
   case GenClangCommentHTMLTags:
     EmitClangCommentHTMLTags(Records, OS);

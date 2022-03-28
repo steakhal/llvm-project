@@ -231,6 +231,10 @@ clang-tblgen Options
 
   Generate Clang static analyzer checkers.
 
+.. option:: -gen-clang-sa-configs
+
+  Generate Clang static analyzer configs.
+
 .. option:: -gen-clang-comment-html-tags
 
   Generate efficient matchers for HTML tag names that are used in
