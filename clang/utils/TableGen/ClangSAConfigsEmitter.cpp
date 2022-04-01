@@ -20,8 +20,10 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 #include <vector>
 
+template <typename T> using uptr = std::unique_ptr<T>;
 using namespace llvm;
 
 static void ensureUniqueValues(const std::vector<StringRef> &List,
@@ -50,8 +52,37 @@ static std::vector<StringRef> parseListFieldIfDefined(Record *R,
 }
 
 namespace {
+struct ConfigValue;
+struct ConfigCategory;
+struct ParserContext {
+  StringMap<uptr<ConfigValue>> Configs;
+  StringMap<ConfigCategory> ConfigCategories;
+
+  const ConfigCategory &lookupConfigCategory(Record *R) const;
+};
+
+struct ConfigCategory {
+  explicit ConfigCategory(Record *R, const ParserContext &Ctx)
+      : DisplayOrder(R->getValueAsInt("DisplayOrder")),
+        Name(R->getValueAsString("Name")),
+        DisplayName(R->getValueAsString("DisplayName")),
+        Description(R->getValueAsString("Description")) {}
+  const int64_t DisplayOrder;
+  const StringRef Name;
+  const StringRef DisplayName;
+  const StringRef Description;
+};
+
+const ConfigCategory &ParserContext::lookupConfigCategory(Record *R) const {
+  StringRef CategoryName = R->getValueAsString("Name");
+  llvm::errs() << "looing up " << CategoryName << "\n";
+  const auto It = ConfigCategories.find(CategoryName);
+  assert(It != ConfigCategories.end());
+  return It->getValue();
+}
+
 struct ConfigValue {
-  explicit ConfigValue(Record *R);
+  ConfigValue(Record *R, const ParserContext &Ctx);
   virtual ~ConfigValue() = default;
   virtual raw_ostream &print(raw_ostream &OS) const = 0;
 
@@ -61,10 +92,11 @@ struct ConfigValue {
   const StringRef LongDescription;
   const std::vector<StringRef> RelatedConfigs;
   const std::vector<StringRef> RelatedCheckers;
+  const ConfigCategory &Category;
 };
 
 struct StringConfigValue final : ConfigValue {
-  explicit StringConfigValue(Record *R);
+  StringConfigValue(Record *R, const ParserContext &Ctx);
   ~StringConfigValue() override = default;
   raw_ostream &print(raw_ostream &OS) const override;
 
@@ -72,7 +104,7 @@ struct StringConfigValue final : ConfigValue {
 };
 
 struct EnumConfigValue final : ConfigValue {
-  explicit EnumConfigValue(Record *R);
+  EnumConfigValue(Record *R, const ParserContext &Ctx);
   ~EnumConfigValue() override = default;
   raw_ostream &print(raw_ostream &OS) const override;
 
@@ -82,7 +114,7 @@ struct EnumConfigValue final : ConfigValue {
 };
 
 struct BooleanConfigValue final : ConfigValue {
-  explicit BooleanConfigValue(Record *R);
+  BooleanConfigValue(Record *R, const ParserContext &Ctx);
   ~BooleanConfigValue() override = default;
   raw_ostream &print(raw_ostream &OS) const override;
 
@@ -90,7 +122,7 @@ struct BooleanConfigValue final : ConfigValue {
 };
 
 struct IntConfigValue final : ConfigValue {
-  explicit IntConfigValue(Record *R);
+  IntConfigValue(Record *R, const ParserContext &Ctx);
   ~IntConfigValue() override = default;
   raw_ostream &print(raw_ostream &OS) const override;
 
@@ -100,7 +132,7 @@ struct IntConfigValue final : ConfigValue {
 };
 
 struct UserModeDependentIntConfigValue final : ConfigValue {
-  explicit UserModeDependentIntConfigValue(Record *R);
+  UserModeDependentIntConfigValue(Record *R, const ParserContext &Ctx);
   ~UserModeDependentIntConfigValue() override = default;
   raw_ostream &print(raw_ostream &OS) const override;
 
@@ -116,7 +148,7 @@ struct UserModeDependentEnumConfigValue final : ConfigValue {
   StringRef ShallowDefaultValue;
   StringRef DeepDefaultValue;
 
-  explicit UserModeDependentEnumConfigValue(Record *R);
+  UserModeDependentEnumConfigValue(Record *R, const ParserContext &Ctx);
   ~UserModeDependentEnumConfigValue() override = default;
   raw_ostream &print(raw_ostream &OS) const override;
 };
@@ -124,13 +156,14 @@ struct UserModeDependentEnumConfigValue final : ConfigValue {
 
 // Constructors:
 
-ConfigValue::ConfigValue(Record *R)
+ConfigValue::ConfigValue(Record *R, const ParserContext &Ctx)
     : ConfigName(R->getName()), FlagName(R->getValueAsString("FlagName")),
       ShortDescription(R->getValueAsString("ShortDescription")),
       LongDescription(
           R->getValueAsOptionalString("LongDescription").getValueOr("")),
       RelatedConfigs(parseListFieldIfDefined(R, "RelatedConfigs")),
-      RelatedCheckers(parseListFieldIfDefined(R, "RelatedCheckers")) {
+      RelatedCheckers(parseListFieldIfDefined(R, "RelatedCheckers")),
+      Category(Ctx.lookupConfigCategory(R->getValueAsDef("Category"))) {
   assert(R->isSubClassOf("ConfigValue"));
   assert(!ConfigName.empty());
 
@@ -157,11 +190,11 @@ ConfigValue::ConfigValue(Record *R)
                     "Should not refer to itself.");
 }
 
-BooleanConfigValue::BooleanConfigValue(Record *R)
-    : ConfigValue(R), DefaultValue(R->getValueAsBit("DefaultValue")) {}
+BooleanConfigValue::BooleanConfigValue(Record *R, const ParserContext &Ctx)
+    : ConfigValue(R, Ctx), DefaultValue(R->getValueAsBit("DefaultValue")) {}
 
-EnumConfigValue::EnumConfigValue(Record *R)
-    : ConfigValue(R), EnumName(R->getValueAsString("EnumName")),
+EnumConfigValue::EnumConfigValue(Record *R, const ParserContext &Ctx)
+    : ConfigValue(R, Ctx), EnumName(R->getValueAsString("EnumName")),
       Options(R->getValueAsListOfStrings("Options")),
       DefaultValue(R->getValueAsString("DefaultValue")) {
   SMLoc ListLoc = R->getFieldLoc("Options");
@@ -179,8 +212,8 @@ EnumConfigValue::EnumConfigValue(Record *R)
   ensureUniqueValues(Options, ListLoc);
 }
 
-IntConfigValue::IntConfigValue(Record *R)
-    : ConfigValue(R), Min(R->getValueAsInt("Min")),
+IntConfigValue::IntConfigValue(Record *R, const ParserContext &Ctx)
+    : ConfigValue(R, Ctx), Min(R->getValueAsInt("Min")),
       Max(R->getValueAsOptionalInt("Max")),
       DefaultValue(R->getValueAsInt("DefaultValue")) {
   if (Min > DefaultValue) {
@@ -207,11 +240,12 @@ IntConfigValue::IntConfigValue(Record *R)
   }
 }
 
-StringConfigValue::StringConfigValue(Record *R)
-    : ConfigValue(R), DefaultValue(R->getValueAsString("DefaultValue")) {}
+StringConfigValue::StringConfigValue(Record *R, const ParserContext &Ctx)
+    : ConfigValue(R, Ctx), DefaultValue(R->getValueAsString("DefaultValue")) {}
 
-UserModeDependentEnumConfigValue::UserModeDependentEnumConfigValue(Record *R)
-    : ConfigValue(R), EnumName(R->getValueAsString("EnumName")),
+UserModeDependentEnumConfigValue::UserModeDependentEnumConfigValue(
+    Record *R, const ParserContext &Ctx)
+    : ConfigValue(R, Ctx), EnumName(R->getValueAsString("EnumName")),
       Options(R->getValueAsListOfStrings("Options")),
       ShallowDefaultValue(R->getValueAsString("ShallowDefaultValue")),
       DeepDefaultValue(R->getValueAsString("DeepDefaultValue")) {
@@ -239,8 +273,9 @@ UserModeDependentEnumConfigValue::UserModeDependentEnumConfigValue(Record *R)
   ensureUniqueValues(Options, ListLoc);
 }
 
-UserModeDependentIntConfigValue::UserModeDependentIntConfigValue(Record *R)
-    : ConfigValue(R), ShallowMin(R->getValueAsInt("ShallowMin")),
+UserModeDependentIntConfigValue::UserModeDependentIntConfigValue(
+    Record *R, const ParserContext &Ctx)
+    : ConfigValue(R, Ctx), ShallowMin(R->getValueAsInt("ShallowMin")),
       DeepMin(R->getValueAsInt("DeepMin")),
       ShallowDefaultValue(R->getValueAsInt("ShallowDefaultValue")),
       DeepDefaultValue(R->getValueAsInt("DeepDefaultValue")) {
@@ -339,19 +374,20 @@ raw_ostream &UserModeDependentIntConfigValue::print(raw_ostream &OS) const {
 
 // Factory function:
 static std::unique_ptr<ConfigValue>
-parseSingleConfigValue(Record *R, StringRef DirectBaseName) {
+parseSingleConfigValue(Record *R, const ParserContext &Ctx,
+                       StringRef DirectBaseName) {
   if ("BooleanConfigValue" == DirectBaseName)
-    return std::make_unique<BooleanConfigValue>(R);
+    return std::make_unique<BooleanConfigValue>(R, Ctx);
   if ("EnumConfigValue" == DirectBaseName)
-    return std::make_unique<EnumConfigValue>(R);
+    return std::make_unique<EnumConfigValue>(R, Ctx);
   if ("IntConfigValue" == DirectBaseName)
-    return std::make_unique<IntConfigValue>(R);
+    return std::make_unique<IntConfigValue>(R, Ctx);
   if ("StringConfigValue" == DirectBaseName)
-    return std::make_unique<StringConfigValue>(R);
+    return std::make_unique<StringConfigValue>(R, Ctx);
   if ("UserModeDependentEnumConfigValue" == DirectBaseName)
-    return std::make_unique<UserModeDependentEnumConfigValue>(R);
+    return std::make_unique<UserModeDependentEnumConfigValue>(R, Ctx);
   if ("UserModeDependentIntConfigValue" == DirectBaseName)
-    return std::make_unique<UserModeDependentIntConfigValue>(R);
+    return std::make_unique<UserModeDependentIntConfigValue>(R, Ctx);
 
   PrintFatalError(R->getLoc(),
                   "Record `" + DirectBaseName +
@@ -359,13 +395,11 @@ parseSingleConfigValue(Record *R, StringRef DirectBaseName) {
                       "tablegen backend!\n");
 }
 
-static std::vector<std::unique_ptr<ConfigValue>>
-parseConfigValues(RecordKeeper &Records) {
-  auto ConfigValueRecords = Records.getAllDerivedDefinitions("ConfigValue");
-  std::vector<std::unique_ptr<ConfigValue>> Result;
-  Result.reserve(ConfigValueRecords.size());
+static void parseConfigValues(RecordKeeper &Records, ParserContext &Ctx) {
+  assert(!Ctx.ConfigCategories.empty() &&
+         "Parse config categories before parsing config values.");
 
-  for (Record *R : ConfigValueRecords) {
+  for (Record *R : Records.getAllDerivedDefinitions("ConfigValue")) {
     SmallVector<Record *, 1> DirectBases;
     R->getDirectSuperClasses(DirectBases);
     assert(!DirectBases.empty());
@@ -376,9 +410,18 @@ parseConfigValues(RecordKeeper &Records) {
                           "' should inherit from only a single Record!\n");
 
     StringRef DirectBaseName = DirectBases[0]->getName();
-    Result.push_back(parseSingleConfigValue(R, DirectBaseName));
+    Ctx.Configs.insert(std::make_pair(
+        DirectBaseName, parseSingleConfigValue(R, Ctx, DirectBaseName)));
   }
-  return Result;
+}
+
+static void parseConfigCategories(RecordKeeper &Records, ParserContext &Ctx) {
+  for (Record *R : Records.getAllDerivedDefinitions("ConfigCategory")) {
+    llvm::errs() << "Parsed cat: " << R->getValueAsString("DisplayName")
+                 << "\n";
+    Ctx.ConfigCategories.insert(
+        std::make_pair(R->getValueAsString("Name"), ConfigCategory{R, Ctx}));
+  }
 }
 
 static void ensureAllConfigValueKindsAreUsed(const RecordKeeper &Records,
@@ -393,14 +436,13 @@ static void ensureAllConfigValueKindsAreUsed(const RecordKeeper &Records,
   }
 }
 
-static void
-ensureAllCrossreferencesAreValid(RecordKeeper &Records,
-                                 StringMap<const ConfigValue *> SeenConfigs) {
-  for (const StringMapEntry<const ConfigValue *> &C : SeenConfigs) {
-    for (StringRef RelatedConfigName : C.second->RelatedConfigs) {
-      if (SeenConfigs.count(RelatedConfigName) == 0) {
+static void ensureAllCrossreferencesAreValid(RecordKeeper &Records,
+                                             const ParserContext &Ctx) {
+  for (const auto &Entry : Ctx.Configs) {
+    for (StringRef RelatedConfigName : Entry.getValue()->RelatedConfigs) {
+      if (Ctx.Configs.count(RelatedConfigName) == 0) {
         SMLoc ListLoc =
-            Records.getDef(C.first())->getFieldLoc("RelatedConfigs");
+            Records.getDef(Entry.getKey())->getFieldLoc("RelatedConfigs");
 
         PrintFatalError(ListLoc,
                         "The field named `RelatedConfigs' refers to \"" +
@@ -414,7 +456,7 @@ ensureAllCrossreferencesAreValid(RecordKeeper &Records,
 
 // This reduces the chance of copy-paste mistakes.
 static void ensureGlobalUniqueness(RecordKeeper &Records,
-                                   StringMap<const ConfigValue *> SeenConfigs) {
+                                   const ParserContext &Ctx) {
   auto CheckField = [&Records](StringMap<const ConfigValue *> &Aggregator,
                                StringRef FieldName,
                                const ConfigValue *Current) {
@@ -439,10 +481,11 @@ static void ensureGlobalUniqueness(RecordKeeper &Records,
   StringMap<const ConfigValue *> ShortDescriptions;
   StringMap<const ConfigValue *> LongDescriptions;
 
-  for (const StringMapEntry<const ConfigValue *> &C : SeenConfigs) {
-    CheckField(FlagNames, "FlagName", C.second);
-    CheckField(ShortDescriptions, "ShortDescription", C.second);
-    CheckField(LongDescriptions, "LongDescription", C.second);
+  for (const auto &Entry : Ctx.Configs) {
+    const ConfigValue *C = Entry.getValue().get();
+    CheckField(FlagNames, "FlagName", C);
+    CheckField(ShortDescriptions, "ShortDescription", C);
+    CheckField(LongDescriptions, "LongDescription", C);
   }
 }
 
@@ -463,15 +506,12 @@ static void checkDescriptionLengths(RecordKeeper &Records,
                   "`ShortDescription' field!\n");
 }
 
-static void performSemanticChecks(
-    RecordKeeper &Records,
-    const std::vector<std::unique_ptr<ConfigValue>> &Configs) {
-  StringMap<const ConfigValue *> SeenConfigs;
+static void performSemanticChecks(RecordKeeper &Records,
+                                  const ParserContext &Ctx) {
   StringSet<> SeenClasses;
-  for (const auto &Ptr : Configs) {
-    SeenConfigs.insert(std::make_pair(Ptr->ConfigName, Ptr.get()));
+  for (const auto &Entry : Ctx.Configs) {
     SeenClasses.insert(
-        Records.getDef(Ptr->ConfigName)->getType()->getAsString());
+        Records.getDef(Entry.getValue()->ConfigName)->getType()->getAsString());
   }
 
   // Check if we have unhandled 'ConfigValue' classes in the tablegen file.
@@ -479,19 +519,17 @@ static void performSemanticChecks(
 
   // Check if any of the 'ConfigValues' refer to a non-existing 'ConfigValue'
   // in the 'RelatedConfigs' list.
-  ensureAllCrossreferencesAreValid(Records, SeenConfigs);
+  ensureAllCrossreferencesAreValid(Records, Ctx);
 
   // Check if any of the 'ConfigValues' use the same 'FlagName',
   // 'ShortDescription' or 'LongDescription' values.
-  ensureGlobalUniqueness(Records, SeenConfigs);
+  ensureGlobalUniqueness(Records, Ctx);
 
-  for (const auto &Ptr : Configs)
-    checkDescriptionLengths(Records, Ptr.get());
+  for (const auto &Entry : Ctx.Configs)
+    checkDescriptionLengths(Records, Entry.getValue().get());
 }
 
-static void
-printAnalyzerOptions(const std::vector<std::unique_ptr<ConfigValue>> &Configs,
-                     raw_ostream &OS) {
+static void printAnalyzerOptions(const ParserContext &Ctx, raw_ostream &OS) {
   OS <<
       R"header(// This file is automatically generated. Do not edit this file by hand.
 
@@ -552,8 +590,8 @@ define both 'ANALYZER_OPTION' and 'ANALYZER_OPTION_DEPENDS_ON_USER_MODE' macros!
 
 )header";
 
-  for (const auto &Ptr : Configs)
-    Ptr->print(OS) << "\n";
+  for (const auto &Entry : Ctx.Configs)
+    Entry.getValue()->print(OS) << "\n";
 
   OS << R"footer(
 #undef ANALYZER_OPTION_DEPENDS_ON_USER_MODE
@@ -561,11 +599,29 @@ define both 'ANALYZER_OPTION' and 'ANALYZER_OPTION_DEPENDS_ON_USER_MODE' macros!
 )footer";
 }
 
-void clang::EmitClangSAConfigs(RecordKeeper &Records, raw_ostream &OS) {
-  auto Configs = parseConfigValues(Records);
-  performSemanticChecks(Records, Configs);
+static void printAnalyzerOptionCategories(const ParserContext &Ctx,
+                                          raw_ostream &OS) {
+  std::vector<const ConfigCategory *> SortedCategories;
+  SortedCategories.reserve(Ctx.ConfigCategories.size());
+  auto ByDisplayOrder = [](const auto *Lhs, const auto *Rhs) {
+    return Lhs->DisplayOrder < Rhs->DisplayOrder;
+  };
 
-  printAnalyzerOptions(Configs, OS);
+  for (const auto &Entry : Ctx.ConfigCategories)
+    SortedCategories.push_back(&Entry.getValue());
+  llvm::sort(SortedCategories, ByDisplayOrder);
+
+  for (const auto *Cat : SortedCategories)
+    OS << Cat->DisplayName << "\n";
+}
+
+void clang::EmitClangSAConfigs(RecordKeeper &Records, raw_ostream &OS) {
+  ParserContext Ctx;
+  parseConfigCategories(Records, Ctx);
+  parseConfigValues(Records, Ctx);
+  performSemanticChecks(Records, Ctx);
+  printAnalyzerOptions(Ctx, OS);
+  printAnalyzerOptionCategories(Ctx, OS);
 }
 
 // Invoke with:
