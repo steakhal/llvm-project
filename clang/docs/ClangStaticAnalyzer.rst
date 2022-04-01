@@ -15,6 +15,7 @@ See the `Official Tool Page <https://clang-analyzer.llvm.org/>`_.
    :maxdepth: 2
 
    analyzer/checkers
+   analyzer/configs
    analyzer/user-docs
    analyzer/developer-docs
 
