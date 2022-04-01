@@ -75,7 +75,6 @@ struct ConfigCategory {
 
 const ConfigCategory &ParserContext::lookupConfigCategory(Record *R) const {
   StringRef CategoryName = R->getValueAsString("Name");
-  llvm::errs() << "looing up " << CategoryName << "\n";
   const auto It = ConfigCategories.find(CategoryName);
   assert(It != ConfigCategories.end());
   return It->getValue();
@@ -347,7 +346,7 @@ raw_ostream &StringConfigValue::print(raw_ostream &OS) const {
 
 raw_ostream &UserModeDependentEnumConfigValue::print(raw_ostream &OS) const {
   OS << "ANALYZER_OPTION_DEPENDS_ON_USER_MODE(StringRef, " << ConfigName
-     << ", \"";
+     << ", ";
   quoted(OS, FlagName) << ", \"";
   OS.write_escaped(ShortDescription) << " Value: \\\"";
   interleave(
@@ -363,8 +362,7 @@ raw_ostream &UserModeDependentEnumConfigValue::print(raw_ostream &OS) const {
 }
 
 raw_ostream &UserModeDependentIntConfigValue::print(raw_ostream &OS) const {
-  OS << "ANALYZER_OPTION_DEPENDS_ON_USER_MODE(unsigned, " << ConfigName
-     << ", \"";
+  OS << "ANALYZER_OPTION_DEPENDS_ON_USER_MODE(unsigned, " << ConfigName << ", ";
   quoted(OS, FlagName) << ", ";
   quoted(OS, ShortDescription) << ", ";
   OS << "/* SHALLOW_VAL */ " << ShallowDefaultValue << ", ";
@@ -411,7 +409,7 @@ static void parseConfigValues(RecordKeeper &Records, ParserContext &Ctx) {
 
     StringRef DirectBaseName = DirectBases[0]->getName();
     Ctx.Configs.insert(std::make_pair(
-        DirectBaseName, parseSingleConfigValue(R, Ctx, DirectBaseName)));
+        R->getName(), parseSingleConfigValue(R, Ctx, DirectBaseName)));
   }
 }
 
