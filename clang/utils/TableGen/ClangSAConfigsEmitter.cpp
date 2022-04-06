@@ -81,10 +81,18 @@ const ConfigCategory &ParserContext::lookupConfigCategory(Record *R) const {
 }
 
 struct ConfigValue {
-  ConfigValue(Record *R, const ParserContext &Ctx);
+  enum ConfigKind : unsigned {
+    BooleanKind,
+    EnumKind,
+    IntKind,
+    StringKind,
+    UserModeDependentEnumKind,
+    UserModeDependentIntKind,
+  };
+  ConfigValue(ConfigKind K, Record *R, const ParserContext &Ctx);
   virtual ~ConfigValue() = default;
-  virtual raw_ostream &print(raw_ostream &OS) const = 0;
 
+  const ConfigKind Kind;
   const StringRef ConfigName;
   const StringRef FlagName;
   const StringRef ShortDescription;
@@ -97,7 +105,6 @@ struct ConfigValue {
 struct StringConfigValue final : ConfigValue {
   StringConfigValue(Record *R, const ParserContext &Ctx);
   ~StringConfigValue() override = default;
-  raw_ostream &print(raw_ostream &OS) const override;
 
   const StringRef DefaultValue;
 };
@@ -105,7 +112,6 @@ struct StringConfigValue final : ConfigValue {
 struct EnumConfigValue final : ConfigValue {
   EnumConfigValue(Record *R, const ParserContext &Ctx);
   ~EnumConfigValue() override = default;
-  raw_ostream &print(raw_ostream &OS) const override;
 
   const StringRef EnumName;
   const std::vector<StringRef> Options;
@@ -115,7 +121,6 @@ struct EnumConfigValue final : ConfigValue {
 struct BooleanConfigValue final : ConfigValue {
   BooleanConfigValue(Record *R, const ParserContext &Ctx);
   ~BooleanConfigValue() override = default;
-  raw_ostream &print(raw_ostream &OS) const override;
 
   const bool DefaultValue;
 };
@@ -123,7 +128,6 @@ struct BooleanConfigValue final : ConfigValue {
 struct IntConfigValue final : ConfigValue {
   IntConfigValue(Record *R, const ParserContext &Ctx);
   ~IntConfigValue() override = default;
-  raw_ostream &print(raw_ostream &OS) const override;
 
   const int64_t Min;
   const Optional<int64_t> Max;
@@ -133,7 +137,6 @@ struct IntConfigValue final : ConfigValue {
 struct UserModeDependentIntConfigValue final : ConfigValue {
   UserModeDependentIntConfigValue(Record *R, const ParserContext &Ctx);
   ~UserModeDependentIntConfigValue() override = default;
-  raw_ostream &print(raw_ostream &OS) const override;
 
   const int64_t ShallowMin;
   const int64_t DeepMin;
@@ -144,19 +147,48 @@ struct UserModeDependentIntConfigValue final : ConfigValue {
 struct UserModeDependentEnumConfigValue final : ConfigValue {
   UserModeDependentEnumConfigValue(Record *R, const ParserContext &Ctx);
   ~UserModeDependentEnumConfigValue() override = default;
-  raw_ostream &print(raw_ostream &OS) const override;
 
   const StringRef EnumName;
   const std::vector<StringRef> Options;
   const StringRef ShallowDefaultValue;
   const StringRef DeepDefaultValue;
 };
+
+template <typename ImplClass, typename RetTy = void> struct ConfigValueVisitor {
+  RetTy Visit(const ConfigValue *C) {
+    auto *Self = static_cast<ImplClass *>(this);
+    using Kind = ConfigValue::ConfigKind;
+    switch (C->Kind) {
+    case Kind::BooleanKind:
+      return Self->visit(static_cast<const BooleanConfigValue *>(C));
+    case Kind::EnumKind:
+      return Self->visit(static_cast<const EnumConfigValue *>(C));
+    case Kind::IntKind:
+      return Self->visit(static_cast<const IntConfigValue *>(C));
+    case Kind::StringKind:
+      return Self->visit(static_cast<const StringConfigValue *>(C));
+    case Kind::UserModeDependentEnumKind:
+      return Self->visit(
+          static_cast<const UserModeDependentEnumConfigValue *>(C));
+    case Kind::UserModeDependentIntKind:
+      return Self->visit(
+          static_cast<const UserModeDependentIntConfigValue *>(C));
+    }
+  }
+  RetTy visit(const BooleanConfigValue *) { return RetTy{}; }
+  RetTy visit(const EnumConfigValue *) { return RetTy{}; }
+  RetTy visit(const IntConfigValue *) { return RetTy{}; }
+  RetTy visit(const StringConfigValue *) { return {}; }
+  RetTy visit(const UserModeDependentEnumConfigValue *) { return RetTy{}; }
+  RetTy visit(const UserModeDependentIntConfigValue *) { return RetTy{}; }
+};
 } // namespace
 
 // Constructors:
 
-ConfigValue::ConfigValue(Record *R, const ParserContext &Ctx)
-    : ConfigName(R->getName()), FlagName(R->getValueAsString("FlagName")),
+ConfigValue::ConfigValue(ConfigKind K, Record *R, const ParserContext &Ctx)
+    : Kind(K), ConfigName(R->getName()),
+      FlagName(R->getValueAsString("FlagName")),
       ShortDescription(R->getValueAsString("ShortDescription")),
       LongDescription(
           R->getValueAsOptionalString("LongDescription").getValueOr("")),
@@ -190,10 +222,11 @@ ConfigValue::ConfigValue(Record *R, const ParserContext &Ctx)
 }
 
 BooleanConfigValue::BooleanConfigValue(Record *R, const ParserContext &Ctx)
-    : ConfigValue(R, Ctx), DefaultValue(R->getValueAsBit("DefaultValue")) {}
+    : ConfigValue(BooleanKind, R, Ctx),
+      DefaultValue(R->getValueAsBit("DefaultValue")) {}
 
 EnumConfigValue::EnumConfigValue(Record *R, const ParserContext &Ctx)
-    : ConfigValue(R, Ctx), EnumName(R->getValueAsString("EnumName")),
+    : ConfigValue(EnumKind, R, Ctx), EnumName(R->getValueAsString("EnumName")),
       Options(R->getValueAsListOfStrings("Options")),
       DefaultValue(R->getValueAsString("DefaultValue")) {
   SMLoc ListLoc = R->getFieldLoc("Options");
@@ -212,7 +245,7 @@ EnumConfigValue::EnumConfigValue(Record *R, const ParserContext &Ctx)
 }
 
 IntConfigValue::IntConfigValue(Record *R, const ParserContext &Ctx)
-    : ConfigValue(R, Ctx), Min(R->getValueAsInt("Min")),
+    : ConfigValue(IntKind, R, Ctx), Min(R->getValueAsInt("Min")),
       Max(R->getValueAsOptionalInt("Max")),
       DefaultValue(R->getValueAsInt("DefaultValue")) {
   if (Min > DefaultValue) {
@@ -240,11 +273,13 @@ IntConfigValue::IntConfigValue(Record *R, const ParserContext &Ctx)
 }
 
 StringConfigValue::StringConfigValue(Record *R, const ParserContext &Ctx)
-    : ConfigValue(R, Ctx), DefaultValue(R->getValueAsString("DefaultValue")) {}
+    : ConfigValue(StringKind, R, Ctx),
+      DefaultValue(R->getValueAsString("DefaultValue")) {}
 
 UserModeDependentEnumConfigValue::UserModeDependentEnumConfigValue(
     Record *R, const ParserContext &Ctx)
-    : ConfigValue(R, Ctx), EnumName(R->getValueAsString("EnumName")),
+    : ConfigValue(UserModeDependentEnumKind, R, Ctx),
+      EnumName(R->getValueAsString("EnumName")),
       Options(R->getValueAsListOfStrings("Options")),
       ShallowDefaultValue(R->getValueAsString("ShallowDefaultValue")),
       DeepDefaultValue(R->getValueAsString("DeepDefaultValue")) {
@@ -274,7 +309,8 @@ UserModeDependentEnumConfigValue::UserModeDependentEnumConfigValue(
 
 UserModeDependentIntConfigValue::UserModeDependentIntConfigValue(
     Record *R, const ParserContext &Ctx)
-    : ConfigValue(R, Ctx), ShallowMin(R->getValueAsInt("ShallowMin")),
+    : ConfigValue(UserModeDependentIntKind, R, Ctx),
+      ShallowMin(R->getValueAsInt("ShallowMin")),
       DeepMin(R->getValueAsInt("DeepMin")),
       ShallowDefaultValue(R->getValueAsInt("ShallowDefaultValue")),
       DeepDefaultValue(R->getValueAsInt("DeepDefaultValue")) {
@@ -308,66 +344,71 @@ static raw_ostream &quoted(raw_ostream &OS, StringRef Str) {
   return OS << "\"";
 }
 
-raw_ostream &BooleanConfigValue::print(raw_ostream &OS) const {
-  OS << "ANALYZER_OPTION(bool, " << ConfigName << ", ";
-  quoted(OS, FlagName) << ", ";
-  quoted(OS, ShortDescription) << ", ";
-  OS << (DefaultValue ? "true" : "false") << ")";
-  return OS;
-}
+namespace {
+class DefPrinterVisitor : public ConfigValueVisitor<DefPrinterVisitor> {
+  raw_ostream &OS;
 
-raw_ostream &EnumConfigValue::print(raw_ostream &OS) const {
-  OS << "ANALYZER_OPTION(StringRef, " << ConfigName << ", ";
-  quoted(OS, FlagName) << ", \"";
-  OS.write_escaped(ShortDescription) << " Value: \\\"";
+public:
+  explicit DefPrinterVisitor(raw_ostream &OS) : OS(OS) {}
+  void visit(const BooleanConfigValue *C);
+  void visit(const EnumConfigValue *C);
+  void visit(const IntConfigValue *C);
+  void visit(const StringConfigValue *C);
+  void visit(const UserModeDependentEnumConfigValue *C);
+  void visit(const UserModeDependentIntConfigValue *C);
+};
+} // namespace
+
+void DefPrinterVisitor::visit(const BooleanConfigValue *C) {
+  OS << "ANALYZER_OPTION(bool, " << C->ConfigName << ", ";
+  quoted(OS, C->FlagName) << ", ";
+  quoted(OS, C->ShortDescription) << ", ";
+  OS << (C->DefaultValue ? "true" : "false") << ")";
+}
+void DefPrinterVisitor::visit(const EnumConfigValue *C) {
+  OS << "ANALYZER_OPTION(StringRef, " << C->ConfigName << ", ";
+  quoted(OS, C->FlagName) << ", \"";
+  OS.write_escaped(C->ShortDescription) << " Value: \\\"";
   interleave(
-      Options, [&](StringRef Item) { OS.write_escaped(Item); },
+      C->Options, [&](StringRef Item) { OS.write_escaped(Item); },
       [&] { OS << "\\\", \\\""; });
   OS << "\\\".\""
      << ", ";
-  quoted(OS, DefaultValue) << ")";
-  return OS;
+  quoted(OS, C->DefaultValue) << ")";
 }
-
-raw_ostream &IntConfigValue::print(raw_ostream &OS) const {
-  OS << "ANALYZER_OPTION(unsigned, " << ConfigName << ", ";
-  quoted(OS, FlagName) << ", ";
-  quoted(OS, ShortDescription) << ", " << DefaultValue << "u)";
-  return OS;
+void DefPrinterVisitor::visit(const IntConfigValue *C) {
+  OS << "ANALYZER_OPTION(unsigned, " << C->ConfigName << ", ";
+  quoted(OS, C->FlagName) << ", ";
+  quoted(OS, C->ShortDescription) << ", " << C->DefaultValue << "u)";
 }
-
-raw_ostream &StringConfigValue::print(raw_ostream &OS) const {
-  OS << "ANALYZER_OPTION(StringRef, " << ConfigName << ", ";
-  quoted(OS, FlagName) << ", ";
-  quoted(OS, ShortDescription) << ", ";
-  quoted(OS, DefaultValue) << ")";
-  return OS;
+void DefPrinterVisitor::visit(const StringConfigValue *C) {
+  OS << "ANALYZER_OPTION(StringRef, " << C->ConfigName << ", ";
+  quoted(OS, C->FlagName) << ", ";
+  quoted(OS, C->ShortDescription) << ", ";
+  quoted(OS, C->DefaultValue) << ")";
 }
-
-raw_ostream &UserModeDependentEnumConfigValue::print(raw_ostream &OS) const {
-  OS << "ANALYZER_OPTION_DEPENDS_ON_USER_MODE(StringRef, " << ConfigName
+void DefPrinterVisitor::visit(const UserModeDependentEnumConfigValue *C) {
+  OS << "ANALYZER_OPTION_DEPENDS_ON_USER_MODE(StringRef, " << C->ConfigName
      << ", ";
-  quoted(OS, FlagName) << ", \"";
-  OS.write_escaped(ShortDescription) << " Value: \\\"";
+  quoted(OS, C->FlagName) << ", \"";
+  OS.write_escaped(C->ShortDescription) << " Value: \\\"";
   interleave(
-      Options, [&](StringRef Item) { OS.write_escaped(Item); },
+      C->Options, [&](StringRef Item) { OS.write_escaped(Item); },
       [&] { OS << "\\\", \\\""; });
   OS << "\\\".\""
      << ", ";
   OS << "/* SHALLOW_VAL */ ";
-  quoted(OS, ShallowDefaultValue) << ", ";
+  quoted(OS, C->ShallowDefaultValue) << ", ";
   OS << "/* DEEP_VAL */ ";
-  quoted(OS, DeepDefaultValue) << ")";
-  return OS;
+  quoted(OS, C->DeepDefaultValue) << ")";
 }
-
-raw_ostream &UserModeDependentIntConfigValue::print(raw_ostream &OS) const {
-  OS << "ANALYZER_OPTION_DEPENDS_ON_USER_MODE(unsigned, " << ConfigName << ", ";
-  quoted(OS, FlagName) << ", ";
-  quoted(OS, ShortDescription) << ", ";
-  OS << "/* SHALLOW_VAL */ " << ShallowDefaultValue << ", ";
-  OS << "/* DEEP_VAL */ " << DeepDefaultValue << ")";
-  return OS;
+void DefPrinterVisitor::visit(const UserModeDependentIntConfigValue *C) {
+  OS << "ANALYZER_OPTION_DEPENDS_ON_USER_MODE(unsigned, " << C->ConfigName
+     << ", ";
+  quoted(OS, C->FlagName) << ", ";
+  quoted(OS, C->ShortDescription) << ", ";
+  OS << "/* SHALLOW_VAL */ " << C->ShallowDefaultValue << ", ";
+  OS << "/* DEEP_VAL */ " << C->DeepDefaultValue << ")";
 }
 
 // Factory function:
@@ -598,8 +639,11 @@ define both 'ANALYZER_OPTION' and 'ANALYZER_OPTION_DEPENDS_ON_USER_MODE' macros!
     SortedConfigs.push_back(Entry.getValue().get());
   llvm::sort(SortedConfigs, ByConfigName);
 
-  for (const ConfigValue *Ptr : SortedConfigs)
-    Ptr->print(OS) << "\n";
+  DefPrinterVisitor Printer{OS};
+  for (const ConfigValue *Ptr : SortedConfigs) {
+    Printer.Visit(Ptr);
+    OS << "\n";
+  }
 
   OS << R"footer(
 #undef ANALYZER_OPTION_DEPENDS_ON_USER_MODE
