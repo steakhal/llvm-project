@@ -142,14 +142,14 @@ struct UserModeDependentIntConfigValue final : ConfigValue {
 };
 
 struct UserModeDependentEnumConfigValue final : ConfigValue {
-  StringRef EnumName;
-  std::vector<StringRef> Options;
-  StringRef ShallowDefaultValue;
-  StringRef DeepDefaultValue;
-
   UserModeDependentEnumConfigValue(Record *R, const ParserContext &Ctx);
   ~UserModeDependentEnumConfigValue() override = default;
   raw_ostream &print(raw_ostream &OS) const override;
+
+  const StringRef EnumName;
+  const std::vector<StringRef> Options;
+  const StringRef ShallowDefaultValue;
+  const StringRef DeepDefaultValue;
 };
 } // namespace
 
