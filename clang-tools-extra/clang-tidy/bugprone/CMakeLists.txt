@@ -68,6 +68,7 @@ add_clang_library(clangTidyBugproneModule
   UnusedReturnValueCheck.cpp
   UseAfterMoveCheck.cpp
   VirtualNearMissCheck.cpp
+  WideCharacterCountMisuseCheck.cpp
 
   LINK_LIBS
   clangTidy

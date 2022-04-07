@@ -72,6 +72,7 @@
 #include "UnusedReturnValueCheck.h"
 #include "UseAfterMoveCheck.h"
 #include "VirtualNearMissCheck.h"
+#include "WideCharacterCountMisuseCheck.h"
 
 namespace clang {
 namespace tidy {
@@ -204,6 +205,8 @@ public:
         "bugprone-use-after-move");
     CheckFactories.registerCheck<VirtualNearMissCheck>(
         "bugprone-virtual-near-miss");
+    CheckFactories.registerCheck<WideCharacterCountMisuseCheck>(
+        "bugprone-wide-character-count-misuse");
   }
 };
 
