@@ -1,0 +1,278 @@
+//===- ConfigValues.cpp                                                 ---===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+#include "ConfigValues.h"
+
+#include "llvm/ADT/Optional.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
+#include "llvm/TableGen/Error.h"
+#include "llvm/TableGen/Record.h"
+
+#include "SemanticChecks.h"
+
+#include <memory>
+#include <string>
+#include <vector>
+
+using namespace llvm;
+using namespace clang;
+using namespace ento;
+
+/// Utilities
+
+static void ensureUniqueValues(const std::vector<StringRef> &List,
+                               SMLoc ListLoc) {
+  StringSet<> Uniques;
+  bool Inserted;
+  for (StringRef Item : List) {
+    std::tie(std::ignore, Inserted) = Uniques.insert(Item);
+    if (!Inserted)
+      PrintFatalError(ListLoc,
+                      "\"" + Item + "\" appears more then once in the list!\n");
+  }
+}
+
+static std::vector<StringRef> parseListFieldIfDefined(Record *R,
+                                                      StringRef FieldName) {
+  // First check if the field is defined.
+  if (const RecordVal *P = R->getValue(FieldName)) {
+    if (isa<ListInit>(P->getValue())) {
+      std::vector<StringRef> Result = R->getValueAsListOfStrings(FieldName);
+      ensureUniqueValues(Result, P->getLoc());
+      return Result;
+    }
+  }
+  return {};
+}
+
+/// Constructors
+
+ConfigCategory::ConfigCategory(Record *R, const ParserContext &Ctx)
+    : DisplayOrder(R->getValueAsInt("DisplayOrder")),
+      Name(R->getValueAsString("Name")),
+      DisplayName(R->getValueAsString("DisplayName")),
+      Description(R->getValueAsString("Description")) {}
+
+const ConfigCategory &ParserContext::lookupConfigCategory(Record *R) const {
+  StringRef CategoryName = R->getValueAsString("Name");
+  const auto It = ConfigCategories.find(CategoryName);
+  assert(It != ConfigCategories.end());
+  return It->getValue();
+}
+
+ConfigValue::ConfigValue(ConfigKind K, Record *R, const ParserContext &Ctx)
+    : Kind(K), ConfigName(R->getName()),
+      FlagName(R->getValueAsString("FlagName")),
+      ShortDescription(R->getValueAsString("ShortDescription")),
+      LongDescription(
+          R->getValueAsOptionalString("LongDescription").getValueOr("")),
+      RelatedConfigs(parseListFieldIfDefined(R, "RelatedConfigs")),
+      RelatedCheckers(parseListFieldIfDefined(R, "RelatedCheckers")),
+      Category(Ctx.lookupConfigCategory(R->getValueAsDef("Category"))) {
+  assert(R->isSubClassOf("ConfigValue"));
+  assert(!ConfigName.empty());
+
+  if (FlagName.empty())
+    PrintFatalError(R->getFieldLoc("FlagName"),
+                    "FlagName should not be empty.");
+
+  if (ShortDescription.empty())
+    PrintFatalError(R->getFieldLoc("ShortDescription"),
+                    "ShortDescription should not be empty.");
+
+  // TODO: Enforce that !LongDescription.empty(), when we have this for all
+  // configs.
+
+  if (!RelatedConfigs.empty())
+    ensureUniqueValues(RelatedConfigs, R->getFieldLoc("RelatedConfigs"));
+
+  if (!RelatedCheckers.empty())
+    ensureUniqueValues(RelatedCheckers, R->getFieldLoc("RelatedCheckers"));
+
+  // Forbid referencing to self.
+  if (is_contained(RelatedConfigs, ConfigName))
+    PrintFatalError(R->getFieldLoc("RelatedConfigs"),
+                    "Should not refer to itself.");
+}
+
+BooleanConfigValue::BooleanConfigValue(Record *R, const ParserContext &Ctx)
+    : ConfigValue(BooleanKind, R, Ctx),
+      DefaultValue(R->getValueAsBit("DefaultValue")) {}
+
+EnumConfigValue::EnumConfigValue(Record *R, const ParserContext &Ctx)
+    : ConfigValue(EnumKind, R, Ctx), EnumName(R->getValueAsString("EnumName")),
+      Options(R->getValueAsListOfStrings("Options")),
+      DefaultValue(R->getValueAsString("DefaultValue")) {
+  SMLoc ListLoc = R->getFieldLoc("Options");
+  SMLoc DefaultValueLoc = R->getFieldLoc("DefaultValue");
+  if (Options.size() < 2)
+    PrintFatalError(ListLoc,
+                    "The Options list must have at least two elements!\n");
+
+  if (!is_contained(Options, DefaultValue)) {
+    PrintError(ListLoc, "The field named `Options' must contain the value of "
+                        "`DefaultValue'!\n");
+    PrintFatalNote(DefaultValueLoc, "`DefaultValue' is " + DefaultValue);
+  }
+
+  ensureUniqueValues(Options, ListLoc);
+}
+
+IntConfigValue::IntConfigValue(Record *R, const ParserContext &Ctx)
+    : ConfigValue(IntKind, R, Ctx), Min(R->getValueAsInt("Min")),
+      Max(R->getValueAsOptionalInt("Max")),
+      DefaultValue(R->getValueAsInt("DefaultValue")) {
+  if (Min > DefaultValue) {
+    PrintError(R->getLoc(), "The field named `Min' must be smaller or "
+                            "equal to the field named `DefaultValue'!\n");
+    PrintNote(R->getFieldLoc("Min"), "`Min' is " + std::to_string(Min));
+    PrintFatalNote(R->getFieldLoc("DefaultValue"),
+                   "`DefaultValue' is " + std::to_string(DefaultValue));
+  }
+
+  if (Max.hasValue() && DefaultValue > Max) {
+    PrintError(R->getLoc(), "The field named `DefaultValue' must be smaller or "
+                            "equal to the field named `DefaultValue'!\n");
+    PrintNote(R->getFieldLoc("DefaultValue"),
+              "`DefaultValue' is " + std::to_string(DefaultValue));
+    PrintFatalNote(R->getFieldLoc("Max"), "`Max' is " + std::to_string(*Max));
+  }
+
+  if (Max.hasValue() && Min > Max) {
+    PrintError(R->getLoc(), "The field named `Min' must be smaller or "
+                            "equal to the field named `Max'!\n");
+    PrintNote(R->getFieldLoc("Min"), "`Min' is " + std::to_string(Min));
+    PrintFatalNote(R->getFieldLoc("Max"), "`Max' is " + std::to_string(*Max));
+  }
+}
+
+StringConfigValue::StringConfigValue(Record *R, const ParserContext &Ctx)
+    : ConfigValue(StringKind, R, Ctx),
+      DefaultValue(R->getValueAsString("DefaultValue")) {}
+
+UserModeDependentEnumConfigValue::UserModeDependentEnumConfigValue(
+    Record *R, const ParserContext &Ctx)
+    : ConfigValue(UserModeDependentEnumKind, R, Ctx),
+      EnumName(R->getValueAsString("EnumName")),
+      Options(R->getValueAsListOfStrings("Options")),
+      ShallowDefaultValue(R->getValueAsString("ShallowDefaultValue")),
+      DeepDefaultValue(R->getValueAsString("DeepDefaultValue")) {
+  SMLoc ListLoc = R->getFieldLoc("Options");
+  SMLoc ShallowDefaultValueLoc = R->getFieldLoc("ShallowDefaultValue");
+  SMLoc DeepDefaultValueLoc = R->getFieldLoc("DeepDefaultValue");
+  if (Options.size() < 2)
+    PrintFatalError(ListLoc,
+                    "The Options list must have at least two elements!\n");
+
+  if (!is_contained(Options, ShallowDefaultValue)) {
+    PrintError(ListLoc, "The field named `Options' must contain the value of "
+                        "`ShallowDefaultValue'!\n");
+    PrintFatalNote(ShallowDefaultValueLoc,
+                   "`ShallowDefaultValue' is " + ShallowDefaultValue);
+  }
+
+  if (!is_contained(Options, DeepDefaultValue)) {
+    PrintError(ListLoc, "The field named `Options' must contain the value of "
+                        "`DeepDefaultValue'!\n");
+    PrintFatalNote(DeepDefaultValueLoc,
+                   "`DeepDefaultValue' is " + DeepDefaultValue);
+  }
+
+  ensureUniqueValues(Options, ListLoc);
+}
+
+UserModeDependentIntConfigValue::UserModeDependentIntConfigValue(
+    Record *R, const ParserContext &Ctx)
+    : ConfigValue(UserModeDependentIntKind, R, Ctx),
+      ShallowMin(R->getValueAsInt("ShallowMin")),
+      DeepMin(R->getValueAsInt("DeepMin")),
+      ShallowDefaultValue(R->getValueAsInt("ShallowDefaultValue")),
+      DeepDefaultValue(R->getValueAsInt("DeepDefaultValue")) {
+
+  if (ShallowMin > ShallowDefaultValue) {
+    PrintError(R->getLoc(),
+               "The field named `ShallowMin' must be smaller or "
+               "equal to the field named `ShallowDefaultValue'!\n");
+    PrintNote(R->getFieldLoc("ShallowMin"),
+              "`ShallowMin' is " + std::to_string(ShallowMin));
+    PrintFatalNote(R->getFieldLoc("ShallowDefaultValue"),
+                   "`ShallowDefaultValue' is " +
+                       std::to_string(ShallowDefaultValue));
+  }
+
+  if (DeepMin > DeepDefaultValue) {
+    PrintError(R->getLoc(), "The field named `DeepMin' must be smaller or "
+                            "equal to the field named `DeepDefaultValue'!\n");
+    PrintNote(R->getFieldLoc("DeepMin"),
+              "`DeepMin' is " + std::to_string(DeepMin));
+    PrintFatalNote(R->getFieldLoc("DeepDefaultValue"),
+                   "`DeepDefaultValue' is " + std::to_string(DeepDefaultValue));
+  }
+}
+
+/// Other implementations
+
+static std::unique_ptr<ConfigValue>
+parseSingleConfigValue(Record *R, const ParserContext &Ctx,
+                       StringRef DirectBaseName) {
+  if ("BooleanConfigValue" == DirectBaseName)
+    return std::make_unique<BooleanConfigValue>(R, Ctx);
+  if ("EnumConfigValue" == DirectBaseName)
+    return std::make_unique<EnumConfigValue>(R, Ctx);
+  if ("IntConfigValue" == DirectBaseName)
+    return std::make_unique<IntConfigValue>(R, Ctx);
+  if ("StringConfigValue" == DirectBaseName)
+    return std::make_unique<StringConfigValue>(R, Ctx);
+  if ("UserModeDependentEnumConfigValue" == DirectBaseName)
+    return std::make_unique<UserModeDependentEnumConfigValue>(R, Ctx);
+  if ("UserModeDependentIntConfigValue" == DirectBaseName)
+    return std::make_unique<UserModeDependentIntConfigValue>(R, Ctx);
+
+  PrintFatalError(R->getLoc(),
+                  "Record `" + DirectBaseName +
+                      "' is unhandled by the \"gen-clang-sa-configs\" "
+                      "tablegen backend!\n");
+}
+
+static void parseConfigCategories(RecordKeeper &Records, ParserContext &Ctx) {
+  for (Record *R : Records.getAllDerivedDefinitions("ConfigCategory")) {
+    llvm::errs() << "Parsed cat: " << R->getValueAsString("DisplayName")
+                 << "\n";
+    Ctx.ConfigCategories.insert(
+        std::make_pair(R->getValueAsString("Name"), ConfigCategory{R, Ctx}));
+  }
+}
+
+static void parseConfigValues(RecordKeeper &Records, ParserContext &Ctx) {
+  assert(!Ctx.ConfigCategories.empty() &&
+         "Parse config categories before parsing config values.");
+
+  for (Record *R : Records.getAllDerivedDefinitions("ConfigValue")) {
+    SmallVector<Record *, 1> DirectBases;
+    R->getDirectSuperClasses(DirectBases);
+    assert(!DirectBases.empty());
+
+    if (DirectBases.size() > 1)
+      PrintFatalError(R->getLoc(),
+                      "Record `" + R->getName() +
+                          "' should inherit from only a single Record!\n");
+
+    StringRef DirectBaseName = DirectBases[0]->getName();
+    Ctx.Configs.insert(std::make_pair(
+        R->getName(), parseSingleConfigValue(R, Ctx, DirectBaseName)));
+  }
+}
+
+ParserContext ento::parseClangSATablegenFile(llvm::RecordKeeper &Records) {
+  ParserContext Ctx;
+  parseConfigCategories(Records, Ctx);
+  parseConfigValues(Records, Ctx);
+  performSemanticChecks(Records, Ctx);
+  return Ctx;
+}

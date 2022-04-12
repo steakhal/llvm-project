@@ -15,6 +15,8 @@
 #ifndef LLVM_CLANG_UTILS_TABLEGEN_TABLEGENBACKENDS_H
 #define LLVM_CLANG_UTILS_TABLEGEN_TABLEGENBACKENDS_H
 
+#include "StaticAnalyzer/ClangSABackends.h"
+
 #include <string>
 
 namespace llvm {
@@ -68,9 +70,6 @@ void EmitClangDiagsDefs(llvm::RecordKeeper &Records, llvm::raw_ostream &OS,
 void EmitClangDiagGroups(llvm::RecordKeeper &Records, llvm::raw_ostream &OS);
 void EmitClangDiagsIndexName(llvm::RecordKeeper &Records,
                              llvm::raw_ostream &OS);
-
-void EmitClangSACheckers(llvm::RecordKeeper &Records, llvm::raw_ostream &OS);
-void EmitClangSAConfigs(llvm::RecordKeeper &Records, llvm::raw_ostream &OS);
 
 void EmitClangCommentHTMLTags(llvm::RecordKeeper &Records,
                               llvm::raw_ostream &OS);

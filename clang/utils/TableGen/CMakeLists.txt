@@ -20,6 +20,10 @@ add_tablegen(clang-tblgen CLANG
   MveEmitter.cpp
   NeonEmitter.cpp
   RISCVVEmitter.cpp
+  StaticAnalyzer/ClangSABackends.cpp
+  StaticAnalyzer/ConfigValues.cpp
+  StaticAnalyzer/DefPrinter.cpp
+  StaticAnalyzer/SemanticChecks.cpp
   SveEmitter.cpp
   TableGen.cpp
   )
