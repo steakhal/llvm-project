@@ -7,14 +7,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "SemanticChecks.h"
+#include "ConfigValues.h"
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
-
-#include "ConfigValues.h"
 
 #include <memory>
 #include <string>

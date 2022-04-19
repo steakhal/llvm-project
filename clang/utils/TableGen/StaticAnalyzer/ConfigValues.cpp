@@ -7,14 +7,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "ConfigValues.h"
+#include "SemanticChecks.h"
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
-
-#include "SemanticChecks.h"
 
 #include <memory>
 #include <string>
@@ -238,18 +237,19 @@ bool UserModeDependentIntConfigValue::classof(const ConfigValue *C) {
 static std::unique_ptr<ConfigValue>
 parseSingleConfigValue(Record *R, const ParserContext &Ctx,
                        StringRef DirectBaseName) {
+  using std::make_unique;
   if ("BooleanConfigValue" == DirectBaseName)
-    return std::make_unique<BooleanConfigValue>(R, Ctx);
+    return make_unique<BooleanConfigValue>(R, Ctx);
   if ("EnumConfigValue" == DirectBaseName)
-    return std::make_unique<EnumConfigValue>(R, Ctx);
+    return make_unique<EnumConfigValue>(R, Ctx);
   if ("IntConfigValue" == DirectBaseName)
-    return std::make_unique<IntConfigValue>(R, Ctx);
+    return make_unique<IntConfigValue>(R, Ctx);
   if ("StringConfigValue" == DirectBaseName)
-    return std::make_unique<StringConfigValue>(R, Ctx);
+    return make_unique<StringConfigValue>(R, Ctx);
   if ("UserModeDependentEnumConfigValue" == DirectBaseName)
-    return std::make_unique<UserModeDependentEnumConfigValue>(R, Ctx);
+    return make_unique<UserModeDependentEnumConfigValue>(R, Ctx);
   if ("UserModeDependentIntConfigValue" == DirectBaseName)
-    return std::make_unique<UserModeDependentIntConfigValue>(R, Ctx);
+    return make_unique<UserModeDependentIntConfigValue>(R, Ctx);
 
   PrintFatalError(R->getLoc(),
                   "Record `" + DirectBaseName +
@@ -259,8 +259,6 @@ parseSingleConfigValue(Record *R, const ParserContext &Ctx,
 
 static void parseConfigCategories(RecordKeeper &Records, ParserContext &Ctx) {
   for (Record *R : Records.getAllDerivedDefinitions("ConfigCategory")) {
-    llvm::errs() << "Parsed cat: " << R->getValueAsString("DisplayName")
-                 << "\n";
     Ctx.ConfigCategories.insert(
         std::make_pair(R->getValueAsString("Name"), ConfigCategory{R, Ctx}));
   }
@@ -286,7 +284,7 @@ static void parseConfigValues(RecordKeeper &Records, ParserContext &Ctx) {
   }
 }
 
-ParserContext ento::parseClangSATablegenFile(llvm::RecordKeeper &Records) {
+ParserContext ento::parseClangSATablegenFile(RecordKeeper &Records) {
   ParserContext Ctx;
   parseConfigCategories(Records, Ctx);
   parseConfigValues(Records, Ctx);
