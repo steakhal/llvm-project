@@ -1,8 +1,17 @@
-//===- ConfigValues.h                                                   ---===//
+//===- ConfigValues.h - Classes for representing SA configs -----*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+/// \file
+/// All Static Analyzer config options are represented by the subclasses of the
+/// abstract `ConfigValue` class.
+/// The abstract base class defines the metadata common across all config
+/// values, while the derived classes can add further structural data, and
+/// semantics.
 //
 //===----------------------------------------------------------------------===//
 
@@ -13,11 +22,15 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/TableGen/Record.h"
 
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace llvm {
+class Record;
+class RecordKeeper;
+} // namespace llvm
 
 namespace clang {
 namespace ento {

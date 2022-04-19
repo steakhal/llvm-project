@@ -1,8 +1,15 @@
-//===- DefPrinter.cpp                                                   ---===//
+//===- DefPrinter.cpp - Generate the Analyzer Options .def file -*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+/// \file
+/// This file defines the `printAnalyzerOptions()` function, which will
+/// print the content of the parsed analyzer config options in the expected
+/// format.
 //
 //===----------------------------------------------------------------------===//
 
@@ -11,6 +18,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/TableGen/Record.h"
 
 #include <vector>
 

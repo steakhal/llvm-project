@@ -1,8 +1,20 @@
-//===- SemanticChecks.cpp                                               ---===//
+//===- SemanticChecks.cpp - Semantic checks of ConfigValues -----*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+/// \file
+/// This file defines the `performSemanticChecks()` function, which will
+/// diagnose malformed configuration entries declared in the corresponding
+/// tablegen file.
+///
+/// For example:
+/// - The `RelatedConfigs` field should refer to an *other* ConfigValue by name.
+/// - The `FieldName` field should be globally unique across the ConfigValues.
+/// etc.
 //
 //===----------------------------------------------------------------------===//
 

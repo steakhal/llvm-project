@@ -1,8 +1,15 @@
-//===- ConfigValues.cpp                                                 ---===//
+//===- ConfigValues.cpp - Classes for representing SA configs ---*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+/// \file
+/// This file contains the definitions of the member functions for the
+/// `ConfigValue` class hierachy. In addition to those, it also defines the
+/// `parseClangSATablegenFile()` function for parsing these config options.
 //
 //===----------------------------------------------------------------------===//
 
