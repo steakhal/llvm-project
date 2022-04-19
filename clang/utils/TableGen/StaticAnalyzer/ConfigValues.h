@@ -11,6 +11,8 @@
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/TableGen/Record.h"
 
 #include <memory>
@@ -64,6 +66,7 @@ struct ConfigValue {
 struct StringConfigValue final : ConfigValue {
   StringConfigValue(llvm::Record *R, const ParserContext &Ctx);
   ~StringConfigValue() override = default;
+  static bool classof(const ConfigValue *C);
 
   const llvm::StringRef DefaultValue;
 };
@@ -71,6 +74,7 @@ struct StringConfigValue final : ConfigValue {
 struct EnumConfigValue final : ConfigValue {
   EnumConfigValue(llvm::Record *R, const ParserContext &Ctx);
   ~EnumConfigValue() override = default;
+  static bool classof(const ConfigValue *C);
 
   const llvm::StringRef EnumName;
   const std::vector<llvm::StringRef> Options;
@@ -80,6 +84,7 @@ struct EnumConfigValue final : ConfigValue {
 struct BooleanConfigValue final : ConfigValue {
   BooleanConfigValue(llvm::Record *R, const ParserContext &Ctx);
   ~BooleanConfigValue() override = default;
+  static bool classof(const ConfigValue *C);
 
   const bool DefaultValue;
 };
@@ -87,6 +92,7 @@ struct BooleanConfigValue final : ConfigValue {
 struct IntConfigValue final : ConfigValue {
   IntConfigValue(llvm::Record *R, const ParserContext &Ctx);
   ~IntConfigValue() override = default;
+  static bool classof(const ConfigValue *C);
 
   const int64_t Min;
   const llvm::Optional<int64_t> Max;
@@ -96,6 +102,7 @@ struct IntConfigValue final : ConfigValue {
 struct UserModeDependentIntConfigValue final : ConfigValue {
   UserModeDependentIntConfigValue(llvm::Record *R, const ParserContext &Ctx);
   ~UserModeDependentIntConfigValue() override = default;
+  static bool classof(const ConfigValue *C);
 
   const int64_t ShallowMin;
   const int64_t DeepMin;
@@ -106,6 +113,7 @@ struct UserModeDependentIntConfigValue final : ConfigValue {
 struct UserModeDependentEnumConfigValue final : ConfigValue {
   UserModeDependentEnumConfigValue(llvm::Record *R, const ParserContext &Ctx);
   ~UserModeDependentEnumConfigValue() override = default;
+  static bool classof(const ConfigValue *C);
 
   const llvm::StringRef EnumName;
   const std::vector<llvm::StringRef> Options;
@@ -115,24 +123,27 @@ struct UserModeDependentEnumConfigValue final : ConfigValue {
 
 template <typename ImplClass, typename RetTy = void> struct ConfigValueVisitor {
   RetTy Visit(const ConfigValue *C) {
+    assert(C && "Should not be null.");
+
     auto *Self = static_cast<ImplClass *>(this);
     using Kind = ConfigValue::ConfigKind;
+    using llvm::cast;
+
     switch (C->Kind) {
     case Kind::BooleanKind:
-      return Self->visit(static_cast<const BooleanConfigValue *>(C));
+      return Self->visit(cast<BooleanConfigValue>(C));
     case Kind::EnumKind:
-      return Self->visit(static_cast<const EnumConfigValue *>(C));
+      return Self->visit(cast<EnumConfigValue>(C));
     case Kind::IntKind:
-      return Self->visit(static_cast<const IntConfigValue *>(C));
+      return Self->visit(cast<IntConfigValue>(C));
     case Kind::StringKind:
-      return Self->visit(static_cast<const StringConfigValue *>(C));
+      return Self->visit(cast<StringConfigValue>(C));
     case Kind::UserModeDependentEnumKind:
-      return Self->visit(
-          static_cast<const UserModeDependentEnumConfigValue *>(C));
+      return Self->visit(cast<UserModeDependentEnumConfigValue>(C));
     case Kind::UserModeDependentIntKind:
-      return Self->visit(
-          static_cast<const UserModeDependentIntConfigValue *>(C));
+      return Self->visit(cast<UserModeDependentIntConfigValue>(C));
     }
+    llvm_unreachable("Unknown ConfigValue kind!");
   }
   RetTy visit(const BooleanConfigValue *) { return RetTy{}; }
   RetTy visit(const EnumConfigValue *) { return RetTy{}; }

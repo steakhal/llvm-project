@@ -216,6 +216,27 @@ UserModeDependentIntConfigValue::UserModeDependentIntConfigValue(
   }
 }
 
+/// 'classof' implementations
+
+bool BooleanConfigValue::classof(const ConfigValue *C) {
+  return C->Kind == BooleanKind;
+}
+bool EnumConfigValue::classof(const ConfigValue *C) {
+  return C->Kind == EnumKind;
+}
+bool IntConfigValue::classof(const ConfigValue *C) {
+  return C->Kind == IntKind;
+}
+bool StringConfigValue::classof(const ConfigValue *C) {
+  return C->Kind == StringKind;
+}
+bool UserModeDependentEnumConfigValue::classof(const ConfigValue *C) {
+  return C->Kind == UserModeDependentEnumKind;
+}
+bool UserModeDependentIntConfigValue::classof(const ConfigValue *C) {
+  return C->Kind == UserModeDependentIntKind;
+}
+
 /// Other implementations
 
 static std::unique_ptr<ConfigValue>
