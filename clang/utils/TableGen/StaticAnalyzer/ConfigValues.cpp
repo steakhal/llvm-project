@@ -102,11 +102,11 @@ ConfigValue::ConfigValue(ConfigKind K, Record *R, const ParserContext &Ctx)
 }
 
 BooleanConfigValue::BooleanConfigValue(Record *R, const ParserContext &Ctx)
-    : ConfigValue(BooleanKind, R, Ctx),
+    : ConfigValue(Boolean, R, Ctx),
       DefaultValue(R->getValueAsBit("DefaultValue")) {}
 
 EnumConfigValue::EnumConfigValue(Record *R, const ParserContext &Ctx)
-    : ConfigValue(EnumKind, R, Ctx), EnumName(R->getValueAsString("EnumName")),
+    : ConfigValue(Enum, R, Ctx), EnumName(R->getValueAsString("EnumName")),
       Options(R->getValueAsListOfStrings("Options")),
       DefaultValue(R->getValueAsString("DefaultValue")) {
   SMLoc ListLoc = R->getFieldLoc("Options");
@@ -125,7 +125,7 @@ EnumConfigValue::EnumConfigValue(Record *R, const ParserContext &Ctx)
 }
 
 IntConfigValue::IntConfigValue(Record *R, const ParserContext &Ctx)
-    : ConfigValue(IntKind, R, Ctx), Min(R->getValueAsInt("Min")),
+    : ConfigValue(Int, R, Ctx), Min(R->getValueAsInt("Min")),
       Max(R->getValueAsOptionalInt("Max")),
       DefaultValue(R->getValueAsInt("DefaultValue")) {
   if (Min > DefaultValue) {
@@ -153,12 +153,12 @@ IntConfigValue::IntConfigValue(Record *R, const ParserContext &Ctx)
 }
 
 StringConfigValue::StringConfigValue(Record *R, const ParserContext &Ctx)
-    : ConfigValue(StringKind, R, Ctx),
+    : ConfigValue(String, R, Ctx),
       DefaultValue(R->getValueAsString("DefaultValue")) {}
 
 UserModeDependentEnumConfigValue::UserModeDependentEnumConfigValue(
     Record *R, const ParserContext &Ctx)
-    : ConfigValue(UserModeDependentEnumKind, R, Ctx),
+    : ConfigValue(UserModeDependentEnum, R, Ctx),
       EnumName(R->getValueAsString("EnumName")),
       Options(R->getValueAsListOfStrings("Options")),
       ShallowDefaultValue(R->getValueAsString("ShallowDefaultValue")),
@@ -189,7 +189,7 @@ UserModeDependentEnumConfigValue::UserModeDependentEnumConfigValue(
 
 UserModeDependentIntConfigValue::UserModeDependentIntConfigValue(
     Record *R, const ParserContext &Ctx)
-    : ConfigValue(UserModeDependentIntKind, R, Ctx),
+    : ConfigValue(UserModeDependentInt, R, Ctx),
       ShallowMin(R->getValueAsInt("ShallowMin")),
       DeepMin(R->getValueAsInt("DeepMin")),
       ShallowDefaultValue(R->getValueAsInt("ShallowDefaultValue")),
@@ -219,22 +219,18 @@ UserModeDependentIntConfigValue::UserModeDependentIntConfigValue(
 /// 'classof' implementations
 
 bool BooleanConfigValue::classof(const ConfigValue *C) {
-  return C->Kind == BooleanKind;
+  return C->Kind == Boolean;
 }
-bool EnumConfigValue::classof(const ConfigValue *C) {
-  return C->Kind == EnumKind;
-}
-bool IntConfigValue::classof(const ConfigValue *C) {
-  return C->Kind == IntKind;
-}
+bool EnumConfigValue::classof(const ConfigValue *C) { return C->Kind == Enum; }
+bool IntConfigValue::classof(const ConfigValue *C) { return C->Kind == Int; }
 bool StringConfigValue::classof(const ConfigValue *C) {
-  return C->Kind == StringKind;
+  return C->Kind == String;
 }
 bool UserModeDependentEnumConfigValue::classof(const ConfigValue *C) {
-  return C->Kind == UserModeDependentEnumKind;
+  return C->Kind == UserModeDependentEnum;
 }
 bool UserModeDependentIntConfigValue::classof(const ConfigValue *C) {
-  return C->Kind == UserModeDependentIntKind;
+  return C->Kind == UserModeDependentInt;
 }
 
 /// Other implementations

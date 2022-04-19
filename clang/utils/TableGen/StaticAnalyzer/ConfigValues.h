@@ -43,12 +43,12 @@ struct ParserContext {
 
 struct ConfigValue {
   enum ConfigKind : unsigned {
-    BooleanKind,
-    EnumKind,
-    IntKind,
-    StringKind,
-    UserModeDependentEnumKind,
-    UserModeDependentIntKind,
+    Boolean,
+    Enum,
+    Int,
+    String,
+    UserModeDependentEnum,
+    UserModeDependentInt,
   };
   ConfigValue(ConfigKind K, llvm::Record *R, const ParserContext &Ctx);
   virtual ~ConfigValue() = default;
@@ -130,17 +130,17 @@ template <typename ImplClass, typename RetTy = void> struct ConfigValueVisitor {
     using llvm::cast;
 
     switch (C->Kind) {
-    case Kind::BooleanKind:
+    case Kind::Boolean:
       return Self->visit(cast<BooleanConfigValue>(C));
-    case Kind::EnumKind:
+    case Kind::Enum:
       return Self->visit(cast<EnumConfigValue>(C));
-    case Kind::IntKind:
+    case Kind::Int:
       return Self->visit(cast<IntConfigValue>(C));
-    case Kind::StringKind:
+    case Kind::String:
       return Self->visit(cast<StringConfigValue>(C));
-    case Kind::UserModeDependentEnumKind:
+    case Kind::UserModeDependentEnum:
       return Self->visit(cast<UserModeDependentEnumConfigValue>(C));
-    case Kind::UserModeDependentIntKind:
+    case Kind::UserModeDependentInt:
       return Self->visit(cast<UserModeDependentIntConfigValue>(C));
     }
     llvm_unreachable("Unknown ConfigValue kind!");
