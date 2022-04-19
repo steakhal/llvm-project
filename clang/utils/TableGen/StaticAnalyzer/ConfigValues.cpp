@@ -40,7 +40,7 @@ static void ensureUniqueValues(const std::vector<StringRef> &List,
     std::tie(std::ignore, Inserted) = Uniques.insert(Item);
     if (!Inserted)
       PrintFatalError(ListLoc,
-                      "\"" + Item + "\" appears more then once in the list!\n");
+                      "\"" + Item + "\" appears more than once in the list!\n");
   }
 }
 
@@ -79,11 +79,11 @@ ConfigValue::ConfigValue(ConfigKind K, Record *R, const ParserContext &Ctx)
 
   if (FlagName.empty())
     PrintFatalError(R->getFieldLoc("FlagName"),
-                    "FlagName should not be empty.");
+                    "`FlagName' should not be empty.");
 
   if (ShortDescription.empty())
     PrintFatalError(R->getFieldLoc("ShortDescription"),
-                    "ShortDescription should not be empty.");
+                    "`ShortDescription' should not be empty.");
 
   // TODO: Enforce that !LongDescription.empty(), when we have this for all
   // configs.
@@ -112,12 +112,13 @@ EnumConfigValue::EnumConfigValue(Record *R, const ParserContext &Ctx)
   SMLoc DefaultValueLoc = R->getFieldLoc("DefaultValue");
   if (Options.size() < 2)
     PrintFatalError(ListLoc,
-                    "The Options list must have at least two elements!\n");
+                    "The `Options' list must have at least two elements!\n");
 
   if (!is_contained(Options, DefaultValue)) {
     PrintError(ListLoc, "The field named `Options' must contain the value of "
                         "`DefaultValue'!\n");
-    PrintFatalNote(DefaultValueLoc, "`DefaultValue' is " + DefaultValue);
+    PrintFatalNote(DefaultValueLoc,
+                   "`DefaultValue' is \"" + DefaultValue + "\"");
   }
 
   ensureUniqueValues(Options, ListLoc);
@@ -137,16 +138,9 @@ IntConfigValue::IntConfigValue(Record *R, const ParserContext &Ctx)
 
   if (Max.hasValue() && DefaultValue > Max) {
     PrintError(R->getLoc(), "The field named `DefaultValue' must be smaller or "
-                            "equal to the field named `DefaultValue'!\n");
+                            "equal to the field named `Max'!\n");
     PrintNote(R->getFieldLoc("DefaultValue"),
               "`DefaultValue' is " + std::to_string(DefaultValue));
-    PrintFatalNote(R->getFieldLoc("Max"), "`Max' is " + std::to_string(*Max));
-  }
-
-  if (Max.hasValue() && Min > Max) {
-    PrintError(R->getLoc(), "The field named `Min' must be smaller or "
-                            "equal to the field named `Max'!\n");
-    PrintNote(R->getFieldLoc("Min"), "`Min' is " + std::to_string(Min));
     PrintFatalNote(R->getFieldLoc("Max"), "`Max' is " + std::to_string(*Max));
   }
 }
@@ -167,20 +161,20 @@ UserModeDependentEnumConfigValue::UserModeDependentEnumConfigValue(
   SMLoc DeepDefaultValueLoc = R->getFieldLoc("DeepDefaultValue");
   if (Options.size() < 2)
     PrintFatalError(ListLoc,
-                    "The Options list must have at least two elements!\n");
+                    "The `Options' list must have at least two elements!\n");
 
   if (!is_contained(Options, ShallowDefaultValue)) {
     PrintError(ListLoc, "The field named `Options' must contain the value of "
                         "`ShallowDefaultValue'!\n");
     PrintFatalNote(ShallowDefaultValueLoc,
-                   "`ShallowDefaultValue' is " + ShallowDefaultValue);
+                   "`ShallowDefaultValue' is \"" + ShallowDefaultValue + "\"");
   }
 
   if (!is_contained(Options, DeepDefaultValue)) {
     PrintError(ListLoc, "The field named `Options' must contain the value of "
                         "`DeepDefaultValue'!\n");
     PrintFatalNote(DeepDefaultValueLoc,
-                   "`DeepDefaultValue' is " + DeepDefaultValue);
+                   "`DeepDefaultValue' is \"" + DeepDefaultValue + "\"");
   }
 
   ensureUniqueValues(Options, ListLoc);
@@ -299,9 +293,6 @@ static void parseConfigCategories(RecordKeeper &Records, ParserContext &Ctx) {
 }
 
 static void parseConfigValues(RecordKeeper &Records, ParserContext &Ctx) {
-  assert(!Ctx.ConfigCategories.empty() &&
-         "Parse config categories before parsing config values.");
-
   for (Record *R : Records.getAllDerivedDefinitions("ConfigValue")) {
     SmallVector<Record *, 1> DirectBases;
     R->getDirectSuperClasses(DirectBases);

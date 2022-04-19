@@ -69,23 +69,24 @@ static void ensureAllCrossreferencesAreValid(RecordKeeper &Records,
 static void ensureGlobalUniqueness(RecordKeeper &Records,
                                    const ParserContext &Ctx) {
   auto CheckField = [&Records](StringMap<const ConfigValue *> &Aggregator,
-                               StringRef FieldName,
+                               StringRef FieldName, auto MemberPtr,
                                const ConfigValue *Current) {
     StringMap<const ConfigValue *>::iterator PrevPlace;
     bool Inserted;
     std::tie(PrevPlace, Inserted) =
-        Aggregator.insert(std::make_pair(Current->FlagName, Current));
+        Aggregator.insert(std::make_pair(Current->*MemberPtr, Current));
     if (Inserted)
       return;
 
+    StringRef PrevConfigName = PrevPlace->second->ConfigName;
     SMLoc CurrFlagNameLoc =
         Records.getDef(Current->ConfigName)->getFieldLoc(FieldName);
     SMLoc PrevFlagNameLoc =
-        Records.getDef(PrevPlace->second->ConfigName)->getFieldLoc(FieldName);
-    PrintError(CurrFlagNameLoc, "The \"" + Current->FlagName +
-                                    "\" value has been already used!\n");
-    PrintFatalNote(PrevFlagNameLoc, "Previously used by the `" +
-                                        Current->ConfigName + "' record.\n");
+        Records.getDef(PrevConfigName)->getFieldLoc(FieldName);
+    PrintError(CurrFlagNameLoc,
+               "The value of `" + FieldName + "' has been already used!\n");
+    PrintFatalNote(PrevFlagNameLoc,
+                   "Previously used by the `" + PrevConfigName + "' record.\n");
   };
 
   StringMap<const ConfigValue *> FlagNames;
@@ -94,9 +95,11 @@ static void ensureGlobalUniqueness(RecordKeeper &Records,
 
   for (const auto &Entry : Ctx.Configs) {
     const ConfigValue *C = Entry.getValue().get();
-    CheckField(FlagNames, "FlagName", C);
-    CheckField(ShortDescriptions, "ShortDescription", C);
-    CheckField(LongDescriptions, "LongDescription", C);
+    CheckField(FlagNames, "FlagName", &ConfigValue::FlagName, C);
+    CheckField(ShortDescriptions, "ShortDescription",
+               &ConfigValue::ShortDescription, C);
+    CheckField(LongDescriptions, "LongDescription",
+               &ConfigValue::LongDescription, C);
   }
 }
 
@@ -113,8 +116,8 @@ static void checkDescriptionLengths(RecordKeeper &Records,
   SMLoc LongDescLoc =
       Records.getDef(C->ConfigName)->getFieldLoc("LongDescription");
   PrintFatalError(LongDescLoc,
-                  "The `LongDescription' field is shorter than the "
-                  "`ShortDescription' field!\n");
+                  "The `LongDescription' field must be longer than "
+                  "the `ShortDescription' field!\n");
 }
 
 void ento::performSemanticChecks(RecordKeeper &Records,
