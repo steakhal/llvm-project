@@ -160,18 +160,8 @@ define both 'ANALYZER_OPTION' and 'ANALYZER_OPTION_DEPENDS_ON_USER_MODE' macros!
 
 )header";
 
-  std::vector<const ConfigValue *> SortedConfigs;
-  SortedConfigs.reserve(Ctx.Configs.size());
-  auto ByConfigName = [](const ConfigValue *Lhs, const ConfigValue *Rhs) {
-    return Lhs->ConfigName < Rhs->ConfigName;
-  };
-
-  for (const auto &Entry : Ctx.Configs)
-    SortedConfigs.push_back(Entry.getValue().get());
-  llvm::sort(SortedConfigs, ByConfigName);
-
   DefPrinterVisitor Printer{OS};
-  for (const ConfigValue *Ptr : SortedConfigs) {
+  for (const ConfigValue *Ptr : Ctx.getSortedConfigs()) {
     Printer.Visit(Ptr);
     OS << "\n";
   }

@@ -65,13 +65,6 @@ ConfigCategory::ConfigCategory(Record *R, const ParserContext &Ctx)
       DisplayName(R->getValueAsString("DisplayName")),
       Description(R->getValueAsString("Description")) {}
 
-const ConfigCategory &ParserContext::lookupConfigCategory(Record *R) const {
-  StringRef CategoryName = R->getValueAsString("Name");
-  const auto It = ConfigCategories.find(CategoryName);
-  assert(It != ConfigCategories.end());
-  return It->getValue();
-}
-
 ConfigValue::ConfigValue(ConfigKind K, Record *R, const ParserContext &Ctx)
     : Kind(K), ConfigName(R->getName()),
       FlagName(R->getValueAsString("FlagName")),
@@ -240,6 +233,40 @@ bool UserModeDependentIntConfigValue::classof(const ConfigValue *C) {
 }
 
 /// Other implementations
+
+const ConfigCategory &ParserContext::lookupConfigCategory(Record *R) const {
+  StringRef CategoryName = R->getValueAsString("Name");
+  const auto It = ConfigCategories.find(CategoryName);
+  assert(It != ConfigCategories.end());
+  return It->getValue();
+}
+
+std::vector<const ConfigValue *> ParserContext::getSortedConfigs() const {
+  std::vector<const ConfigValue *> SortedConfigs;
+  SortedConfigs.reserve(Configs.size());
+  auto ByConfigName = [](const ConfigValue *Lhs, const ConfigValue *Rhs) {
+    return Lhs->ConfigName < Rhs->ConfigName;
+  };
+
+  for (const auto &Entry : Configs)
+    SortedConfigs.push_back(Entry.getValue().get());
+  llvm::sort(SortedConfigs, ByConfigName);
+  return SortedConfigs;
+}
+std::vector<const ConfigCategory *>
+ParserContext::getSortedConfigCategories() const {
+  std::vector<const ConfigCategory *> SortedCategories;
+  SortedCategories.reserve(ConfigCategories.size());
+  for (const auto &Entry : ConfigCategories)
+    SortedCategories.push_back(&Entry.getValue());
+
+  auto ByDisplayOrder = [](const auto *Lhs, const auto *Rhs) {
+    return Lhs->DisplayOrder < Rhs->DisplayOrder;
+  };
+
+  llvm::sort(SortedCategories, ByDisplayOrder);
+  return SortedCategories;
+}
 
 static std::unique_ptr<ConfigValue>
 parseSingleConfigValue(Record *R, const ParserContext &Ctx,
