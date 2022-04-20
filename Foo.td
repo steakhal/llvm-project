@@ -1,10 +1,6 @@
 // All members are *required* unless explicitly marked 'optional'.
 // All lists have at least one element.
 
-/// DSL description:
-defvar False = 0;
-defvar True  = 1;
-
 class ConfigCategory<int display_order> {
   int DisplayOrder = display_order;
   string Name = NAME;
@@ -107,7 +103,7 @@ def ShouldIncludeImplicitDtorsInCFG : BooleanConfigValue {
   let ShortDescription =
     "Whether or not implicit destructors for C++ objects "
     "should be included in the CFG.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = DeveloperConfig;
 }
 
@@ -116,7 +112,7 @@ def ShouldIncludeTemporaryDtorsInCFG : BooleanConfigValue {
   let ShortDescription =
     "Whether or not the destructors for C++ temporary "
     "objects should be included in the CFG.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = DeveloperConfig;
 }
 
@@ -124,7 +120,7 @@ def ShouldIncludeLifetimeInCFG : BooleanConfigValue {
   let FlagName = "cfg-lifetime";
   let ShortDescription =
     "Whether or not end-of-lifetime information should be included in the CFG.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -133,7 +129,7 @@ def ShouldIncludeLoopExitInCFG : BooleanConfigValue {
   let ShortDescription =
     "Whether or not the end of the loop information should "
     "be included in the CFG.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -142,7 +138,7 @@ def ShouldIncludeRichConstructorsInCFG : BooleanConfigValue {
   let ShortDescription =
     "Whether or not construction site information should be "
     "included in the CFG C++ constructor elements.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = DeveloperConfig;
 }
 
@@ -150,7 +146,7 @@ def ShouldIncludeScopesInCFG : BooleanConfigValue {
   let FlagName = "cfg-scopes";
   let ShortDescription =
     "Whether or not scope information should be included in the CFG.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -159,7 +155,7 @@ def ShouldIncludeDefaultInitForAggregates : BooleanConfigValue {
   let ShortDescription =
     "Whether or not inline CXXDefaultInitializers for aggregate "
     "initialization in the CFG.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -167,7 +163,7 @@ def MayInlineTemplateFunctions : BooleanConfigValue {
   let FlagName = "c++-template-inlining";
   let ShortDescription =
     "Whether or not templated functions may be considered for inlining.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = DeveloperConfig;
 }
 
@@ -176,7 +172,7 @@ def MayInlineCXXStandardLibrary : BooleanConfigValue {
   let ShortDescription =
     "Whether or not C++ standard library functions may be "
                 "considered for inlining.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ExperimentalConfig;
 }
 
@@ -184,7 +180,7 @@ def MayInlineCXXAllocator : BooleanConfigValue {
   let FlagName = "c++-allocator-inlining";
   let ShortDescription =
     "Whether or not allocator call may be considered for inlining.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ExperimentalConfig;
 }
 
@@ -194,7 +190,7 @@ def MayInlineCXXSharedPtrDtor : BooleanConfigValue {
     "Whether or not the destructor of C++ 'shared_ptr' may be considered for "
     "inlining. This covers std::shared_ptr, std::tr1::shared_ptr, and "
     "boost::shared_ptr, and indeed any destructor named '~shared_ptr'.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ExperimentalConfig;
 }
 
@@ -205,7 +201,7 @@ def MayInlineCXXTemporaryDtors : BooleanConfigValue {
     "during analysis. If temporary destructors are disabled "
     "in the CFG via the 'cfg-temporary-dtors' option, "
     "temporary destructors would not be inlined anyway.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ExperimentalConfig;
 }
 
@@ -215,7 +211,7 @@ def ShouldSuppressNullReturnPaths : BooleanConfigValue {
     "Whether or not paths that go through null returns should be suppressed. "
     "This is a heuristic for avoiding bug reports with paths that go through "
     "inlined functions that are more defensive than their callers.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ExperimentalConfig;
 }
 
@@ -226,7 +222,7 @@ def ShouldAvoidSuppressingNullArgumentPaths : BooleanConfigValue {
     "with a null argument, even if that call has a null return. This option "
     "has no effect when ShouldSuppressNullReturnPaths is false. This is a "
     "counter-heuristic to avoid false negatives.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ExperimentalConfig;
 }
 
@@ -235,7 +231,7 @@ def ShouldSuppressInlinedDefensiveChecks : BooleanConfigValue {
   let ShortDescription =
     "Whether or not diagnostics containing inlined "
     "defensive NULL checks should be suppressed.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ExperimentalConfig;
 }
 
@@ -244,7 +240,7 @@ def MayInlineCXXContainerMethods : BooleanConfigValue {
   let ShortDescription =
     "Whether or not methods of C++ container objects may be "
     "considered for inlining.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ExperimentalConfig;
 }
 
@@ -253,7 +249,7 @@ def ShouldSuppressFromCXXStandardLibrary : BooleanConfigValue {
   let ShortDescription =
     "Whether or not diagnostics reported within the C++ "
     "standard library should be suppressed.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ReleasedConfig;
 }
 
@@ -262,7 +258,7 @@ def ShouldCrosscheckWithZ3 : BooleanConfigValue {
   let ShortDescription =
     "Whether bug reports should be crosschecked with the Z3 "
     "constraint manager backend.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ReleasedConfig;
 }
 
@@ -281,7 +277,7 @@ def ShouldReportIssuesInMainSourceFile : BooleanConfigValue {
   let ShortDescription =
     "Whether or not the diagnostic report should be always "
     "reported in the main source file and not the headers.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ReleasedConfig;
 }
 
@@ -291,7 +287,7 @@ def ShouldWriteStableReportFilename : BooleanConfigValue {
     "Deprecated: report filenames are now always stable. "
     "See also 'verbose-report-filename'.";
   let RelatedConfigs = ["ShouldWriteVerboseReportFilename"];
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ReleasedConfig;
 }
 
@@ -301,7 +297,7 @@ def ShouldWriteVerboseReportFilename : BooleanConfigValue {
     "Whether or not the report filename should contain extra "
     "information about the issue.";
   let RelatedConfigs = ["ShouldWriteStableReportFilename"];
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ReleasedConfig;
 }
 
@@ -312,7 +308,7 @@ def ShouldSerializeStats : BooleanConfigValue {
     "Statistics would be serialized in JSON format inside the main dictionary "
     "under the statistics key. Available only if compiled in assert mode or "
     "with LLVM statistics explicitly enabled.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -320,7 +316,7 @@ def MayInlineObjCMethod : BooleanConfigValue {
   let FlagName = "objc-inlining";
   let ShortDescription =
     "Whether ObjectiveC inlining is enabled, false otherwise.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ExperimentalConfig;
 }
 
@@ -329,7 +325,7 @@ def ShouldPrunePaths : BooleanConfigValue {
   let ShortDescription =
     "Whether irrelevant parts of a bug report path should "
     "be pruned out of the final output.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = DeveloperConfig;
 }
 
@@ -337,7 +333,7 @@ def ShouldAddPopUpNotes : BooleanConfigValue {
   let FlagName = "add-pop-up-notes";
   let ShortDescription =
     "Whether pop-up notes should be added to the final output.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ExperimentalConfig;
 }
 
@@ -345,7 +341,7 @@ def ShouldConditionalizeStaticInitializers : BooleanConfigValue {
   let FlagName = "cfg-conditional-static-initializers";
   let ShortDescription =
     "Whether 'static' initializers should be in conditional logic in the CFG.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = DeveloperConfig;
 }
 
@@ -354,7 +350,7 @@ def ShouldSynthesizeBodies : BooleanConfigValue {
   let ShortDescription =
     "Whether the analyzer engine should synthesize fake "
     "bodies for well-known functions.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = DeveloperConfig;
 }
 
@@ -366,7 +362,7 @@ def ShouldElideConstructors : BooleanConfigValue {
     "standard, and the analyzer, like CodeGen, defaults to eliding. Starting "
     "with C++17 some elisions become mandatory, and in these cases the option "
     "will be ignored.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ReleasedConfig;
 }
 
@@ -375,7 +371,7 @@ def ShouldInlineLambdas : BooleanConfigValue {
   let ShortDescription =
     "Whether lambdas should be inlined. Otherwise a sink node will be "
     "generated each time a LambdaExpr is visited.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = DeveloperConfig;
 }
 
@@ -383,7 +379,7 @@ def ShouldWidenLoops : BooleanConfigValue {
   let FlagName = "widen-loops";
   let ShortDescription =
     "Whether the analysis should try to widen loops.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -391,7 +387,7 @@ def ShouldUnrollLoops : BooleanConfigValue {
   let FlagName = "unroll-loops";
   let ShortDescription =
     "Whether the analysis should try to unroll loops with known bounds.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -401,7 +397,7 @@ def ShouldDisplayNotesAsEvents : BooleanConfigValue {
     "Whether the bug reporter should transparently treat extra note diagnostic "
     "pieces as event diagnostic pieces. Useful when the diagnostic consumer "
     "doesn't support the extra note pieces.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -419,7 +415,7 @@ def ShouldAggressivelySimplifyBinaryOperation : BooleanConfigValue {
     "'<', '<=', '>', '>=', '+' or '-'. The rearrangement also happens with '-' "
     "instead of '+' on either or both side and also if any or both integers "
     "are missing.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ExperimentalConfig;
 }
 
@@ -433,7 +429,7 @@ def ShouldEagerlyAssume : BooleanConfigValue {
     "evaluating it to the integers 0 or 1 respectively. The upside is that "
     "this can increase analysis precision until we have a better way to lazily "
     "evaluate such logic. The downside is that it eagerly bifurcates paths.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = DeveloperConfig;
 }
 
@@ -442,7 +438,7 @@ def IsNaiveCTUEnabled : BooleanConfigValue {
   let ShortDescription =
     "Whether naive cross translation unit analysis is enabled. This is an "
     "experimental feature to inline functions from other translation units.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -451,7 +447,7 @@ def ShouldDisplayMacroExpansions : BooleanConfigValue {
   let ShortDescription =
     "Whether macros related to the bugpath should be "
     "expanded and included in the plist output.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ReleasedConfig;
 }
 
@@ -460,7 +456,7 @@ def DisplayCTUProgress : BooleanConfigValue {
   let ShortDescription =
     "Whether to emit verbose output about "
     "the analyzer's progress related to ctu.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -469,7 +465,7 @@ def ShouldTrackConditions : BooleanConfigValue {
   let ShortDescription =
     "Whether to track conditions that are a control dependency of "
     "an already tracked variable.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ReleasedConfig;
 }
 
@@ -477,7 +473,7 @@ def ShouldTrackConditionsDebug : BooleanConfigValue {
   let FlagName = "track-conditions-debug";
   let ShortDescription =
     "Whether to place an event at each tracked condition.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -485,7 +481,7 @@ def ShouldApplyFixIts : BooleanConfigValue {
   let FlagName = "apply-fixits";
   let ShortDescription =
     "Apply the fix-it hints to the files";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ReleasedConfig;
 }
 
@@ -493,14 +489,14 @@ def ShouldDisplayCheckerNameForText : BooleanConfigValue {
   let FlagName = "display-checker-name";
   let ShortDescription =
     "Display the checker name for textual outputs";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ReleasedConfig;
 }
 
 def ShouldSupportSymbolicIntegerCasts : BooleanConfigValue {
   let FlagName = "support-symbolic-integer-casts";
   let ShortDescription = "Produce cast symbols for integral types.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = DeveloperConfig;
 }
 
@@ -510,7 +506,7 @@ def ShouldConsiderSingleElementArraysAsFlexibleArrayMembers : BooleanConfigValue
     "Consider single element arrays as flexible array member candidates. "
     "This will prevent the analyzer from assuming that a single element array "
     "holds a single element.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ReleasedConfig;
 }
 
@@ -521,7 +517,7 @@ def ShouldAssumeControlledEnvironment : BooleanConfigValue {
     "We will assume that environment variables exist in queries and they hold "
     "no malicious data. For instance, if this option is enabled, 'getenv()' "
     "might be modeled by the analyzer to never return NULL.";
-  let DefaultValue = False;
+  let DefaultValue = false;
   let Category = ReleasedConfig;
 }
 
@@ -530,7 +526,7 @@ def ShouldIgnoreBisonGeneratedFiles : BooleanConfigValue {
   let ShortDescription =
     "If enabled, any files containing the \"/* A Bison parser, made by\" "
     "won't be analyzed.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ReleasedConfig;
 }
 
@@ -539,7 +535,7 @@ def ShouldIgnoreFlexGeneratedFiles : BooleanConfigValue {
   let ShortDescription =
     "If enabled, any files containing the \"/* A lexical scanner generated by "
     "flex\" won't be analyzed.";
-  let DefaultValue = True;
+  let DefaultValue = true;
   let Category = ReleasedConfig;
 }
 
