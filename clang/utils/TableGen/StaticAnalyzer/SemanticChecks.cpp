@@ -71,6 +71,9 @@ static void ensureGlobalUniqueness(RecordKeeper &Records,
   auto CheckField = [&Records](StringMap<const ConfigValue *> &Aggregator,
                                StringRef FieldName, auto MemberPtr,
                                const ConfigValue *Current) {
+    // Skip empty string members.
+    if ((Current->*MemberPtr).empty())
+      return;
     StringMap<const ConfigValue *>::iterator PrevPlace;
     bool Inserted;
     std::tie(PrevPlace, Inserted) =
