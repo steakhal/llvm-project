@@ -569,6 +569,175 @@ void ExprEngine::VisitCompoundLiteralExpr(const CompoundLiteralExpr *CL,
   B.generateNode(CL, Pred, State->BindExpr(CL, LCtx, V));
 }
 
+static SVal convertToSVal(const APValue &V, const Expr *E, QualType Ty,
+                          SValBuilder &SVB, ProgramStateRef State,
+                          const LocationContext *LC) {
+  llvm::errs() << "convertToSVal  V:\n";
+  V.dump();
+  llvm::errs() << "\nTy:\n";
+  Ty.dump();
+  llvm::errs() << "\n";
+
+  BasicValueFactory &BVF = SVB.getBasicValueFactory();
+
+  switch (V.getKind()) {
+  case APValue::None:
+  case APValue::Indeterminate:
+    llvm_unreachable("Cannot happen.");
+    break;
+  case APValue::Int: {
+    llvm::errs() << "handling an Int\n";
+    return SVB.makeIntVal(V.getInt(), Ty->isUnsignedIntegerType());
+  }
+  case APValue::Float:
+  case APValue::FixedPoint:
+  case APValue::ComplexInt:
+  case APValue::ComplexFloat:
+  case APValue::LValue:
+  case APValue::Vector:
+  case APValue::AddrLabelDiff:
+  case APValue::Union:
+    llvm::errs() << "{Float, FixedPoint, ComplexInt, ComplexFloat, LValue, "
+                    "Vector, AddrLabelDiff, Union} => UnknownVal()\n";
+    return UnknownVal(); // FIXME: Implement these at some point.
+  case APValue::Array: {
+    llvm::errs() << "handling an Array\n";
+    assert(Ty->isArrayType());
+    QualType ElemTy(Ty->getPointeeOrArrayElementType(), 0);
+
+    llvm::ImmutableList<SVal> Vals = BVF.getEmptySValList();
+    unsigned Elements = V.getArrayInitializedElts();
+
+    for (unsigned I = 0; I < Elements; ++I) {
+      SVal Elem =
+          convertToSVal(V.getArrayInitializedElt(I), E, ElemTy, SVB, State, LC);
+      Vals = BVF.prependSVal(Elem, Vals);
+    }
+    return SVB.makeCompoundVal(Ty, Vals);
+  }
+  case APValue::Struct: {
+    llvm::errs() << "handling a struct\n";
+    auto &RM = State->getStateManager().getRegionManager();
+    const CXXTempObjectRegion *TmpReg = RM.getCXXTempObjectRegion(E, LC);
+
+    llvm::errs() << TmpReg << "\n";
+    llvm::errs() << "as struct decl: " << Ty->getAsStructureType()->getDecl()
+                 << "\n";
+    const RecordDecl *RD = Ty->getAsStructureType()->getDecl();
+    for (const FieldDecl *FD : RD->fields()) {
+      const FieldRegion *FReg = RM.getFieldRegion(FD, TmpReg);
+      llvm::errs() << ">  " << FReg << "\n";
+    }
+
+    return UnknownVal();
+  }
+  case APValue::MemberPointer:
+    llvm::errs() << "{Struct, MemberPointer} => UnknownVal()\n";
+    return UnknownVal(); // FIXME: Implement these at some point. recurse!
+  }
+  llvm_unreachable("Unhandled APValue kind?");
+}
+
+static ProgramStateRef bindd(const SubRegion *Loc, QualType Ty,
+                             const APValue &V, ProgramStateRef State,
+                             SValBuilder &SVB, const LocationContext *LCtx,
+                             ASTContext &ACtx, bool IsDefaultBinding = false) {
+  llvm::errs() << "bindd  " << Loc << "  " << Ty << "  ";
+  V.dump();
+  switch (V.getKind()) {
+  case APValue::None:
+  case APValue::Indeterminate:
+    llvm_unreachable("Cannot happen.");
+    break;
+  case APValue::Int: {
+    llvm::errs() << " found an int\n";
+    const APSInt &Int = V.getInt();
+    SVal SV = SVB.makeIntVal(Int, Ty->isUnsignedIntegerType());
+    if (IsDefaultBinding)
+      State = State->bindDefaultInitial(loc::MemRegionVal{Loc}, SV, LCtx);
+    else
+      State = State->bindLoc(loc::MemRegionVal{Loc}, SV, LCtx);
+    return State;
+  }
+  case APValue::Float:
+  case APValue::FixedPoint:
+  case APValue::ComplexInt:
+  case APValue::ComplexFloat:
+  case APValue::LValue:
+  case APValue::Vector:
+  case APValue::AddrLabelDiff:
+  case APValue::Union:
+    return State; // FIXME: Implement these at some point.
+  case APValue::Array: {
+    llvm::errs() << " found an array\n";
+    assert(Ty->isArrayType());
+    QualType ElemTy(Ty->getPointeeOrArrayElementType(), 0);
+
+    if (V.hasArrayFiller()) {
+      const APValue &InitV = V.getArrayFiller();
+      llvm::errs() << "Ty type: " << Ty << "\n";
+      llvm::errs() << "Elem type: " << ElemTy << "\n";
+      State = bindd(Loc, ElemTy, InitV, State, SVB, LCtx, ACtx,
+                    /*IsDefaultBinding =*/true);
+    }
+
+    MemRegionManager &RM = State->getStateManager().getRegionManager();
+    // StoreManager &StoreM =State->getStateManager().getStoreManager();
+
+    BasicValueFactory &BVF = SVB.getBasicValueFactory();
+    llvm::ImmutableList<SVal> Vals = BVF.getEmptySValList();
+    unsigned Elements = V.getArrayInitializedElts();
+    for (unsigned I = 0; I < Elements; ++I) {
+      SVal VV = State->getSVal(0, LCtx);
+      Vals = BVF.prependSVal(VV, Vals);
+
+      const ElementRegion *ER =
+          RM.getElementRegion(ElemTy, SVB.makeArrayIndex(I), Loc, ACtx);
+      const APValue &InitV = V.getArrayInitializedElt(I);
+      llvm::errs() << "binding element " << I << " to ";
+      InitV.dump();
+      State = bindd(ER, QualType(Ty->getAsArrayTypeUnsafe(), 0), InitV, State,
+                    SVB, LCtx, ACtx);
+    }
+
+    SVal V = SVB.makeCompoundVal(ElemTy, Vals);
+
+    return State; // FIXME: Implement these at some point.
+  }
+  case APValue::Struct:
+  case APValue::MemberPointer:
+    return State; // FIXME: Implement these at some point. recurse!
+  }
+  llvm_unreachable("Unhandled APValue kind?");
+}
+
+static ProgramStateRef bindConstexprInitializers(const VarDecl *VD,
+                                                 ProgramStateRef State,
+                                                 const LocationContext *LCtx,
+                                                 ASTContext &ACtx,
+                                                 SValBuilder &SVB) {
+  const Expr *InitEx = VD->getInit();
+  assert(InitEx);
+  assert(VD->isConstexpr());
+  QualType InitExTy = InitEx->getType();
+
+  // Handle constexpr initialization.
+  clang::APValue InitializerValue;
+  SmallVector<PartialDiagnosticAt> IgnoredDiags;
+  InitEx->EvaluateAsInitializer(InitializerValue, ACtx, VD, IgnoredDiags,
+                                /*IsConstantInitializer=*/true);
+  assert(InitializerValue.hasValue());
+  assert(IgnoredDiags.empty());
+  (void)IgnoredDiags;
+
+  SVal InitVal =
+      convertToSVal(InitializerValue, InitEx, InitExTy, SVB, State, LCtx);
+  llvm::errs() << "InitVal: " << InitVal << "\n";
+
+  // FIXME: Maybe we still need to bindexpr the initEx?
+  return State;
+}
+
 void ExprEngine::VisitDeclStmt(const DeclStmt *DS, ExplodedNode *Pred,
                                ExplodedNodeSet &Dst) {
   if (isa<TypedefNameDecl>(*DS->decl_begin())) {
@@ -606,6 +775,9 @@ void ExprEngine::VisitDeclStmt(const DeclStmt *DS, ExplodedNode *Pred,
 
     // Decls without InitExpr are not initialized explicitly.
     if (const Expr *InitEx = VD->getInit()) {
+      if (VD->isConstexpr())
+        state =
+            bindConstexprInitializers(VD, state, LC, getContext(), svalBuilder);
 
       // Note in the state that the initialization has occurred.
       ExplodedNode *UpdatedN = N;

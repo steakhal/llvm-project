@@ -2923,9 +2923,10 @@ CFGBlock *CFGBuilder::VisitDeclSubExpr(DeclStmt *DS) {
   autoCreateBlock();
   appendStmt(Block, DS);
 
-  findConstructionContexts(
-      ConstructionContextLayer::create(cfg->getBumpVectorContext(), DS),
-      Init);
+  if (!VD->isConstexpr())
+    findConstructionContexts(
+        ConstructionContextLayer::create(cfg->getBumpVectorContext(), DS),
+        Init);
 
   // Keep track of the last non-null block, as 'Block' can be nulled out
   // if the initializer expression is something like a 'while' in a
@@ -2941,8 +2942,9 @@ CFGBlock *CFGBuilder::VisitDeclSubExpr(DeclStmt *DS) {
         LastBlock = newBlock;
     }
     else {
-      if (CFGBlock *newBlock = Visit(Init))
-        LastBlock = newBlock;
+      if (!VD->isConstexpr())
+        if (CFGBlock *newBlock = Visit(Init))
+          LastBlock = newBlock;
     }
   }
 
