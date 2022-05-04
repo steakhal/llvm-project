@@ -1,5 +1,5 @@
-#ifndef FOOBARBBBBBBBAA
-#define FOOBARBBBBBBBAA
+#ifndef INVALIDATION_RECORDS
+#define INVALIDATION_RECORDS
 
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/FoldingSet.h"
@@ -35,19 +35,28 @@ public:
   iterator indirect_begin() const { return Indirect.begin(); }
   iterator indirect_end() const { return Indirect.end(); }
 
-  void dump() const {
+  void dump(int indent = 0) const {
+    auto apply_indendation = [indent](auto... args) {
+      for (int i = 0; i < indent; ++i)
+        llvm::errs() << " ";
+      int unused[] = {0, ((llvm::errs() << args), 0)...};
+      (void)unused;
+    };
+
+    apply_indendation("InvalidationEvent {\n");
     if (!Direct.isEmpty()) {
-      llvm::errs() << "Directly invalidated regions:\n";
+      apply_indendation("  Directly invalidated regions:\n");
       for (const MemRegion *R : Direct) {
-        llvm::errs() << "  " << R << "\n";
+        apply_indendation("    ", R, "\n");
       }
     }
     if (!Indirect.isEmpty()) {
-      llvm::errs() << "Indirectly invalidated regions:\n";
+      apply_indendation("  Indirectly invalidated regions:\n");
       for (const MemRegion *R : Indirect) {
-        llvm::errs() << "  " << R << "\n";
+        apply_indendation("    ", R, "\n");
       }
     }
+    apply_indendation("}\n");
   }
 
   void Profile(llvm::FoldingSetNodeID &ID) const {
@@ -112,5 +121,4 @@ private:
 REGISTER_SET_FACTORY_WITH_PROGRAMSTATE(InvalidationRecords, clang::ento::InvalidationEvent)
 REGISTER_FACTORY_WITH_PROGRAMSTATE(clang::ento::InvalidationEvent::RegionSet)
 
-
-#endif
+#endif // INVALIDATION_RECORDS

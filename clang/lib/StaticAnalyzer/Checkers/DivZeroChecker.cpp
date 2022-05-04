@@ -25,7 +25,8 @@ using namespace taint;
 
 namespace {
 class DivZeroChecker
-    : public Checker<check::PreStmt<BinaryOperator>, check::RegionChanges> {
+    : public Checker<check::PreStmt<BinaryOperator>, check::RegionChanges,
+                     check::EndAnalysis> {
   mutable std::unique_ptr<BuiltinBug> BT;
   void reportBug(const char *Msg, ProgramStateRef StateZero, CheckerContext &C,
                  std::unique_ptr<BugReporterVisitor> Visitor = nullptr) const;
@@ -43,11 +44,18 @@ public:
       return State;
 
     auto &F = State->get_context<InvalidationEvent::RegionSet>();
+    assert(!ExplicitRegions.empty() || !Regions.empty());
     InvalidationEvent Event = InvalidationEvent{F, ExplicitRegions, Regions};
-    Event.dump();
-    llvm::errs() << "-----------------\n";
+    llvm::errs() << "Transforming a RegionChanges event into "
+                    "InvalidationEvent metadata {\n";
+    Event.dump(2);
+    llvm::errs() << "}\n";
     State = State->add<InvalidationRecords>(Event);
     return State;
+  }
+
+  void checkEndAnalysis(ExplodedGraph &, BugReporter &, ExprEngine &) const {
+    llvm::errs() << "------======  End of the analysis  =======------\n";
   }
 };
 } // end anonymous namespace

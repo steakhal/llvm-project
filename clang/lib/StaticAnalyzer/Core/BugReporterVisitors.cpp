@@ -3372,16 +3372,27 @@ PathDiagnosticPieceRef ContradictingAssumptionsInvolvingInvalidation::VisitNode(
     return nullptr;
   Satisfied = true;
 
+  auto apply_indendation = [](int indent, auto... args) {
+    for (int i = 0; i < indent; ++i)
+      llvm::errs() << " ";
+    int unused[] = {0, ((llvm::errs() << args), 0)...};
+    (void)unused;
+  };
+
   // Display SymbolDerived values.
   const ProgramStateRef State = N->getState();
   ConstraintMap Constraints = getConstraintMap(State);
 
   auto Records = BR.getErrorNode()->getState()->get<InvalidationRecords>();
+  if (Records.isEmpty())
+    return nullptr;
+
+  apply_indendation(0, "Bug report visitor {\n");
+  apply_indendation(2, "Invalidation records at the bug report {\n");
   for (const auto &Rec : Records) {
-    Rec.dump();
-    llvm::errs() << "-- -- -- -- --\n";
+    Rec.dump(4);
   }
-  llvm::errs() << "-----------\n";
+  apply_indendation(2, "}\n");
 
   if (LastProcessedConstraintMap.hasValue() &&
       *LastProcessedConstraintMap == Constraints)
@@ -3418,7 +3429,7 @@ PathDiagnosticPieceRef ContradictingAssumptionsInvolvingInvalidation::VisitNode(
 
   // If we have a derived symbol.
   // The parent symbol refers to something??
-
+  apply_indendation(0, "}\n");
   return nullptr;
 }
 
