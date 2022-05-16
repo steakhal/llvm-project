@@ -60,10 +60,10 @@ static std::vector<StringRef> parseListFieldIfDefined(Record *R,
 /// Constructors
 
 ConfigCategory::ConfigCategory(Record *R, const ParserContext &Ctx)
-    : DisplayOrder(R->getValueAsInt("DisplayOrder")),
-      Name(R->getValueAsString("Name")),
+    : Name(R->getValueAsString("Name")),
       DisplayName(R->getValueAsString("DisplayName")),
-      Description(R->getValueAsString("Description")) {}
+      Description(R->getValueAsString("Description")), Loc(R->getLoc().back()) {
+}
 
 ConfigValue::ConfigValue(ConfigKind K, Record *R, const ParserContext &Ctx)
     : Kind(K), ConfigName(R->getName()),
@@ -228,6 +228,13 @@ bool UserModeDependentIntConfigValue::classof(const ConfigValue *C) {
 
 /// Other implementations
 
+bool ento::operator<(const ConfigCategory &LHS, const ConfigCategory &RHS) {
+  // Sort by (line,column).
+  auto LHSLineAndCol = llvm::SrcMgr.getLineAndColumn(LHS.Loc);
+  auto RHSLineAndCol = llvm::SrcMgr.getLineAndColumn(RHS.Loc);
+  return LHSLineAndCol < RHSLineAndCol;
+}
+
 const ConfigCategory &ParserContext::lookupConfigCategory(Record *R) const {
   StringRef CategoryName = R->getValueAsString("Name");
   const auto It = ConfigCategories.find(CategoryName);
@@ -254,11 +261,11 @@ ParserContext::getSortedConfigCategories() const {
   for (const auto &Entry : ConfigCategories)
     SortedCategories.push_back(&Entry.getValue());
 
-  auto ByDisplayOrder = [](const auto *Lhs, const auto *Rhs) {
-    return Lhs->DisplayOrder < Rhs->DisplayOrder;
+  auto PointeesLessThan = [](const auto *LHS, const auto *RHS) {
+    return *LHS < *RHS;
   };
-
-  llvm::sort(SortedCategories, ByDisplayOrder);
+  // Sort by (line,column).
+  llvm::sort(SortedCategories, PointeesLessThan);
   return SortedCategories;
 }
 

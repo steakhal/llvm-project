@@ -22,6 +22,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/SMLoc.h"
 
 #include <memory>
 #include <string>
@@ -41,10 +42,12 @@ struct ConfigValue;
 struct ConfigCategory {
   ConfigCategory(llvm::Record *R, const ParserContext &Ctx);
 
-  const int64_t DisplayOrder;
   const llvm::StringRef Name;
   const llvm::StringRef DisplayName;
   const llvm::StringRef Description;
+  const llvm::SMLoc Loc;
+
+  friend bool operator<(const ConfigCategory &LHS, const ConfigCategory &RHS);
 };
 
 struct ParserContext {

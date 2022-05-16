@@ -1,14 +1,13 @@
 // All members are *required* unless explicitly marked 'optional'.
 // All lists have at least one element.
 
-class ConfigCategory<int display_order> {
-  int DisplayOrder = display_order;
+class ConfigCategory {
   string Name = NAME;
   string DisplayName;
   string Description;
 }
 
-def ReleasedConfig : ConfigCategory<0> {
+def ReleasedConfig : ConfigCategory {
   let DisplayName = "Released";
   let Description = [{
 These options are intended for a regular end-user.
@@ -22,7 +21,7 @@ For example: <<cross-ref>>
 }];
 }
 
-def ExperimentalConfig : ConfigCategory<1> {
+def ExperimentalConfig : ConfigCategory {
   let DisplayName = "Alpha"; // experimental
   let Description = [{
 These config options are not meant for a regular end-user.
@@ -32,7 +31,7 @@ One should use these with caution.
 }];
 }
 
-def DeveloperConfig : ConfigCategory<2> {
+def DeveloperConfig : ConfigCategory {
   let DisplayName = "Debug"; // developer
   let Description = [{
 These config options are intended for analyzer developers or tool vendors

@@ -1,6 +1,5 @@
 
-class ConfigCategory<int display_order> {
-  int DisplayOrder = display_order;
+class ConfigCategory {
   string Name = NAME;
   string DisplayName;
   string Description;
@@ -49,7 +48,7 @@ class UserModeDependentIntConfigValue : ConfigValue {
   int DeepDefaultValue;
 }
 
-def DummyCategory : ConfigCategory<0> {
+def DummyCategory : ConfigCategory {
   let DisplayName = "Dummy";
   let Description = "Dummy category description.";
 }
