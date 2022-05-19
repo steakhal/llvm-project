@@ -60,8 +60,7 @@ static std::vector<StringRef> parseListFieldIfDefined(Record *R,
 /// Constructors
 
 ConfigCategory::ConfigCategory(Record *R, const ParserContext &Ctx)
-    : Name(R->getValueAsString("Name")),
-      DisplayName(R->getValueAsString("DisplayName")),
+    : Name(R->getName()), DisplayName(R->getValueAsString("DisplayName")),
       Description(R->getValueAsString("Description")), Loc(R->getLoc().back()) {
 }
 
@@ -236,7 +235,7 @@ bool ento::operator<(const ConfigCategory &LHS, const ConfigCategory &RHS) {
 }
 
 const ConfigCategory &ParserContext::lookupConfigCategory(Record *R) const {
-  StringRef CategoryName = R->getValueAsString("Name");
+  StringRef CategoryName = R->getName();
   const auto It = ConfigCategories.find(CategoryName);
   assert(It != ConfigCategories.end());
   return It->getValue();
@@ -295,7 +294,7 @@ parseSingleConfigValue(Record *R, const ParserContext &Ctx,
 static void parseConfigCategories(RecordKeeper &Records, ParserContext &Ctx) {
   for (Record *R : Records.getAllDerivedDefinitions("ConfigCategory")) {
     Ctx.ConfigCategories.insert(
-        std::make_pair(R->getValueAsString("Name"), ConfigCategory{R, Ctx}));
+        std::make_pair(R->getName(), ConfigCategory{R, Ctx}));
   }
 }
 

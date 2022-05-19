@@ -2,7 +2,6 @@
 // All lists have at least one element.
 
 class ConfigCategory {
-  string Name = NAME;
   string DisplayName;
   string Description;
 }

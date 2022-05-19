@@ -1,6 +1,5 @@
 
 class ConfigCategory {
-  string Name = NAME;
   string DisplayName;
   string Description;
 }
