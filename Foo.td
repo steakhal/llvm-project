@@ -500,12 +500,67 @@ def ShouldSupportSymbolicIntegerCasts : BooleanConfigValue {
 
 def ShouldConsiderSingleElementArraysAsFlexibleArrayMembers : BooleanConfigValue {
   let FlagName = "consider-single-element-arrays-as-flexible-array-members";
-  let ShortDescription =
-    "Consider single element arrays as flexible array member candidates. "
-    "This will prevent the analyzer from assuming that a single element array "
-    "holds a single element.";
+  let ShortDescription = [{
+    Consider single element arrays as flexible array member candidates.
+    This will prevent the analyzer from assuming that a single element array
+    holds a single element.
+  }];
   let DefaultValue = false;
   let Category = ReleasedConfig;
+  let LongDescription = [{
+    C99 6.7.2.1/16
+
+      *As a special case, the last element of a structure with more than one
+      named member may have an incomplete array type; this is called a
+      flexible array member.*
+
+    .. code-block: c++
+      struct Data {
+        char c;
+        int data[]; // <-- incomplete: FAM
+      };
+
+    Programmers frequently declare data-types in similar ways to this, by
+    declaring zero element or single element arrays instead. They might do
+    this for lacking compiler support for incomplete array declarations or
+    other language limitations. For example:
+
+    .. code-block: c++
+      struct Data0 {
+        char c;
+        int data[0];
+      };
+      struct Data1 {
+        char c;
+        int data[1];
+      };
+
+    Only the incomplete array member declaration is standard compliant in C
+    and none of these are compliant C++ code. Consequently, one should prefer
+    using the first option for expressing *FAM-like* use-cases.
+
+    The Clang Static Analyzer by default recognizes the *incomplete* and *zero
+    element array member* declaration as *FAM* declarations, but in other cases,
+    it relies on the static element count of the array declarations for
+    checking memory accesses. This can lead to false-positives like this one:
+
+    .. code-block: c++
+      Data1 *q = (Data1 *)malloc(sizeof(Data1) + sizeof(int) * 5);
+      // 'q.data' has place for 6 'int' elements.
+
+      q->data[4] = 44; // warning: 4 is an invalid index for accessing an element.
+      free(q);
+
+    By setting this option, the Clang Static Analyzer won't assume the static
+    size for memory accesses, effectively suppressing these reports.
+
+    .. code-block: c++
+      Data1 *q = (Data1 *)malloc(sizeof(Data1) + sizeof(int) * 5);
+      // 'q.data' has place for 6 'int' elements.
+
+      q->data[4] = 44; // no-warning
+      free(q);
+  }];
 }
 
 def ShouldAssumeControlledEnvironment : BooleanConfigValue {
