@@ -257,7 +257,8 @@ const ConfigCategory &ParserContext::lookupConfigCategory(Record *R) const {
   return It->getValue();
 }
 
-std::vector<const ConfigValue *> ParserContext::getSortedConfigs() const {
+std::vector<const ConfigValue *>
+ParserContext::getConfigsInSpellingOrder() const {
   std::vector<const ConfigValue *> SortedConfigs;
   SortedConfigs.reserve(Configs.size());
 
@@ -267,7 +268,7 @@ std::vector<const ConfigValue *> ParserContext::getSortedConfigs() const {
   return SortedConfigs;
 }
 std::vector<const ConfigCategory *>
-ParserContext::getSortedConfigCategories() const {
+ParserContext::getConfigCategoriesInSpellingOrder() const {
   std::vector<const ConfigCategory *> SortedCategories;
   SortedCategories.reserve(ConfigCategories.size());
   for (const auto &Entry : ConfigCategories)

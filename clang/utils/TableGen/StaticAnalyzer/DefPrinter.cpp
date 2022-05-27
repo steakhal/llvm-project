@@ -161,7 +161,7 @@ define both 'ANALYZER_OPTION' and 'ANALYZER_OPTION_DEPENDS_ON_USER_MODE' macros!
 )header";
 
   DefPrinterVisitor Printer{OS};
-  for (const ConfigValue *Ptr : Ctx.getSortedConfigs()) {
+  for (const ConfigValue *Ptr : Ctx.getConfigsInSpellingOrder()) {
     Printer.Visit(Ptr);
     OS << "\n";
   }

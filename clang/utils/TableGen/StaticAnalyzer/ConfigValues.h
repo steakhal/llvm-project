@@ -54,10 +54,13 @@ struct ParserContext {
   llvm::StringMap<std::unique_ptr<ConfigValue>> Configs;
   llvm::StringMap<ConfigCategory> ConfigCategories;
 
-  const ConfigCategory &lookupConfigCategory(llvm::Record *R) const;
+  std::vector<const ConfigValue *> getConfigsInSpellingOrder() const;
+  std::vector<const ConfigCategory *>
+  getConfigCategoriesInSpellingOrder() const;
 
-  std::vector<const ConfigValue *> getSortedConfigs() const;
-  std::vector<const ConfigCategory *> getSortedConfigCategories() const;
+private:
+  friend struct ConfigValue;
+  const ConfigCategory &lookupConfigCategory(llvm::Record *R) const;
 };
 
 struct ConfigValue {
