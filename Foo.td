@@ -42,9 +42,9 @@ providing frontends for the Clang Static Analyzer such as
 class ConfigValue {
   string FlagName;
   string ShortDescription;
-  string LongDescription; // optional
-  list<string> RelatedConfigs; // optional, should name config definitions.
-  list<string> RelatedCheckers; // optional, should name checker definitions.
+  string LongDescription = ?; // optional
+  list<string> RelatedConfigs = ?; // optional, should name config definitions.
+  list<string> RelatedCheckers = ?; // optional, should name checker definitions.
   ConfigCategory Category;
 }
 
