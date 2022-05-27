@@ -500,11 +500,10 @@ def ShouldSupportSymbolicIntegerCasts : BooleanConfigValue {
 
 def ShouldConsiderSingleElementArraysAsFlexibleArrayMembers : BooleanConfigValue {
   let FlagName = "consider-single-element-arrays-as-flexible-array-members";
-  let ShortDescription = [{
-    Consider single element arrays as flexible array member candidates.
-    This will prevent the analyzer from assuming that a single element array
-    holds a single element.
-  }];
+  let ShortDescription =
+    "Consider single element arrays as flexible array member candidates. "
+    "This will prevent the analyzer from assuming that a single element array "
+    "holds a single element.";
   let DefaultValue = false;
   let Category = ReleasedConfig;
   let LongDescription = [{
