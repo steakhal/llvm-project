@@ -80,6 +80,9 @@ struct ConfigValue {
   const std::vector<llvm::StringRef> RelatedConfigs;
   const std::vector<llvm::StringRef> RelatedCheckers;
   const ConfigCategory &Category;
+  const llvm::SMLoc Loc;
+
+  friend bool operator<(const ConfigValue &LHS, const ConfigValue &RHS);
 };
 
 struct StringConfigValue final : ConfigValue {

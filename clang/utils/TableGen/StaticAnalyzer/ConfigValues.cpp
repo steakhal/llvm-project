@@ -72,7 +72,8 @@ ConfigValue::ConfigValue(ConfigKind K, Record *R, const ParserContext &Ctx)
           R->getValueAsOptionalString("LongDescription").getValueOr("")),
       RelatedConfigs(parseListFieldIfDefined(R, "RelatedConfigs")),
       RelatedCheckers(parseListFieldIfDefined(R, "RelatedCheckers")),
-      Category(Ctx.lookupConfigCategory(R->getValueAsDef("Category"))) {
+      Category(Ctx.lookupConfigCategory(R->getValueAsDef("Category"))),
+      Loc(R->getLoc().back()) {
   assert(R->isSubClassOf("ConfigValue"));
   assert(!ConfigName.empty());
 
@@ -226,8 +227,23 @@ bool UserModeDependentIntConfigValue::classof(const ConfigValue *C) {
 }
 
 /// Other implementations
+namespace {
+struct PointeeLessThan {
+  template <typename T, typename U>
+  bool operator()(const T *LHS, const U *RHS) {
+    return *LHS < *RHS;
+  }
+};
+} // namespace
 
 bool ento::operator<(const ConfigCategory &LHS, const ConfigCategory &RHS) {
+  // Sort by (line,column).
+  auto LHSLineAndCol = llvm::SrcMgr.getLineAndColumn(LHS.Loc);
+  auto RHSLineAndCol = llvm::SrcMgr.getLineAndColumn(RHS.Loc);
+  return LHSLineAndCol < RHSLineAndCol;
+}
+
+bool ento::operator<(const ConfigValue &LHS, const ConfigValue &RHS) {
   // Sort by (line,column).
   auto LHSLineAndCol = llvm::SrcMgr.getLineAndColumn(LHS.Loc);
   auto RHSLineAndCol = llvm::SrcMgr.getLineAndColumn(RHS.Loc);
@@ -244,13 +260,10 @@ const ConfigCategory &ParserContext::lookupConfigCategory(Record *R) const {
 std::vector<const ConfigValue *> ParserContext::getSortedConfigs() const {
   std::vector<const ConfigValue *> SortedConfigs;
   SortedConfigs.reserve(Configs.size());
-  auto ByConfigName = [](const ConfigValue *Lhs, const ConfigValue *Rhs) {
-    return Lhs->ConfigName < Rhs->ConfigName;
-  };
 
   for (const auto &Entry : Configs)
     SortedConfigs.push_back(Entry.getValue().get());
-  llvm::sort(SortedConfigs, ByConfigName);
+  llvm::sort(SortedConfigs, PointeeLessThan{});
   return SortedConfigs;
 }
 std::vector<const ConfigCategory *>
@@ -260,11 +273,8 @@ ParserContext::getSortedConfigCategories() const {
   for (const auto &Entry : ConfigCategories)
     SortedCategories.push_back(&Entry.getValue());
 
-  auto PointeesLessThan = [](const auto *LHS, const auto *RHS) {
-    return *LHS < *RHS;
-  };
   // Sort by (line,column).
-  llvm::sort(SortedCategories, PointeesLessThan);
+  llvm::sort(SortedCategories, PointeeLessThan{});
   return SortedCategories;
 }
 
