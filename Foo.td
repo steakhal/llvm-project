@@ -169,7 +169,7 @@ def MayInlineCXXStandardLibrary : BooleanConfigValue {
   let FlagName = "c++-stdlib-inlining";
   let ShortDescription =
     "Whether or not C++ standard library functions may be "
-                "considered for inlining.";
+    "considered for inlining.";
   let DefaultValue = true;
   let Category = ExperimentalConfig;
 }
@@ -177,7 +177,8 @@ def MayInlineCXXStandardLibrary : BooleanConfigValue {
 def MayInlineCXXAllocator : BooleanConfigValue {
   let FlagName = "c++-allocator-inlining";
   let ShortDescription =
-    "Whether or not allocator call may be considered for inlining.";
+    "Whether or not allocator and deallocator calls may be considered for "
+    "inlining.";
   let DefaultValue = true;
   let Category = ExperimentalConfig;
 }
@@ -258,16 +259,6 @@ def ShouldCrosscheckWithZ3 : BooleanConfigValue {
     "constraint manager backend.";
   let DefaultValue = false;
   let Category = ReleasedConfig;
-}
-
-def IPAMode : UserModeDependentEnumConfigValue {
-  let FlagName = "ipa";
-  let ShortDescription = "Controls the mode of inter-procedural analysis.";
-  let Options = ["none", "basic-inlining", "inlining", "dynamic", "dynamic-bifurcate"];
-  let ShallowDefaultValue = "inlining";
-  let DeepDefaultValue = "dynamic-bifurcate";
-  let RelatedConfigs = ["UserMode"];
-  let Category = DeveloperConfig;
 }
 
 def ShouldReportIssuesInMainSourceFile : BooleanConfigValue {
@@ -678,6 +669,47 @@ def MaxNodesPerTopLevelFunction : UserModeDependentIntConfigValue {
   let Category = DeveloperConfig;
 }
 
+def CTUMaxNodesPercentage : IntConfigValue {
+  let FlagName = "ctu-max-nodes-pct";
+  let ShortDescription =
+    "The percentage of single-TU analysed nodes that the CTU analysis is "
+    "allowed to visit.";
+  let RelatedConfigs = ["CTUMaxNodesMin", "CTUPhase1InliningMode"];
+  let DefaultValue = 50;
+  let Category = DeveloperConfig;
+}
+
+def CTUMaxNodesMin : IntConfigValue {
+  let FlagName = "ctu-max-nodes-min";
+  let ShortDescription =
+    "The maximum number of nodes in CTU mode is determinded by "
+    "'ctu-max-nodes-pct'. However, if the number of nodes in single-TU "
+    "analysis is too low, it is meaningful to provide a minimum value that "
+    "serves as an upper bound instead.";
+  let RelatedConfigs = ["CTUMaxNodesPercentage", "CTUPhase1InliningMode"];
+  let DefaultValue = 10000;
+  let Category = DeveloperConfig;
+}
+
+def CTUPhase1InliningMode : EnumConfigValue {
+  let FlagName = "ctu-phase1-inlining";
+  let ShortDescription =
+    "Controls which functions will be inlined during the first phase of the "
+    "ctu analysis. If the value is set to 'all' then all foreign functions "
+    "are inlinied immediately during the first phase, thus rendering the "
+    "second phase a noop. The 'ctu-max-nodes-*' budge has no effect in this "
+    "case. If the value is 'small' then only functions with a linear CFG and "
+    "with a limited number of statements would be inlined during the first "
+    "phase. The long and/or nontrivial functions are handled in the second "
+    "phase and are controlled by the 'ctu-max-nodes-*' budge. The value "
+    "'none' means that all foreign functions are inlined only in the second "
+    "phase, 'ctu-max-nodes-*' budge limits the second phase.";
+  let Options = ["none", "small", "all"];
+  let RelatedConfigs = ["CTUMaxNodesPercentage", "CTUMaxNodesMin"];
+  let DefaultValue = "small";
+  let Category = DeveloperConfig;
+}
+
 def RegionStoreSmallStructLimit : IntConfigValue {
   let FlagName = "region-store-small-struct-limit";
   let ShortDescription =
@@ -759,5 +791,15 @@ def RawSilencedCheckersAndPackages : StringConfigValue {
     "A semicolon separated list of checker and package names to silence. "
     "Silenced checkers will not emit reports, but the modeling remain enabled.";
   let DefaultValue = "";
+  let Category = DeveloperConfig;
+}
+
+def IPAMode : UserModeDependentEnumConfigValue {
+  let FlagName = "ipa";
+  let ShortDescription = "Controls the mode of inter-procedural analysis.";
+  let Options = ["none", "basic-inlining", "inlining", "dynamic", "dynamic-bifurcate"];
+  let ShallowDefaultValue = "inlining";
+  let DeepDefaultValue = "dynamic-bifurcate";
+  let RelatedConfigs = ["UserMode"];
   let Category = DeveloperConfig;
 }
