@@ -28,160 +28,23 @@
 using namespace clang;
 using namespace ento;
 
+using CFGBlocksSet = llvm::SmallSet<unsigned, 32>;
+
 namespace {
 class UnreachableCodeChecker : public Checker<check::EndAnalysis> {
 public:
   void checkEndAnalysis(ExplodedGraph &G, BugReporter &B,
                         ExprEngine &Eng) const;
-private:
-  typedef llvm::SmallSet<unsigned, 32> CFGBlocksSet;
-
-  static inline const Stmt *getUnreachableStmt(const CFGBlock *CB);
-  static void FindUnreachableEntryPoints(const CFGBlock *CB,
-                                         CFGBlocksSet &reachable,
-                                         CFGBlocksSet &visited);
-  static bool isInvalidPath(const CFGBlock *CB, const ParentMap &PM);
-  static inline bool isEmptyCFGBlock(const CFGBlock *CB);
 };
-}
-
-void UnreachableCodeChecker::checkEndAnalysis(ExplodedGraph &G,
-                                              BugReporter &B,
-                                              ExprEngine &Eng) const {
-  CFGBlocksSet reachable, visited;
-
-  if (Eng.hasWorkRemaining())
-    return;
-
-  const Decl *D = nullptr;
-  CFG *C = nullptr;
-  const ParentMap *PM = nullptr;
-  const LocationContext *LC = nullptr;
-  // Iterate over ExplodedGraph
-  for (ExplodedGraph::node_iterator I = G.nodes_begin(), E = G.nodes_end();
-      I != E; ++I) {
-    const ProgramPoint &P = I->getLocation();
-    LC = P.getLocationContext();
-    if (!LC->inTopFrame())
-      continue;
-
-    if (!D)
-      D = LC->getAnalysisDeclContext()->getDecl();
-
-    // Save the CFG if we don't have it already
-    if (!C)
-      C = LC->getAnalysisDeclContext()->getUnoptimizedCFG();
-    if (!PM)
-      PM = &LC->getParentMap();
-
-    if (Optional<BlockEntrance> BE = P.getAs<BlockEntrance>()) {
-      const CFGBlock *CB = BE->getBlock();
-      reachable.insert(CB->getBlockID());
-    }
-  }
-
-  // Bail out if we didn't get the CFG or the ParentMap.
-  if (!D || !C || !PM)
-    return;
-
-  // Don't do anything for template instantiations.  Proving that code
-  // in a template instantiation is unreachable means proving that it is
-  // unreachable in all instantiations.
-  if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
-    if (FD->isTemplateInstantiation())
-      return;
-
-  // Find CFGBlocks that were not covered by any node
-  for (CFG::const_iterator I = C->begin(), E = C->end(); I != E; ++I) {
-    const CFGBlock *CB = *I;
-    // Check if the block is unreachable
-    if (reachable.count(CB->getBlockID()))
-      continue;
-
-    // Check if the block is empty (an artificial block)
-    if (isEmptyCFGBlock(CB))
-      continue;
-
-    // Find the entry points for this block
-    if (!visited.count(CB->getBlockID()))
-      FindUnreachableEntryPoints(CB, reachable, visited);
-
-    // This block may have been pruned; check if we still want to report it
-    if (reachable.count(CB->getBlockID()))
-      continue;
-
-    // Check for false positives
-    if (isInvalidPath(CB, *PM))
-      continue;
-
-    // It is good practice to always have a "default" label in a "switch", even
-    // if we should never get there. It can be used to detect errors, for
-    // instance. Unreachable code directly under a "default" label is therefore
-    // likely to be a false positive.
-    if (const Stmt *label = CB->getLabel())
-      if (label->getStmtClass() == Stmt::DefaultStmtClass)
-        continue;
-
-    // Special case for __builtin_unreachable.
-    // FIXME: This should be extended to include other unreachable markers,
-    // such as llvm_unreachable.
-    if (!CB->empty()) {
-      bool foundUnreachable = false;
-      for (CFGBlock::const_iterator ci = CB->begin(), ce = CB->end();
-           ci != ce; ++ci) {
-        if (Optional<CFGStmt> S = (*ci).getAs<CFGStmt>())
-          if (const CallExpr *CE = dyn_cast<CallExpr>(S->getStmt())) {
-            if (CE->getBuiltinCallee() == Builtin::BI__builtin_unreachable ||
-                CE->isBuiltinAssumeFalse(Eng.getContext())) {
-              foundUnreachable = true;
-              break;
-            }
-          }
-      }
-      if (foundUnreachable)
-        continue;
-    }
-
-    // We found a block that wasn't covered - find the statement to report
-    SourceRange SR;
-    PathDiagnosticLocation DL;
-    SourceLocation SL;
-    if (const Stmt *S = getUnreachableStmt(CB)) {
-      // In macros, 'do {...} while (0)' is often used. Don't warn about the
-      // condition 0 when it is unreachable.
-      if (S->getBeginLoc().isMacroID())
-        if (const auto *I = dyn_cast<IntegerLiteral>(S))
-          if (I->getValue() == 0ULL)
-            if (const Stmt *Parent = PM->getParent(S))
-              if (isa<DoStmt>(Parent))
-                continue;
-      SR = S->getSourceRange();
-      DL = PathDiagnosticLocation::createBegin(S, B.getSourceManager(), LC);
-      SL = DL.asLocation();
-      if (SR.isInvalid() || !SL.isValid())
-        continue;
-    }
-    else
-      continue;
-
-    // Check if the SourceLocation is in a system header
-    const SourceManager &SM = B.getSourceManager();
-    if (SM.isInSystemHeader(SL) || SM.isInExternCSystemHeader(SL))
-      continue;
-
-    B.EmitBasicReport(D, this, "Unreachable code", categories::UnusedCode,
-                      "This statement is never executed", DL, SR);
-  }
-}
+} // namespace
 
 // Recursively finds the entry point(s) for this dead CFGBlock.
-void UnreachableCodeChecker::FindUnreachableEntryPoints(const CFGBlock *CB,
-                                                        CFGBlocksSet &reachable,
-                                                        CFGBlocksSet &visited) {
+void findUnreachableEntryPoints(const CFGBlock *CB, CFGBlocksSet &reachable,
+                                CFGBlocksSet &visited) {
   visited.insert(CB->getBlockID());
 
   for (CFGBlock::const_pred_iterator I = CB->pred_begin(), E = CB->pred_end();
-      I != E; ++I) {
+       I != E; ++I) {
     if (!*I)
       continue;
 
@@ -191,32 +54,28 @@ void UnreachableCodeChecker::FindUnreachableEntryPoints(const CFGBlock *CB,
       reachable.insert(CB->getBlockID());
       if (!visited.count((*I)->getBlockID()))
         // If we haven't previously visited the unreachable predecessor, recurse
-        FindUnreachableEntryPoints(*I, reachable, visited);
+        findUnreachableEntryPoints(*I, reachable, visited);
     }
   }
 }
 
 // Find the Stmt* in a CFGBlock for reporting a warning
-const Stmt *UnreachableCodeChecker::getUnreachableStmt(const CFGBlock *CB) {
+static const Stmt *getUnreachableStmt(const CFGBlock *CB) {
   for (CFGBlock::const_iterator I = CB->begin(), E = CB->end(); I != E; ++I) {
     if (Optional<CFGStmt> S = I->getAs<CFGStmt>()) {
       if (!isa<DeclStmt>(S->getStmt()))
         return S->getStmt();
     }
   }
-  if (const Stmt *S = CB->getTerminatorStmt())
-    return S;
-  else
-    return nullptr;
+  return CB->getTerminatorStmt();
 }
 
 // Determines if the path to this CFGBlock contained an element that infers this
-// block is a false positive. We assume that FindUnreachableEntryPoints has
+// block is a false positive. We assume that findUnreachableEntryPoints has
 // already marked only the entry points to any dead code, so we need only to
 // find the condition that led to this block (the predecessor of this block.)
 // There will never be more than one predecessor.
-bool UnreachableCodeChecker::isInvalidPath(const CFGBlock *CB,
-                                           const ParentMap &PM) {
+static bool isInvalidPath(const CFGBlock *CB, const ParentMap &PM) {
   // We only expect a predecessor size of 0 or 1. If it is >1, then an external
   // condition has broken our assumption (for example, a sink being placed by
   // another check). In these cases, we choose not to report.
@@ -234,9 +93,9 @@ bool UnreachableCodeChecker::isInvalidPath(const CFGBlock *CB,
   // Get the predecessor block's terminator condition
   const Stmt *cond = pred->getTerminatorCondition();
 
-  //assert(cond && "CFGBlock's predecessor has a terminator condition");
-  // The previous assertion is invalid in some cases (eg do/while). Leaving
-  // reporting of these situations on at the moment to help triage these cases.
+  // assert(cond && "CFGBlock's predecessor has a terminator condition");
+  //  The previous assertion is invalid in some cases (eg do/while). Leaving
+  //  reporting of these situations on at the moment to help triage these cases.
   if (!cond)
     return false;
 
@@ -247,10 +106,153 @@ bool UnreachableCodeChecker::isInvalidPath(const CFGBlock *CB,
 }
 
 // Returns true if the given CFGBlock is empty
-bool UnreachableCodeChecker::isEmptyCFGBlock(const CFGBlock *CB) {
-  return CB->getLabel() == nullptr // No labels
-      && CB->size() == 0           // No statements
-      && !CB->getTerminatorStmt(); // No terminator
+static bool isEmptyCFGBlock(const CFGBlock *CB) {
+  return CB->getLabel() == nullptr    // No labels
+         && CB->size() == 0           // No statements
+         && !CB->getTerminatorStmt(); // No terminator
+}
+
+static bool isBuiltinUnreachable(const CFGBlock *CB, const ASTContext &Ctx) {
+  for (const CFGElement &E : *CB) {
+    if (const auto S = E.getAs<CFGStmt>())
+      if (const auto *CE = dyn_cast<CallExpr>(S->getStmt())) {
+        if (CE->getBuiltinCallee() == Builtin::BI__builtin_unreachable ||
+            CE->isBuiltinAssumeFalse(Ctx)) {
+          return true;
+        }
+      }
+  }
+  return false;
+}
+
+static bool isDoWhileMacro(const Stmt *S, const ParentMap &PM) {
+  if (S->getBeginLoc().isMacroID())
+    if (const auto *I = dyn_cast<IntegerLiteral>(S))
+      if (I->getValue() == 0)
+        if (const Stmt *Parent = PM.getParent(S))
+          if (isa<DoStmt>(Parent))
+            return true;
+  return false;
+}
+
+/// Recursively walk backwards the CFG to find the first unreachable block
+/// leading to the given block.
+/// Return true if the given block should be ignored. It can happen for multiple
+/// reasons:
+/// 1) Some ascendant block of this should be reported instead.
+/// 2) This was an artificial empty block, such as an Entry or Exit block.
+/// 3) The heuristic found this a likely false-positive.
+/// 4) Deliberately ignore 'default' cases in switches.
+/// 5) This is an unreachable marked block.
+static bool shouldIgnoreBlock(const CFGBlock *CB, CFGBlocksSet &reachable,
+                              CFGBlocksSet &visited, const ParentMap &PM,
+                              const ASTContext &Ctx) {
+  // Check if the block is unreachable
+  if (reachable.count(CB->getBlockID()))
+    return true;
+
+  // Check if the block is empty (an artificial block)
+  if (isEmptyCFGBlock(CB))
+    return true;
+
+  // Find the entry points for this block
+  if (!visited.count(CB->getBlockID()))
+    findUnreachableEntryPoints(CB, reachable, visited);
+
+  // This block may have been pruned; check if we still want to report it
+  if (reachable.count(CB->getBlockID()))
+    return true;
+
+  // Check for false positives
+  if (isInvalidPath(CB, PM))
+    return true;
+
+  // It is good practice to always have a "default" label in a "switch", even
+  // if we should never get there. It can be used to detect errors, for
+  // instance. Unreachable code directly under a "default" label is therefore
+  // likely to be a false positive.
+  if (const Stmt *label = CB->getLabel())
+    if (label->getStmtClass() == Stmt::DefaultStmtClass)
+      return true;
+
+  // Special case for __builtin_unreachable.
+  // FIXME: This should be extended to include other unreachable markers,
+  // such as llvm_unreachable.
+  if (isBuiltinUnreachable(CB, Ctx))
+    return true;
+
+  return false;
+}
+
+static bool inTopFrame(const ExplodedNode &N) {
+  return N.getLocation().getLocationContext()->inTopFrame();
+}
+
+static const ExplodedNode *getFirstNonTopNode(const ExplodedGraph &G) {
+  for (const ExplodedNode &N : G.nodes())
+    if (inTopFrame(N))
+      return &N;
+  return nullptr;
+}
+
+void UnreachableCodeChecker::checkEndAnalysis(ExplodedGraph &G, BugReporter &B,
+                                              ExprEngine &Eng) const {
+  if (Eng.hasWorkRemaining())
+    return;
+
+  const ExplodedNode *N = getFirstNonTopNode(G);
+  if (!N)
+    return;
+
+  const SourceManager &SM = B.getSourceManager();
+  CFGBlocksSet reachable, visited;
+
+  const LocationContext *LC = N->getLocation().getLocationContext();
+  const Decl *D = LC->getAnalysisDeclContext()->getDecl();
+  CFG *C = LC->getAnalysisDeclContext()->getUnoptimizedCFG();
+  const ParentMap *PM = &LC->getParentMap();
+
+  // Bail out if we didn't get the CFG or the ParentMap.
+  if (!D || !C || !PM)
+    return;
+
+  // Don't do anything for template instantiations.  Proving that code
+  // in a template instantiation is unreachable means proving that it is
+  // unreachable in all instantiations.
+  if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
+    if (FD->isTemplateInstantiation())
+      return;
+
+  // Collect all block entrances.
+  for (const ExplodedNode &N : G.nodes())
+    if (inTopFrame(N))
+      if (auto BE = N.getLocationAs<BlockEntrance>())
+        reachable.insert(BE->getBlock()->getBlockID());
+
+  // Find CFGBlocks that were not covered by any node
+  for (const CFGBlock *CB : *C) {
+    if (shouldIgnoreBlock(CB, reachable, visited, *PM, Eng.getContext()))
+      continue;
+
+    // We found a block that wasn't covered - find the statement to report
+    const Stmt *S = getUnreachableStmt(CB);
+    if (!S)
+      continue;
+
+    // In macros, 'do {...} while (0)' is often used. Don't warn about the
+    // condition 0 when it is unreachable.
+    if (isDoWhileMacro(S, *PM))
+      continue;
+
+    SourceRange SR = S->getSourceRange();
+    PathDiagnosticLocation DL = PathDiagnosticLocation::createBegin(S, SM, LC);
+    SourceLocation SL = DL.asLocation();
+    if (SR.isInvalid() || !SL.isValid() || SM.isInSystemHeader(SL))
+      continue;
+
+    B.EmitBasicReport(D, this, "Unreachable code", categories::UnusedCode,
+                      "This statement is never executed", DL, SR);
+  }
 }
 
 void ento::registerUnreachableCodeChecker(CheckerManager &mgr) {
