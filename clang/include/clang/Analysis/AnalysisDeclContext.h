@@ -251,6 +251,7 @@ public:
   const Decl *getDecl() const { return Ctx->getDecl(); }
 
   CFG *getCFG() const { return Ctx->getCFG(); }
+  CFG *getUnoptimizedCFG() const { return Ctx->getUnoptimizedCFG(); }
 
   template <typename T> T *getAnalysis() const { return Ctx->getAnalysis<T>(); }
 

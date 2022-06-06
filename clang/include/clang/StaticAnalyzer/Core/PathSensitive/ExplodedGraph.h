@@ -399,9 +399,17 @@ public:
 
   node_iterator nodes_end() { return Nodes.end(); }
 
+  llvm::iterator_range<node_iterator> nodes() {
+    return llvm::make_range(nodes_begin(), nodes_end());
+  }
+
   const_node_iterator nodes_begin() const { return Nodes.begin(); }
 
   const_node_iterator nodes_end() const { return Nodes.end(); }
+
+  llvm::iterator_range<const_node_iterator> nodes() const {
+    return llvm::make_range(nodes_begin(), nodes_end());
+  }
 
   roots_iterator roots_begin() { return Roots.begin(); }
 

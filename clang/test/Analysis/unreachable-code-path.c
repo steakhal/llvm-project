@@ -120,8 +120,19 @@ void test10(void) {
   i = 2;  // no-warning
   goto f;
   e:
-  goto d;
+    goto d; // expected-warning {{never executed}}
   f: ;
+}
+
+void test10_chained_unreachable(void) {
+  goto end;
+a:
+  goto b; // expected-warning {{never executed}}
+b:
+  goto c; // expected-warning {{never executed}}
+c:
+  goto a; // expected-warning {{never executed}}
+end:;
 }
 
 // test11: we can actually end up in the default case, even if it is not
@@ -223,4 +234,38 @@ void writeSomething(int *x);
   }
 void macro2(void) {
   MACRO(1);
+}
+
+int if_else_if_chain(int x) {
+  if (x != 0)
+    return -1;
+  int v1 = 100 / x; // expected-warning {{Division by zero}}
+
+  /// We should not warn for dead code, caused by a sink node.
+  int clamped;           // no-warning
+  if (v1 < 0)            // no-warning
+    clamped = 0;         // no-warning
+  else if (v1 > 100)     // no-warning
+    clamped = 100;       // no-warning
+  else if (v1 % 2 == 0)  // no-warning
+    clamped = 0;         // no-warning
+  else if (v1 % 2 == -1) // no-warning
+    clamped = -1;        // no-warning
+  else                   // no-warning
+    clamped = v1;        // no-warning
+  return clamped;
+}
+
+int unreachable_standalone_recursive_block(int a) {
+  switch (a) {
+    back:
+    a += 5; // expected-warning{{never executed}}
+    a *= 2; // no-warning
+    goto back;
+  case 2:
+    a *= 10;
+  case 3:
+    a %= 2;
+  }
+  return a;
 }
