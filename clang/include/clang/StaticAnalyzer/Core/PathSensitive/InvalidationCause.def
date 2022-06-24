@@ -1,0 +1,19 @@
+#ifndef INVALIDATION_CAUSE
+#define INVALIDATION_CAUSE(Id, Parent)
+#endif
+
+#ifndef ABSTRACT_INVALIDATION_CAUSE
+#define ABSTRACT_INVALIDATION_CAUSE(Id, Parent)
+#endif
+
+
+ABSTRACT_INVALIDATION_CAUSE(UnmodeledCall, InvalidationCause)
+INVALIDATION_CAUSE(ConservativeEvalCall, UnmodeledCall)
+INVALIDATION_CAUSE(PartiallyModeledCall, UnmodeledCall)
+ABSTRACT_INVALIDATION_CAUSE(UnmodeledStmt, InvalidationCause)
+INVALIDATION_CAUSE(UnmodeledExpr, UnmodeledStmt)
+INVALIDATION_CAUSE(LoopWidening, UnmodeledStmt)
+
+
+#undef INVALIDATION_CAUSE
+#undef ABSTRACT_INVALIDATION_CAUSE

@@ -208,6 +208,32 @@ public:
   }
 };
 
+/// TODO: document this.
+class SymbolInvalidationArtifact : public SymbolData {
+  QualType T;
+
+public:
+  QualType getType() const override;
+
+  StringRef getKindStr() const override;
+
+  void dumpToStream(raw_ostream &os) const override;
+
+  static void Profile(llvm::FoldingSetNodeID &profile,
+                      SymbolInvalidationArtifact V) {
+    profile.AddInteger((unsigned)SymbolInvalidationArtifactKind);
+    profile.AddPointer(V.Data);
+  }
+  void Profile(llvm::FoldingSetNodeID &ID) override { Profile(ID, *this); }
+
+  static bool classof(const SymExpr *SE) {
+    return SE->getKind() == SymbolInvalidationArtifactKind;
+  }
+
+protected:
+  const void *Data = nullptr;
+};
+
 /// SymbolMetadata - Represents path-dependent metadata about a specific region.
 ///  Metadata symbols remain live as long as they are marked as in use before
 ///  dead-symbol sweeping AND their associated regions are still alive.

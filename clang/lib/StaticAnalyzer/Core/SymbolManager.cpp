@@ -139,6 +139,7 @@ void SymExpr::symbol_iterator::expand() {
     case SymExpr::SymbolConjuredKind:
     case SymExpr::SymbolDerivedKind:
     case SymExpr::SymbolExtentKind:
+    case SymExpr::SymbolInvalidationArtifactKind:
     case SymExpr::SymbolMetadataKind:
       return;
     case SymExpr::SymbolCastKind:
@@ -466,6 +467,7 @@ bool SymbolReaper::isLive(SymbolRef sym) {
   case SymExpr::SymbolRegionValueKind:
     KnownLive = isLiveRegion(cast<SymbolRegionValue>(sym)->getRegion());
     break;
+  case SymExpr::SymbolInvalidationArtifactKind:
   case SymExpr::SymbolConjuredKind:
     KnownLive = false;
     break;
