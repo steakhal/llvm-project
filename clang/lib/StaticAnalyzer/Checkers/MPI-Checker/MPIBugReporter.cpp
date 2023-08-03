@@ -15,6 +15,7 @@
 #include "MPIBugReporter.h"
 #include "MPIChecker.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 
 namespace clang {
 namespace ento {

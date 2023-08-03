@@ -12,11 +12,13 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/LoopUnrolling.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/LoopUnrolling.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
 #include <optional>
 
 using namespace clang;

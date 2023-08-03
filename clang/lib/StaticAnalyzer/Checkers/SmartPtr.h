@@ -16,6 +16,10 @@
 
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 
+namespace clang::ento {
+class BugType;
+} // namespace clang::ento
+
 namespace clang {
 namespace ento {
 namespace smartptr {

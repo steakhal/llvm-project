@@ -14,7 +14,6 @@
 #ifndef LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_RETAINCOUNTCHECKER_H
 #define LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_RETAINCOUNTCHECKER_H
 
-#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "RetainCountDiagnostics.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclCXX.h"
@@ -23,9 +22,10 @@
 #include "clang/Analysis/DomainSpecific/CocoaConventions.h"
 #include "clang/Analysis/PathDiagnostic.h"
 #include "clang/Analysis/RetainSummaryManager.h"
+#include "clang/Analysis/SelectorExtras.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SourceManager.h"
-#include "clang/Analysis/SelectorExtras.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"

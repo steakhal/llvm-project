@@ -36,10 +36,13 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/Specifiers.h"
 #include "clang/CrossTU/CrossTranslationUnit.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ConstraintManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/DynamicType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/DynamicTypeInfo.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/MemRegion.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
@@ -1469,4 +1472,16 @@ CallEventRef<> CallEventManager::getCall(const Stmt *S, ProgramStateRef State,
   } else {
     return nullptr;
   }
+}
+
+bool CallEvent::isArgumentConstructedDirectly(unsigned Index) const {
+  // This assumes that the object was not yet removed from the state.
+  return ExprEngine::getObjectUnderConstruction(
+             getState(), {getOriginExpr(), Index}, getLocationContext())
+      .has_value();
+}
+
+SVal CXXAllocatorCall::getObjectUnderConstruction() const {
+  return *ExprEngine::getObjectUnderConstruction(getState(), getOriginExpr(),
+                                                 getLocationContext());
 }

@@ -16,6 +16,7 @@
 #define LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_MPICHECKER_MPIBUGREPORTER_H
 
 #include "MPITypes.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 
 namespace clang {

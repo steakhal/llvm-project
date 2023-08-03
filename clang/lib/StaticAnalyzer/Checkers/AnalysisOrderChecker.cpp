@@ -16,10 +16,13 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/Analysis/CFGStmtMap.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
+#include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
 #include "llvm/Support/ErrorHandling.h"
 
 using namespace clang;

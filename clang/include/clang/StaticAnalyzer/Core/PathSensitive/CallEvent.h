@@ -28,7 +28,6 @@
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
@@ -424,12 +423,7 @@ public:
   /// if we are supposed to construct an argument directly, we may still
   /// not do that because we don't know how (i.e., construction context is
   /// unavailable in the CFG or not supported by the analyzer).
-  bool isArgumentConstructedDirectly(unsigned Index) const {
-    // This assumes that the object was not yet removed from the state.
-    return ExprEngine::getObjectUnderConstruction(
-               getState(), {getOriginExpr(), Index}, getLocationContext())
-        .has_value();
-  }
+  bool isArgumentConstructedDirectly(unsigned Index) const;
 
   /// Some calls have parameter numbering mismatched from argument numbering.
   /// This function converts an argument index to the corresponding
@@ -1051,10 +1045,7 @@ public:
     return getOriginExpr()->getOperatorNew();
   }
 
-  SVal getObjectUnderConstruction() const {
-    return *ExprEngine::getObjectUnderConstruction(getState(), getOriginExpr(),
-                                                   getLocationContext());
-  }
+  SVal getObjectUnderConstruction() const;
 
   /// Number of non-placement arguments to the call. It is equal to 2 for
   /// C++17 aligned operator new() calls that have alignment implicitly

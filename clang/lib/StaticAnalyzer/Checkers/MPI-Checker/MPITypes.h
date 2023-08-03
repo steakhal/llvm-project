@@ -18,6 +18,7 @@
 
 #include "clang/StaticAnalyzer/Checkers/MPIFunctionClassifier.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
 #include "llvm/ADT/SmallSet.h"
 
 namespace clang {
