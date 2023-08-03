@@ -15,7 +15,12 @@
 #ifndef LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_LOOPWIDENING_H
 #define LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_LOOPWIDENING_H
 
-#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
+
+namespace clang {
+class LocationContext;
+class Stmt;
+} // namespace clang
 
 namespace clang {
 namespace ento {
