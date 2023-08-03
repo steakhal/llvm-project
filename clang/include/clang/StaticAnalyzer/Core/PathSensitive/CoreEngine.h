@@ -16,7 +16,6 @@
 
 #include "clang/AST/Stmt.h"
 #include "clang/Analysis/AnalysisDeclContext.h"
-#include "clang/Analysis/CFG.h"
 #include "clang/Analysis/ProgramPoint.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
