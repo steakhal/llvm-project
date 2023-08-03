@@ -14,9 +14,31 @@
 #ifndef LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_CHECKERCONTEXT_H
 #define LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_CHECKERCONTEXT_H
 
-#include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
-#include <optional>
+#include "clang/Analysis/ProgramPoint.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SValBuilder.h"
+
+namespace clang {
+class ASTContext;
+class LocationContext;
+class SourceManager;
+class StackFrameContext;
+} // namespace clang
+
+namespace clang::ento {
+class AnalysisManager;
+class BugReport;
+class BugReporter;
+class BugReporterContext;
+class ConstraintManager;
+class ExplodedNode;
+class ExprEngine;
+class NodeBuilder;
+class NoteTag;
+class PathSensitiveBugReport;
+class StoreManager;
+class SValBuilder;
+} // namespace clang::ento
 
 namespace clang {
 namespace ento {
@@ -38,38 +60,20 @@ public:
   /// call was inlined.  In all other cases it will be false.
   const bool wasInlined;
 
-  CheckerContext(NodeBuilder &builder,
-                 ExprEngine &eng,
-                 ExplodedNode *pred,
-                 const ProgramPoint &loc,
-                 bool wasInlined = false)
-    : Eng(eng),
-      Pred(pred),
-      Changed(false),
-      Location(loc),
-      NB(builder),
-      wasInlined(wasInlined) {
-    assert(Pred->getState() &&
-           "We should not call the checkers on an empty state.");
-  }
+  CheckerContext(NodeBuilder &builder, ExprEngine &eng, ExplodedNode *pred,
+                 const ProgramPoint &loc, bool wasInlined = false);
 
-  AnalysisManager &getAnalysisManager() {
-    return Eng.getAnalysisManager();
-  }
-
-  ConstraintManager &getConstraintManager() {
-    return Eng.getConstraintManager();
-  }
-
-  StoreManager &getStoreManager() {
-    return Eng.getStoreManager();
-  }
+  AnalysisManager &getAnalysisManager();
+  ConstraintManager &getConstraintManager();
+  StoreManager &getStoreManager();
+  ASTContext &getASTContext();
+  const ASTContext &getASTContext() const;
 
   /// Returns the previous node in the exploded graph, which includes
   /// the state of the program before the checker ran. Note, checkers should
   /// not retain the node in their state since the nodes might get invalidated.
   ExplodedNode *getPredecessor() { return Pred; }
-  const ProgramStateRef &getState() const { return Pred->getState(); }
+  const ProgramStateRef &getState() const;
 
   /// Check if the checker changed the state of the execution; ex: added
   /// a new transition or a bug report.
@@ -77,78 +81,42 @@ public:
 
   /// Returns the number of times the current block has been visited
   /// along the analyzed path.
-  unsigned blockCount() const {
-    return NB.getContext().blockCount();
-  }
+  unsigned blockCount() const;
 
-  ASTContext &getASTContext() {
-    return Eng.getContext();
-  }
+  const LangOptions &getLangOpts() const;
 
-  const ASTContext &getASTContext() const { return Eng.getContext(); }
+  const LocationContext *getLocationContext() const;
 
-  const LangOptions &getLangOpts() const {
-    return Eng.getContext().getLangOpts();
-  }
-
-  const LocationContext *getLocationContext() const {
-    return Pred->getLocationContext();
-  }
-
-  const StackFrameContext *getStackFrame() const {
-    return Pred->getStackFrame();
-  }
+  const StackFrameContext *getStackFrame() const;
 
   /// Return true if the current LocationContext has no caller context.
-  bool inTopFrame() const { return getLocationContext()->inTopFrame();  }
+  bool inTopFrame() const;
 
-  BugReporter &getBugReporter() {
-    return Eng.getBugReporter();
-  }
+  BugReporter &getBugReporter();
 
-  const SourceManager &getSourceManager() {
-    return getBugReporter().getSourceManager();
-  }
+  const SourceManager &getSourceManager();
 
-  Preprocessor &getPreprocessor() { return getBugReporter().getPreprocessor(); }
+  Preprocessor &getPreprocessor();
 
-  SValBuilder &getSValBuilder() {
-    return Eng.getSValBuilder();
-  }
+  SValBuilder &getSValBuilder();
 
-  SymbolManager &getSymbolManager() {
-    return getSValBuilder().getSymbolManager();
-  }
+  SymbolManager &getSymbolManager();
 
-  ProgramStateManager &getStateManager() {
-    return Eng.getStateManager();
-  }
+  ProgramStateManager &getStateManager();
 
-  AnalysisDeclContext *getCurrentAnalysisDeclContext() const {
-    return Pred->getLocationContext()->getAnalysisDeclContext();
-  }
+  AnalysisDeclContext *getCurrentAnalysisDeclContext() const;
 
-  /// Get the blockID.
-  unsigned getBlockID() const {
-    return NB.getContext().getBlock()->getBlockID();
-  }
+  unsigned getBlockID() const;
 
   /// If the given node corresponds to a PostStore program point,
   /// retrieve the location region as it was uttered in the code.
   ///
   /// This utility can be useful for generating extensive diagnostics, for
   /// example, for finding variables that the given symbol was assigned to.
-  static const MemRegion *getLocationRegionIfPostStore(const ExplodedNode *N) {
-    ProgramPoint L = N->getLocation();
-    if (std::optional<PostStore> PSL = L.getAs<PostStore>())
-      return reinterpret_cast<const MemRegion*>(PSL->getLocationValue());
-    return nullptr;
-  }
+  static const MemRegion *getLocationRegionIfPostStore(const ExplodedNode *N);
 
   /// Get the value of arbitrary expressions at this point in the path.
-  SVal getSVal(const Stmt *S) const {
-    return Pred->getSVal(S);
-  }
+  SVal getSVal(const Stmt *S) const;
 
   /// Returns true if the value of \p E is greater than or equal to \p
   /// Val under unsigned comparison
@@ -258,10 +226,7 @@ public:
   }
 
   /// Emit the diagnostics report.
-  void emitReport(std::unique_ptr<BugReport> R) {
-    Changed = true;
-    Eng.getBugReporter().emitReport(std::move(R));
-  }
+  void emitReport(std::unique_ptr<BugReport> R);
 
   /// Produce a program point tag that displays an additional path note
   /// to the user. This is a lightweight alternative to the
@@ -274,9 +239,10 @@ public:
   ///        to omit the note from the report if it would make the displayed
   ///        bug path significantly shorter.
   LLVM_ATTRIBUTE_RETURNS_NONNULL
-  const NoteTag *getNoteTag(NoteTag::Callback &&Cb, bool IsPrunable = false) {
-    return Eng.getDataTags().make<NoteTag>(std::move(Cb), IsPrunable);
-  }
+  const NoteTag *getNoteTag(
+      std::function<std::string(BugReporterContext &, PathSensitiveBugReport &)>
+          &&Cb,
+      bool IsPrunable = false);
 
   /// A shorthand version of getNoteTag that doesn't require you to accept
   /// the 'BugReporterContext' argument when you don't need it.
@@ -391,37 +357,9 @@ public:
   StringRef getMacroNameOrSpelling(SourceLocation &Loc);
 
 private:
-  ExplodedNode *addTransitionImpl(ProgramStateRef State,
-                                 bool MarkAsSink,
-                                 ExplodedNode *P = nullptr,
-                                 const ProgramPointTag *Tag = nullptr) {
-    // The analyzer may stop exploring if it sees a state it has previously
-    // visited ("cache out"). The early return here is a defensive check to
-    // prevent accidental caching out by checker API clients. Unless there is a
-    // tag or the client checker has requested that the generated node be
-    // marked as a sink, we assume that a client requesting a transition to a
-    // state that is the same as the predecessor state has made a mistake. We
-    // return the predecessor rather than cache out.
-    //
-    // TODO: We could potentially change the return to an assertion to alert
-    // clients to their mistake, but several checkers (including
-    // DereferenceChecker, CallAndMessageChecker, and DynamicTypePropagation)
-    // rely upon the defensive behavior and would need to be updated.
-    if (!State || (State == Pred->getState() && !Tag && !MarkAsSink))
-      return Pred;
-
-    Changed = true;
-    const ProgramPoint &LocalLoc = (Tag ? Location.withTag(Tag) : Location);
-    if (!P)
-      P = Pred;
-
-    ExplodedNode *node;
-    if (MarkAsSink)
-      node = NB.generateSink(LocalLoc, State, P);
-    else
-      node = NB.generateNode(LocalLoc, State, P);
-    return node;
-  }
+  ExplodedNode *addTransitionImpl(ProgramStateRef State, bool MarkAsSink,
+                                  ExplodedNode *P = nullptr,
+                                  const ProgramPointTag *Tag = nullptr);
 };
 
 } // end GR namespace

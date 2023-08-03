@@ -14,10 +14,142 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Lex/Lexer.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
 #include "llvm/ADT/StringExtras.h"
+#include <optional>
 
 using namespace clang;
 using namespace ento;
+
+CheckerContext::CheckerContext(NodeBuilder &builder, ExprEngine &eng,
+                               ExplodedNode *pred, const ProgramPoint &loc,
+                               bool wasInlined /*=false*/)
+    : Eng(eng), Pred(pred), Changed(false), Location(loc), NB(builder),
+      wasInlined(wasInlined) {
+  assert(Pred->getState() &&
+         "We should not call the checkers on an empty state.");
+}
+
+AnalysisManager &CheckerContext::getAnalysisManager() {
+  return Eng.getAnalysisManager();
+}
+
+ConstraintManager &CheckerContext::getConstraintManager() {
+  return Eng.getConstraintManager();
+}
+
+StoreManager &CheckerContext::getStoreManager() {
+  return Eng.getStoreManager();
+}
+unsigned CheckerContext::blockCount() const {
+  return NB.getContext().blockCount();
+}
+
+ASTContext &CheckerContext::getASTContext() { return Eng.getContext(); }
+const ASTContext &CheckerContext::getASTContext() const {
+  return Eng.getContext();
+}
+
+const ProgramStateRef &CheckerContext::getState() const {
+  return Pred->getState();
+}
+
+const LangOptions &CheckerContext::getLangOpts() const {
+  return Eng.getContext().getLangOpts();
+}
+
+const LocationContext *CheckerContext::getLocationContext() const {
+  return Pred->getLocationContext();
+}
+
+const StackFrameContext *CheckerContext::getStackFrame() const {
+  return Pred->getStackFrame();
+}
+
+bool CheckerContext::inTopFrame() const {
+  return getLocationContext()->inTopFrame();
+}
+
+BugReporter &CheckerContext::getBugReporter() { return Eng.getBugReporter(); }
+
+const SourceManager &CheckerContext::getSourceManager() {
+  return getBugReporter().getSourceManager();
+}
+
+Preprocessor &CheckerContext::getPreprocessor() {
+  return getBugReporter().getPreprocessor();
+}
+
+SValBuilder &CheckerContext::getSValBuilder() { return Eng.getSValBuilder(); }
+
+SymbolManager &CheckerContext::getSymbolManager() {
+  return getSValBuilder().getSymbolManager();
+}
+
+ProgramStateManager &CheckerContext::getStateManager() {
+  return Eng.getStateManager();
+}
+
+AnalysisDeclContext *CheckerContext::getCurrentAnalysisDeclContext() const {
+  return Pred->getLocationContext()->getAnalysisDeclContext();
+}
+
+unsigned CheckerContext::getBlockID() const {
+  return NB.getContext().getBlock()->getBlockID();
+}
+
+const MemRegion *
+CheckerContext::getLocationRegionIfPostStore(const ExplodedNode *N) {
+  ProgramPoint L = N->getLocation();
+  if (std::optional<PostStore> PSL = L.getAs<PostStore>())
+    return reinterpret_cast<const MemRegion *>(PSL->getLocationValue());
+  return nullptr;
+}
+
+SVal CheckerContext::getSVal(const Stmt *S) const { return Pred->getSVal(S); }
+
+void CheckerContext::emitReport(std::unique_ptr<BugReport> R) {
+  Changed = true;
+  Eng.getBugReporter().emitReport(std::move(R));
+}
+
+LLVM_ATTRIBUTE_RETURNS_NONNULL
+const NoteTag *CheckerContext::getNoteTag(NoteTag::Callback &&Cb,
+                                          bool IsPrunable /*= false*/) {
+  return Eng.getDataTags().make<NoteTag>(std::move(Cb), IsPrunable);
+}
+
+ExplodedNode *
+CheckerContext::addTransitionImpl(ProgramStateRef State, bool MarkAsSink,
+                                  ExplodedNode *P /*= nullptr*/,
+                                  const ProgramPointTag *Tag /*= nullptr*/) {
+  // The analyzer may stop exploring if it sees a state it has previously
+  // visited ("cache out"). The early return here is a defensive check to
+  // prevent accidental caching out by checker API clients. Unless there is a
+  // tag or the client checker has requested that the generated node be
+  // marked as a sink, we assume that a client requesting a transition to a
+  // state that is the same as the predecessor state has made a mistake. We
+  // return the predecessor rather than cache out.
+  //
+  // TODO: We could potentially change the return to an assertion to alert
+  // clients to their mistake, but several checkers (including
+  // DereferenceChecker, CallAndMessageChecker, and DynamicTypePropagation)
+  // rely upon the defensive behavior and would need to be updated.
+  if (!State || (State == Pred->getState() && !Tag && !MarkAsSink))
+    return Pred;
+
+  Changed = true;
+  const ProgramPoint &LocalLoc = (Tag ? Location.withTag(Tag) : Location);
+  if (!P)
+    P = Pred;
+
+  ExplodedNode *node;
+  if (MarkAsSink)
+    node = NB.generateSink(LocalLoc, State, P);
+  else
+    node = NB.generateNode(LocalLoc, State, P);
+  return node;
+}
 
 const FunctionDecl *CheckerContext::getCalleeDecl(const CallExpr *CE) const {
   const FunctionDecl *D = CE->getDirectCallee();
