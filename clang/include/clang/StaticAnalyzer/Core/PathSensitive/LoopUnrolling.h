@@ -23,8 +23,17 @@
 #ifndef LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_LOOPUNROLLING_H
 #define LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_LOOPUNROLLING_H
 
-#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
+
+namespace clang {
+class ASTContext;
+class Stmt;
+} // namespace clang
+
+namespace clang::ento {
+class ExplodedNode;
+}
+
 namespace clang {
 namespace ento {
 
