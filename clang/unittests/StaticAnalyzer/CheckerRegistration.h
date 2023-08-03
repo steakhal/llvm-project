@@ -1,10 +1,13 @@
-//===- unittests/StaticAnalyzer/RegisterCustomCheckersTest.cpp ------------===//
+//===- CheckerRegistration.h ------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+
+#ifndef CLANG_UNITTESTS_STATICANALYZER_CHECKERREGISTRATION_H
+#define CLANG_UNITTESTS_STATICANALYZER_CHECKERREGISTRATION_H
 
 #include "clang/Analysis/PathDiagnostic.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -149,3 +152,5 @@ bool runCheckerOnCodeWithArgs(const std::string &Code,
 
 } // namespace ento
 } // namespace clang
+
+#endif // CLANG_UNITTESTS_STATICANALYZER_CHECKERREGISTRATION_H
