@@ -16,7 +16,6 @@
 
 #include "clang/Analysis/AnalysisDeclContext.h"
 #include "clang/Analysis/PathDiagnostic.h"
-#include "clang/Lex/Preprocessor.h"
 #include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/PathDiagnosticConsumers.h"
@@ -122,30 +121,7 @@ public:
     return AnaCtxMgr.getContext(D);
   }
 
-  static bool isInCodeFile(SourceLocation SL, const SourceManager &SM) {
-    if (SM.isInMainFile(SL))
-      return true;
-
-    // Support the "unified sources" compilation method (eg. WebKit) that
-    // involves producing non-header files that include other non-header files.
-    // We should be included directly from a UnifiedSource* file
-    // and we shouldn't be a header - which is a very safe defensive check.
-    SourceLocation IL = SM.getIncludeLoc(SM.getFileID(SL));
-    if (!IL.isValid() || !SM.isInMainFile(IL))
-      return false;
-    // Should rather be "file name starts with", but the current .getFilename
-    // includes the full path.
-    if (SM.getFilename(IL).contains("UnifiedSource")) {
-      // It might be great to reuse FrontendOptions::getInputKindForExtension()
-      // but for now it doesn't discriminate between code and header files.
-      return llvm::StringSwitch<bool>(SM.getFilename(SL).rsplit('.').second)
-          .Cases("c", "m", "mm", "C", "cc", "cp", true)
-          .Cases("cpp", "CPP", "c++", "cxx", "cppm", true)
-          .Default(false);
-    }
-
-    return false;
-  }
+  static bool isInCodeFile(SourceLocation SL, const SourceManager &SM);
 
   bool isInCodeFile(SourceLocation SL) {
     const SourceManager &SM = getASTContext().getSourceManager();
