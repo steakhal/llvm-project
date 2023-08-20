@@ -800,54 +800,7 @@ DefinedOrUnknownSVal MemRegionManager::getStaticSize(const MemRegion *MR,
       return UnknownVal();
 
     QualType Ty = cast<TypedValueRegion>(SR)->getDesugaredValueType(Ctx);
-    const DefinedOrUnknownSVal Size = getElementExtent(Ty, SVB);
-
-    // We currently don't model flexible array members (FAMs), which are:
-    //  - int array[]; of IncompleteArrayType
-    //  - int array[0]; of ConstantArrayType with size 0
-    //  - int array[1]; of ConstantArrayType with size 1
-    // https://gcc.gnu.org/onlinedocs/gcc/Zero-Length.html
-    const auto isFlexibleArrayMemberCandidate =
-        [this](const ArrayType *AT) -> bool {
-      if (!AT)
-        return false;
-
-      auto IsIncompleteArray = [](const ArrayType *AT) {
-        return isa<IncompleteArrayType>(AT);
-      };
-      auto IsArrayOfZero = [](const ArrayType *AT) {
-        const auto *CAT = dyn_cast<ConstantArrayType>(AT);
-        return CAT && CAT->getSize() == 0;
-      };
-      auto IsArrayOfOne = [](const ArrayType *AT) {
-        const auto *CAT = dyn_cast<ConstantArrayType>(AT);
-        return CAT && CAT->getSize() == 1;
-      };
-
-      using FAMKind = LangOptions::StrictFlexArraysLevelKind;
-      const FAMKind StrictFlexArraysLevel =
-          Ctx.getLangOpts().getStrictFlexArraysLevel();
-
-      // "Default": Any trailing array member is a FAM.
-      // Since we cannot tell at this point if this array is a trailing member
-      // or not, let's just do the same as for "OneZeroOrIncomplete".
-      if (StrictFlexArraysLevel == FAMKind::Default)
-        return IsArrayOfOne(AT) || IsArrayOfZero(AT) || IsIncompleteArray(AT);
-
-      if (StrictFlexArraysLevel == FAMKind::OneZeroOrIncomplete)
-        return IsArrayOfOne(AT) || IsArrayOfZero(AT) || IsIncompleteArray(AT);
-
-      if (StrictFlexArraysLevel == FAMKind::ZeroOrIncomplete)
-        return IsArrayOfZero(AT) || IsIncompleteArray(AT);
-
-      assert(StrictFlexArraysLevel == FAMKind::IncompleteOnly);
-      return IsIncompleteArray(AT);
-    };
-
-    if (isFlexibleArrayMemberCandidate(Ctx.getAsArrayType(Ty)))
-      return UnknownVal();
-
-    return Size;
+    return getElementExtent(Ty, SVB);
   }
     // FIXME: The following are being used in 'SimpleSValBuilder' and in
     // 'ArrayBoundChecker::checkLocation' because there is no symbol to

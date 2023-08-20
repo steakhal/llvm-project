@@ -18,6 +18,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/SValBuilder.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SymbolManager.h"
+#include <optional>
 
 REGISTER_MAP_WITH_PROGRAMSTATE(DynamicExtentMap, const clang::ento::MemRegion *,
                                clang::ento::DefinedOrUnknownSVal)
@@ -25,12 +26,61 @@ REGISTER_MAP_WITH_PROGRAMSTATE(DynamicExtentMap, const clang::ento::MemRegion *,
 namespace clang {
 namespace ento {
 
+static bool isLastField(const FieldDecl *FD) {
+  RecordDecl::field_iterator FI(
+      DeclContext::decl_iterator(const_cast<FieldDecl *>(FD)));
+  return ++FI == FD->getParent()->field_end();
+}
+
+/// Check if the region refers to a field that is the last one
+/// transitively across parent records.
+static bool isLastField(const FieldRegion *FR) {
+  for (; FR; FR = dyn_cast<FieldRegion>(FR->getSuperRegion())) {
+    if (!isLastField(FR->getDecl()))
+      return false;
+  }
+  return true;
+}
+
+/// Calculate the extent of the FAM based on the extent of the parent region.
+static std::optional<DefinedOrUnknownSVal>
+getDynamicExtentOfFlexibleArrayMembers(ProgramStateRef State,
+                                       const MemRegion *MR, SValBuilder &SVB) {
+  const auto *FR = dyn_cast<FieldRegion>(MR);
+
+  if (!FR || !isa<ArrayType>(FR->getValueType()) || !isLastField(FR))
+    return std::nullopt;
+
+  RegionOffset RelPos = FR->getAsOffset();
+  if (!RelPos.isValid() || RelPos.hasSymbolicOffset())
+    return std::nullopt;
+
+  // Check if we have an associated extent with this base region.
+  const auto *BaseExtent = State->get<DynamicExtentMap>(RelPos.getRegion());
+  if (!BaseExtent)
+    return std::nullopt;
+
+  QualType IndexTy = SVB.getArrayIndexType();
+  int64_t OffsetInBits = RelPos.getOffset();
+  uint64_t CharBits = SVB.getContext().getCharWidth();
+  assert(OffsetInBits % CharBits == 0);
+  DefinedSVal OffsetInBytes = SVB.makeIntVal(OffsetInBits / CharBits, IndexTy);
+  SVal FAMExtent =
+      SVB.evalBinOp(State, BO_Sub, *BaseExtent, OffsetInBytes, IndexTy);
+  return FAMExtent.castAs<DefinedOrUnknownSVal>();
+}
+
 DefinedOrUnknownSVal getDynamicExtent(ProgramStateRef State,
                                       const MemRegion *MR, SValBuilder &SVB) {
   MR = MR->StripCasts();
 
-  if (const DefinedOrUnknownSVal *Size = State->get<DynamicExtentMap>(MR))
+  if (const DefinedOrUnknownSVal *Size = State->get<DynamicExtentMap>(MR)) {
     return *Size;
+  }
+
+  if (auto FAMSize = getDynamicExtentOfFlexibleArrayMembers(State, MR, SVB)) {
+    return *FAMSize;
+  }
 
   return MR->getMemRegionManager().getStaticSize(MR, SVB);
 }
