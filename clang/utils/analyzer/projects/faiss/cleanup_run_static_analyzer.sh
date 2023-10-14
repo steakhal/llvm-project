@@ -1,1 +1,1 @@
-make clean
+rm -rf ./build

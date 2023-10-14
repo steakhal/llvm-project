@@ -72,6 +72,9 @@ from typing import Dict, IO, List, NamedTuple, Optional, TYPE_CHECKING, Tuple
 ###############################################################################
 
 
+def listdir_nohidden(path):
+    return glob.glob(os.path.join(path, '*'))
+
 class StreamToLogger:
     def __init__(self, logger: logging.Logger, log_level: int = logging.INFO):
         self.logger = logger
@@ -606,7 +609,10 @@ class ProjectTester:
 
         # If the we don't already have the cached source, run the project's
         # download script to download it.
+        # or not listdir_nohidden(cached_source)
         if not os.path.exists(cached_source):
+            self.vout(f"  CachedSource does not exist: {cached_source}, downloading it...\n")
+            shutil.rmtree(cached_source, ignore_errors=True)
             self._download(directory, build_log_file)
             if not os.path.exists(cached_source):
                 stderr(f"Error: '{cached_source}' not found after download.\n")

@@ -183,6 +183,7 @@ def docker_run(args, command, docker_args=""):
     try:
         return call(
             "docker run --rm --name satest "
+            "-u {uid}:{gid} "
             "-v {llvm}:/llvm-project "
             "-v {build}:/build "
             "-v {clang}:/analyzer "
@@ -190,6 +191,8 @@ def docker_run(args, command, docker_args=""):
             "-v {projects}:/projects "
             "{docker_args} "
             "satest-image:latest {command}".format(
+                uid=os.getuid(),
+                gid=os.getgid(),
                 llvm=args.llvm_project_dir,
                 build=args.build_dir,
                 clang=args.clang_dir,

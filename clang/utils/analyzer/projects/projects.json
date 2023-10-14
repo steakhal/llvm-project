@@ -4,7 +4,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/jarro2783/cxxopts.git",
-    "commit": "794c975",
+    "commit": "c8c932f891a559a099198ec4a1fccf6110d6463a",
     "size": "tiny"
   },
   {
@@ -12,7 +12,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/erincatto/box2d.git",
-    "commit": "1025f9a",
+    "commit": "411acc32eb6d4f2e96fc70ddbdf01fe5f9b16230",
     "size": "small"
   },
   {
@@ -20,7 +20,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/codeplea/tinyexpr.git",
-    "commit": "ffb0d41",
+    "commit": "74804b8c5d296aad0866bbde6c27e2bc1d85e5f2",
     "size": "tiny"
   },
   {
@@ -28,7 +28,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/symengine/symengine.git",
-    "commit": "4f669d59",
+    "commit": "6da98cf4527802c8c98ddc696dfd2999765cda1b",
     "size": "small"
   },
   {
@@ -36,7 +36,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/nsf/termbox.git",
-    "commit": "0df1355",
+    "commit": "a04f34c11494a1dbfb6286fc95470dea4086c520",
     "size": "tiny"
   },
   {
@@ -44,7 +44,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/jakogut/tinyvm.git",
-    "commit": "10c25d8",
+    "commit": "10c25d83e442caf0c1fc4b0ab29a91b3805d72ec",
     "size": "tiny"
   },
   {
@@ -52,7 +52,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/msteinbeck/tinyspline.git",
-    "commit": "f8b1ab7",
+    "commit": "18b5a930cda18ccd39eb11dd981beae166350529",
     "size": "tiny"
   },
   {
@@ -60,7 +60,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/oatpp/oatpp.git",
-    "commit": "d3e60fb",
+    "commit": "432464285a40a59edd3565518645efb27f9c6882",
     "size": "small"
   },
   {
@@ -68,7 +68,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/andrewrk/libsoundio.git",
-    "commit": "b810bf2",
+    "commit": "49a1f78b50eb0f5a49d096786a95a93874a2592a",
     "size": "tiny"
   },
   {
@@ -76,7 +76,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/facebook/zstd.git",
-    "commit": "2af4e073",
+    "commit": "7b762364cb470fd45b0ad9e6a6a2daca7663d774",
     "size": "small"
   },
   {
@@ -84,7 +84,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/simbody/simbody.git",
-    "commit": "5cf513d",
+    "commit": "462b2a6dbb8794db2922d72f52b29b488a178ebc",
     "size": "big"
   },
   {
@@ -92,7 +92,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/cwida/duckdb.git",
-    "commit": "d098c9f",
+    "commit": "946c60a259c9666bfbbc9ad0609247824df73cb6",
     "size": "big"
   },
   {
@@ -100,7 +100,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/an-tao/drogon.git",
-    "commit": "fd2a612",
+    "commit": "fd7af8110fa7f1ddb5d993582166de70cf2a7439",
     "size": "small"
   },
   {
@@ -108,7 +108,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/fmtlib/fmt.git",
-    "commit": "5e7c70e",
+    "commit": "44f3d8a77cd7e05e9da92d68635abdb4da626e9e",
     "size": "small"
   },
   {
@@ -116,7 +116,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/google/re2.git",
-    "commit": "2b25567",
+    "commit": "26f7d889e1f7e75e95e65490086538edf9f5275c",
     "size": "small"
   },
   {
@@ -124,7 +124,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/danmar/cppcheck.git",
-    "commit": "5fa3d53",
+    "commit": "a3ff6d53c48c822c461d8235a567b4d6ebcec987",
     "size": "small"
   },
   {
@@ -132,7 +132,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/harfbuzz/harfbuzz.git",
-    "commit": "f8d345e",
+    "commit": "c8c97864e8c810068123ef62947be13675df54c2",
     "size": "small"
   },
   {
@@ -140,7 +140,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/capnproto/capnproto.git",
-    "commit": "8be1c9f",
+    "commit": "11b35064d52cb8a21b5640742081ce5c01e76623",
     "size": "small"
   },
   {
@@ -148,7 +148,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/tmux/tmux.git",
-    "commit": "a5f99e1",
+    "commit": "b77778072052c14d1450d2eb89542f2493121f84",
     "size": "big"
   },
   {
@@ -156,7 +156,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/facebookresearch/faiss.git",
-    "commit": "9e5d5b7",
+    "commit": "3888f9bb11046f8ab3ddbd9abea22f20ba77f130",
     "size": "small"
   }
 ]

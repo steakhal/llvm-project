@@ -27,12 +27,22 @@ def wait():
 
 
 def parse_arguments() -> Tuple[argparse.Namespace, List[str]]:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "-h", "--help", action="store_true", help="show this help message"
+    )
     parser.add_argument("--wait", action="store_true")
     parser.add_argument("--build-llvm", action="store_true")
     parser.add_argument("--build-llvm-only", action="store_true")
     parser.add_argument("-D", action="append", default=[])
-    return parser.parse_known_args()
+    settings, rest = parser.parse_known_args()
+
+    # If asked for help, print the help of this script and also forward the help flag to the subcommand.
+    if settings.help:
+        parser.print_help()
+        rest.append("--help")
+
+    return (settings, rest)
 
 
 def build_llvm(cmake_options):

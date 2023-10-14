@@ -169,6 +169,7 @@ void ExplodedGraph::collectNode(ExplodedNode *node) {
 void ExplodedGraph::reclaimRecentlyAllocatedNodes() {
   if (ChangedNodes.empty())
     return;
+  assert(false);
 
   // Only periodically reclaim nodes so that we can build up a set of
   // nodes that meet the reclamation criteria.  Freshly created nodes
