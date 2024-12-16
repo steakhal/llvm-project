@@ -37,6 +37,7 @@ add_clang_library(clangStaticAnalyzerCheckers
   DereferenceChecker.cpp
   DirectIvarAssignment.cpp
   DivZeroChecker.cpp
+  DynamicTypeAnalysis.cpp
   DynamicTypePropagation.cpp
   DynamicTypeChecker.cpp
   EnumCastOutOfRangeChecker.cpp

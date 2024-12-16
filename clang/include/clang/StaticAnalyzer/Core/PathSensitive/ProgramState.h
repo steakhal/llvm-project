@@ -14,6 +14,7 @@
 #define LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_PROGRAMSTATE_H
 
 #include "clang/Basic/LLVM.h"
+#include "clang/StaticAnalyzer/Checkers/DynamicType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ConstraintManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/DynamicTypeInfo.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/Environment.h"
@@ -506,6 +507,8 @@ private:
   std::unique_ptr<StoreManager>        StoreMgr;
   std::unique_ptr<ConstraintManager>   ConstraintMgr;
 
+  std::unique_ptr<DynamicTypeAnalysis> DynTypeAnalysis;
+
   ProgramState::GenericDataMap::Factory     GDMFactory;
 
   typedef llvm::DenseMap<void*,std::pair<void*,void (*)(void*)> > GDMContextsTy;
@@ -578,6 +581,8 @@ public:
     return *ConstraintMgr;
   }
   ExprEngine &getOwningEngine() { return *Eng; }
+
+  DynamicTypeAnalysis &getDynamicTypeAnalysis() { return *DynTypeAnalysis; }
 
   ProgramStateRef
   removeDeadBindingsFromEnvironmentAndStore(ProgramStateRef St,

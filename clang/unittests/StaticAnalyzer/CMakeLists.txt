@@ -6,6 +6,7 @@ add_clang_unittest(StaticAnalysisTests
   CallDescriptionTest.cpp
   CallEventTest.cpp
   ConflictingEvalCallsTest.cpp
+  DynamicTypeAnalysisTest.cpp
   ExprEngineVisitTest.cpp
   FalsePositiveRefutationBRVisitorTest.cpp
   IsCLibraryFunctionTest.cpp
