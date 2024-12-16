@@ -707,6 +707,10 @@ public:
                        const CallEvent &Call,
                        const EvalCallOptions &CallOpts = {});
 
+  bool tryMultiVirtualDispatch(NodeBuilder &Bldr, ExplodedNode *Pred,
+                               const CallEvent &Call, ProgramStateRef State,
+                               const EvalCallOptions &CallOpts);
+
   /// Find location of the object that is being constructed by a given
   /// constructor. This should ideally always succeed but due to not being
   /// fully implemented it sometimes indicates that it failed via its

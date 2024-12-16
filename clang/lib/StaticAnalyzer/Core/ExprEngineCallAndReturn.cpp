@@ -16,6 +16,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/Analysis/Analyses/LiveVariables.h"
 #include "clang/Analysis/ConstructionContext.h"
+#include "clang/StaticAnalyzer/Checkers/DynamicType.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/DynamicExtent.h"
@@ -1215,6 +1216,35 @@ static bool isTrivialObjectAssignment(const CallEvent &Call) {
   return MD->isTrivial();
 }
 
+/// Split the execution for all possible overriders of the current virtual fn.
+/// Returns true if we handled the virtual function, false otherwise.
+bool ExprEngine::tryMultiVirtualDispatch(NodeBuilder &Bldr, ExplodedNode *Pred,
+                                         const CallEvent &Call,
+                                         ProgramStateRef State,
+                                         const EvalCallOptions &CallOpts) {
+  const auto *InstCall = dyn_cast<CXXInstanceCall>(&Call);
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call.getDecl());
+  if (!InstCall || !M || !M->isVirtual())
+    return false;
+
+  static SimpleProgramPointTag Tag("ExprEngine", "Multi virtual dispatch");
+  assert(Bldr.getResults().size() == 1);
+  ExplodedNode *NewN =
+      Bldr.generateNode(Call.getProgramPoint(true, &Tag), State, Pred);
+
+  auto Res = getOverriders(*InstCall);
+  for (auto const *D : Res) {
+    if (const auto *Def = D->getDefinition()) {
+      if (shouldInlineCall(Call, Def, Pred, CallOpts)) {
+        ctuBifurcate(Call, Def, Bldr, NewN, State);
+      }
+    }
+  }
+
+  conservativeEvalCall(Call, Bldr, NewN, State);
+  return true;
+}
+
 void ExprEngine::defaultEvalCall(NodeBuilder &Bldr, ExplodedNode *Pred,
                                  const CallEvent &CallTemplate,
                                  const EvalCallOptions &CallOpts) {
@@ -1241,10 +1271,15 @@ void ExprEngine::defaultEvalCall(NodeBuilder &Bldr, ExplodedNode *Pred,
     RuntimeDefinition RD = Call->getRuntimeDefinition();
     Call->setForeign(RD.isForeign());
     const Decl *D = RD.getDecl();
+    AnalyzerOptions &Options = getAnalysisManager().options;
+
+    if (Options.getIPAMode() == IPAK_DynamicDispatchBifurcate &&
+        tryMultiVirtualDispatch(Bldr, Pred, *Call, State, CallOpts)) {
+      return;
+    }
+
     if (shouldInlineCall(*Call, D, Pred, CallOpts)) {
       if (RD.mayHaveOtherDefinitions()) {
-        AnalyzerOptions &Options = getAnalysisManager().options;
-
         // Explore with and without inlining the call.
         if (Options.getIPAMode() == IPAK_DynamicDispatchBifurcate) {
           BifurcateCall(RD.getDispatchRegion(), *Call, D, Bldr, Pred);
