@@ -35,6 +35,7 @@
 
 #include "ctu-hdr.h"
 
+template <class T> void clang_analyzer_dump(T);
 void clang_analyzer_eval(int);
 
 int f(int);
@@ -134,10 +135,10 @@ void test_virtual_functions(mycls* obj) {
                                                // newctu-warning@-1{{UNKNOWN}} stu
                                                // oldctu-warning@-2{{TRUE}}
   // We cannot decide about the dynamic type.
-  clang_analyzer_eval(obj->fvcl(1) == 8);      // newctu-warning{{TRUE}} ctu
-                                               // newctu-warning@-1{{UNKNOWN}} ctu, stu
-                                               // oldctu-warning@-2{{TRUE}}
-                                               // oldctu-warning@-3{{UNKNOWN}}
+  clang_analyzer_dump(obj->fvcl(1));
+  // newctu-warning@-1 {{8 S32b}} oldctu-warning@-1 {{8 S32b}} (Dynamic type assumed to "mycls")
+  // newctu-warning@-2 {{9 S32b}} oldctu-warning@-2 {{9 S32b}} (Dynamic type assumed to "derived")
+  // newctu-warning@-3 {{conj_}}  oldctu-warning@-3 {{conj_}} conservarive evaluation
 }
 
 class TestAnonUnionUSR {
