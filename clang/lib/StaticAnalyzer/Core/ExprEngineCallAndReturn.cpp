@@ -1221,10 +1221,11 @@ static bool isTrivialObjectAssignment(const CallEvent &Call) {
 bool ExprEngine::tryMultiVirtualDispatch(NodeBuilder &Bldr, ExplodedNode *Pred,
                                          const CallEvent &Call,
                                          ProgramStateRef State,
-                                         const EvalCallOptions &CallOpts) {
+                                         const EvalCallOptions &CallOpts,
+                                         const RuntimeDefinition &RD) {
   const auto *InstCall = dyn_cast<CXXInstanceCall>(&Call);
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call.getDecl());
-  if (!InstCall || !M || !M->isVirtual())
+  if (!InstCall || !M || !M->isVirtual() || !RD.mayHaveOtherDefinitions())
     return false;
 
   static SimpleProgramPointTag Tag("ExprEngine", "Multi virtual dispatch");
@@ -1274,7 +1275,7 @@ void ExprEngine::defaultEvalCall(NodeBuilder &Bldr, ExplodedNode *Pred,
     AnalyzerOptions &Options = getAnalysisManager().options;
 
     if (Options.getIPAMode() == IPAK_DynamicDispatchBifurcate &&
-        tryMultiVirtualDispatch(Bldr, Pred, *Call, State, CallOpts)) {
+        tryMultiVirtualDispatch(Bldr, Pred, *Call, State, CallOpts, RD)) {
       return;
     }
 
