@@ -204,6 +204,13 @@ const ParamVarRegion
   return PVR;
 }
 
+bool CallEvent::isArgumentConstructedDirectly(unsigned Index) const {
+  // This assumes that the object was not yet removed from the state.
+  return ExprEngine::getObjectUnderConstruction(
+             getState(), {getOriginExpr(), Index}, getLocationContext())
+      .has_value();
+}
+
 /// Returns true if a type is a pointer-to-const or reference-to-const
 /// with no further indirection.
 static bool isPointerToConst(QualType Ty) {
@@ -962,6 +969,11 @@ CXXInheritedConstructorCall::getInheritingStackFrame() const {
   while (isa<CXXInheritedCtorInitExpr>(SFC->getCallSite()))
     SFC = SFC->getParent()->getStackFrame();
   return SFC;
+}
+
+SVal CXXAllocatorCall::getObjectUnderConstruction() const {
+  return *ExprEngine::getObjectUnderConstruction(getState(), getOriginExpr(),
+                                                 getLocationContext());
 }
 
 SVal CXXDestructorCall::getCXXThisVal() const {

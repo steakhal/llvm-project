@@ -14,10 +14,17 @@
 #ifndef LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_SMARTPTR_H
 #define LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_SMARTPTR_H
 
-#include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
 
 namespace clang {
+class CXXRecordDecl;
+class Expr;
+
 namespace ento {
+class BugType;
+class CallEvent;
+class MemRegion;
+
 namespace smartptr {
 
 /// Returns true if the event call is on smart pointer.
