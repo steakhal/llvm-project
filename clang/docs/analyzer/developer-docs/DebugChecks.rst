@@ -337,6 +337,27 @@ ExprInspection checks
          clang_analyzer_value(u); // expected-warning {{32u:42}}
     }
 
+- ``clang_analyzer_sinkIfSValIs(argument of any type, const char *regex)``
+
+  This function is used to check if the SVal of the argument matches the regex.
+  If the SVal matches the regex, the function will issue a warning with the
+  message "Path sunk" then sink those execution paths.
+  This is particularly useful when checking the result of a function that may
+  or may not be inlined.
+
+  Example usage::
+
+    void conditionally_sink_paths(int x) {
+      // Let's pretend we split the path in various ways.
+      if (x == 10 || x == 20) {}
+
+      // If we want to get rid of the execution paths where the value of "x" matches the regex "^conj".
+      clang_analyzer_sinkIfSValIs(x, "^conj"); // expected-warning {{Path sunk}}
+
+      // We should be left with only two paths here: x == 10 and x == 20.
+      clang_analyzer_dump(x); // expected-warning {{10}} expected-warning {{20}}
+    }
+
 Statistics
 ==========
 

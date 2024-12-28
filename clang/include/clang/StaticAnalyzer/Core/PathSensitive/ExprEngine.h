@@ -25,7 +25,6 @@
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporterVisitors.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CoreEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/FunctionSummary.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
@@ -710,8 +709,7 @@ public:
 
   bool tryMultiVirtualDispatch(NodeBuilder &Bldr, ExplodedNode *Pred,
                                const CallEvent &Call, ProgramStateRef State,
-                               const EvalCallOptions &CallOpts,
-                               const RuntimeDefinition &RD);
+                               const EvalCallOptions &CallOpts);
 
   /// Find location of the object that is being constructed by a given
   /// constructor. This should ideally always succeed but due to not being

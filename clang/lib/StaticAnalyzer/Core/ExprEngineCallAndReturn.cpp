@@ -20,7 +20,9 @@
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/DynamicExtent.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/DynamicType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/Casting.h"
@@ -1216,33 +1218,101 @@ static bool isTrivialObjectAssignment(const CallEvent &Call) {
   return MD->isTrivial();
 }
 
+static QualType getPtrToClass(const CXXRecordDecl *R) {
+  ASTContext &Ctx = R->getASTContext();
+  return Ctx.getPointerType(Ctx.getRecordType(R));
+}
+
+static ProgramStateRef
+trySetRecordTypeAsDynamicType(ProgramStateRef State, const CXXRecordDecl *R,
+                              const MemRegion *PtrToObj) {
+  if (!PtrToObj)
+    return State;
+
+  QualType PtrToClassTy = getPtrToClass(R);
+  DynamicTypeInfo Info{PtrToClassTy,
+                       /*CanBeSubClassed=*/R->isAbstract()};
+  return setDynamicTypeInfo(State, PtrToObj, Info);
+}
+
 /// Split the execution for all possible overriders of the current virtual fn.
 /// Returns true if we handled the virtual function, false otherwise.
 bool ExprEngine::tryMultiVirtualDispatch(NodeBuilder &Bldr, ExplodedNode *Pred,
                                          const CallEvent &Call,
                                          ProgramStateRef State,
-                                         const EvalCallOptions &CallOpts,
-                                         const RuntimeDefinition &RD) {
+                                         const EvalCallOptions &CallOpts) {
   const auto *InstCall = dyn_cast<CXXInstanceCall>(&Call);
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call.getDecl());
-  if (!InstCall || !M || !M->isVirtual() || !RD.mayHaveOtherDefinitions())
+  if (!InstCall || !M || !M->isVirtual())
     return false;
+
+  // C++11 [expr.call]p1: ...If the selected function is non-virtual, or if the
+  // id-expression in the class member access expression is a qualified-id,
+  // that function is called. Otherwise, its final overrider in the dynamic type
+  // of the object expression is called.
+  // In this case, just don't apply the multi virtual dispatch.
+  if (const auto *MemberCall = dyn_cast<CXXMemberCall>(&Call)) {
+    const auto *ME =
+        dyn_cast<MemberExpr>(MemberCall->getOriginExpr()->getCallee());
+    if (ME && ME->hasQualifier())
+      return false;
+  }
 
   static SimpleProgramPointTag Tag("ExprEngine", "Multi virtual dispatch");
   assert(Bldr.getResults().size() == 1);
   ExplodedNode *NewN =
       Bldr.generateNode(Call.getProgramPoint(true, &Tag), State, Pred);
 
+  const MemRegion *ThisPtr = InstCall->getCXXThisVal().getAsRegion();
+  DynamicTypeInfo OrigInfo =
+      ThisPtr ? getDynamicTypeInfo(State, ThisPtr) : DynamicTypeInfo{};
+
+  // If we already have precise dynamic type information of the object, just
+  // trust that.
+  if (OrigInfo.isValid() && !OrigInfo.canBeASubClass()) {
+    const CXXRecordDecl *RD = OrigInfo.getType()->getPointeeCXXRecordDecl();
+    M = M->getCorrespondingMethodInClass(RD, true);
+    assert(M && "Method should be found in the class");
+    const auto *Def = M ? M->getDefinition() : nullptr;
+    if (Def && shouldInlineCall(Call, Def, Pred, CallOpts)) {
+      ctuBifurcate(Call, Def, Bldr, NewN, State);
+      return true;
+    }
+    conservativeEvalCall(Call, Bldr, NewN, State);
+    return true;
+  }
+
+  ProgramStateRef ConservativeState = State;
   auto Res = getOverriders(*InstCall);
   for (auto const *D : Res) {
-    if (const auto *Def = D->getDefinition()) {
+    if (const auto *Def = cast_if_present<CXXMethodDecl>(D->getDefinition())) {
       if (shouldInlineCall(Call, Def, Pred, CallOpts)) {
-        ctuBifurcate(Call, Def, Bldr, NewN, State);
+        QualType FromTy = getPtrToClass(M->getParent());
+        QualType ToTy = getPtrToClass(Def->getParent());
+
+        // If we know already that the dynamic type is incompatible with this
+        // definition, skip it.
+        if (const auto *Info = getDynamicCastInfo(State, ThisPtr, FromTy, ToTy);
+            Info && Info->fails()) {
+          continue;
+        }
+
+        // Record the type constraint for the dynamic type, then fork an
+        // execution path for it.
+        ProgramStateRef S =
+            trySetRecordTypeAsDynamicType(State, Def->getParent(), ThisPtr);
+        ctuBifurcate(Call, Def, Bldr, NewN, S);
+
+        // Record for the conservative path that this dynamic type is
+        // incompatible - because we already have a type where that type if
+        // assumed to be the dynamic type.
+        ConservativeState = setDynamicTypeAndCastInfo(
+            ConservativeState, ThisPtr, FromTy, ToTy, /*IsCastSucceeds=*/false);
       }
     }
   }
 
-  conservativeEvalCall(Call, Bldr, NewN, State);
+  conservativeEvalCall(Call, Bldr, NewN, ConservativeState);
   return true;
 }
 
@@ -1275,7 +1345,7 @@ void ExprEngine::defaultEvalCall(NodeBuilder &Bldr, ExplodedNode *Pred,
     AnalyzerOptions &Options = getAnalysisManager().options;
 
     if (Options.getIPAMode() == IPAK_DynamicDispatchBifurcate &&
-        tryMultiVirtualDispatch(Bldr, Pred, *Call, State, CallOpts, RD)) {
+        tryMultiVirtualDispatch(Bldr, Pred, *Call, State, CallOpts)) {
       return;
     }
 
