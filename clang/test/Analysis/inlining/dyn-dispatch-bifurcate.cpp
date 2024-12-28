@@ -33,6 +33,8 @@ namespace ReinterpretDisruptsDynamicTypeInfo {
   void test(Parent *a) {
     Child *b = reinterpret_cast<Child *>(a);
     if (!b) return;
-    clang_analyzer_eval(b->foo() == 42); // expected-warning{{UNKNOWN}}
+    clang_analyzer_eval(b->foo() == 42);
+    // expected-warning@-1 {{UNKNOWN}}
+    // expected-warning@-2 {{TRUE}} We simluate a path where the dynamic type is "Child".
   }
 }

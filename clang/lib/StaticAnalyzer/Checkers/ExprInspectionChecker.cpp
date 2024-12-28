@@ -16,6 +16,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/DynamicExtent.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/Regex.h"
 #include "llvm/Support/ScopedPrinter.h"
 #include <optional>
 
@@ -53,6 +54,7 @@ class ExprInspectionChecker
   void analyzerDenote(const CallExpr *CE, CheckerContext &C) const;
   void analyzerExpress(const CallExpr *CE, CheckerContext &C) const;
   void analyzerIsTainted(const CallExpr *CE, CheckerContext &C) const;
+  void analyzerSinkIfSValIs(const CallExpr *CE, CheckerContext &C) const;
 
   typedef void (ExprInspectionChecker::*FnCheck)(const CallExpr *,
                                                  CheckerContext &C) const;
@@ -121,6 +123,8 @@ bool ExprInspectionChecker::evalCall(const CallEvent &Call,
                 &ExprInspectionChecker::analyzerExpress)
           .StartsWith("clang_analyzer_isTainted",
                       &ExprInspectionChecker::analyzerIsTainted)
+          .Case("clang_analyzer_sinkIfSValIs",
+                &ExprInspectionChecker::analyzerSinkIfSValIs)
           .Default(nullptr);
 
   if (!Handler)
@@ -553,6 +557,33 @@ void ExprInspectionChecker::analyzerIsTainted(const CallExpr *CE,
   const bool IsTainted =
       taint::isTainted(C.getState(), CE->getArg(0), C.getLocationContext());
   reportBug(IsTainted ? "YES" : "NO", C);
+}
+
+void ExprInspectionChecker::analyzerSinkIfSValIs(const CallExpr *CE,
+                                                 CheckerContext &C) const {
+  if (CE->getNumArgs() != 2) {
+    reportBug("clang_analyzer_sinkIfSValIs() requires exactly two arguments",
+              C);
+    return;
+  }
+
+  const MemRegion *R = C.getSVal(CE->getArg(1)).getAsRegion();
+  const auto *StrRegion =
+      R ? dyn_cast<StringRegion>(R->getBaseRegion()) : nullptr;
+  if (!StrRegion) {
+    reportBug("clang_analyzer_sinkIfSValIs() requires the second argument to "
+              "be a StringRegion",
+              C);
+    return;
+  }
+
+  std::string Str;
+  llvm::raw_string_ostream OS(Str);
+  OS << C.getSVal(CE->getArg(0));
+  llvm::Regex Pattern(StrRegion->getStringLiteral()->getString());
+  if (Pattern.match(Str)) {
+    reportBug("Path sunk", C.getBugReporter(), C.generateErrorNode());
+  }
 }
 
 void ento::registerExprInspectionChecker(CheckerManager &Mgr) {
