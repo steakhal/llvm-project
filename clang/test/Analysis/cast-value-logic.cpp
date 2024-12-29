@@ -10,6 +10,7 @@ void clang_analyzer_eval(bool);
 
 namespace clang {
 struct Shape {
+  virtual ~Shape() = 0;
   template <typename T>
   const T *castAs() const;
 
@@ -23,7 +24,7 @@ class Rectangle : public Shape {};
 class Hexagon : public Shape {};
 class Circle : public Shape {
 public:
-  ~Circle();
+  ~Circle() override;
 };
 class SuspiciouslySpecificCircle : public Circle {};
 } // namespace clang
