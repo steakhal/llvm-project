@@ -37,10 +37,10 @@ protected:
   void recordPotentialRootClass(const CXXRecordDecl *Class);
   bool VisitCXXRecordDecl(CXXRecordDecl *Class) override;
 
-  bool HandleTopLevelDecl(DeclGroupRef DG) override;
-  void HandleInterestingDecl(DeclGroupRef DG) override {
-    HandleTopLevelDecl(DG); // Handle decls of pch the same way.
-  }
+  // bool HandleTopLevelDecl(DeclGroupRef DG) override;
+  // void HandleInterestingDecl(DeclGroupRef DG) override {
+  //   HandleTopLevelDecl(DG); // Handle decls of pch the same way.
+  // }
 
   ClassSet RootClasses;
   ClassSet HandledClasses;
@@ -83,14 +83,14 @@ bool RootClassesCollector::VisitCXXRecordDecl(CXXRecordDecl *Class) {
   return true;
 }
 
-bool RootClassesCollector::HandleTopLevelDecl(DeclGroupRef DG) {
-  for (Decl *D : DG) {
-    if (auto *R = dyn_cast<CXXRecordDecl>(D)) {
-      TraverseDecl(R);
-    }
-  }
-  return true; // Continue parsing.
-}
+// bool RootClassesCollector::HandleTopLevelDecl(DeclGroupRef DG) {
+//   for (Decl *D : DG) {
+//     if (auto *R = dyn_cast<CXXRecordDecl>(D)) {
+//       TraverseDecl(R);
+//     }
+//   }
+//   return true; // Continue parsing.
+// }
 
 static void collectPotentialOverrides(PotentialOverridersMapping &Mapping,
                                       const CXXRecordDecl *Class) {
@@ -128,6 +128,7 @@ class DynamicTypeAnalysisImpl final : public DynamicTypeAnalysis,
                                       public RootClassesCollector {
 public:
   void HandleTranslationUnit(ASTContext &Ctx) override {
+    TraverseAST(Ctx);
     HandledClasses.clear(); // We no longer need this - the traversal is done.
     DirectlyOverriddenByMap = calculateDirectOverriderMapping(RootClasses);
   }
