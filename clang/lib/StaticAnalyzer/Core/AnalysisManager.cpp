@@ -11,6 +11,10 @@
 using namespace clang;
 using namespace ento;
 
+namespace clang::ento {
+class DynamicTypeAnalysis;
+} // namespace clang::ento
+
 void AnalysisManager::anchor() { }
 
 AnalysisManager::AnalysisManager(ASTContext &ASTCtx, Preprocessor &PP,
@@ -19,6 +23,7 @@ AnalysisManager::AnalysisManager(ASTContext &ASTCtx, Preprocessor &PP,
                                  ConstraintManagerCreator constraintmgr,
                                  CheckerManager *checkerMgr,
                                  AnalyzerOptions &Options,
+                                 DynamicTypeAnalysis &DyTyAnalysis,
                                  CodeInjector *injector)
     : AnaCtxMgr(
           ASTCtx, Options.UnoptimizedCFG,
@@ -41,7 +46,7 @@ AnalysisManager::AnalysisManager(ASTContext &ASTCtx, Preprocessor &PP,
       Ctx(ASTCtx), PP(PP), LangOpts(ASTCtx.getLangOpts()),
       PathConsumers(PDC), CreateStoreMgr(storemgr),
       CreateConstraintMgr(constraintmgr), CheckerMgr(checkerMgr),
-      options(Options) {
+      DyTyAnalysis(DyTyAnalysis), options(Options) {
   AnaCtxMgr.getCFGBuildOptions().setAllAlwaysAdd();
   AnaCtxMgr.getCFGBuildOptions().OmitImplicitValueInitializers = true;
   AnaCtxMgr.getCFGBuildOptions().AddCXXDefaultInitExprInAggregates =

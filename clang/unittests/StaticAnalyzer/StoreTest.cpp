@@ -8,6 +8,7 @@
 
 #include "Reusables.h"
 
+#include "clang/StaticAnalyzer/Checkers/DynamicType.h"
 #include "clang/Tooling/Tooling.h"
 #include "gtest/gtest.h"
 
@@ -17,7 +18,8 @@ namespace {
 
 class StoreTestConsumer : public ExprEngineConsumer {
 public:
-  StoreTestConsumer(CompilerInstance &C) : ExprEngineConsumer(C) {}
+  StoreTestConsumer(CompilerInstance &C, DynamicTypeAnalysis &DyTyAnalysis)
+      : ExprEngineConsumer(C, DyTyAnalysis) {}
 
   bool HandleTopLevelDecl(DeclGroupRef DG) override {
     for (const auto *D : DG)
@@ -27,14 +29,6 @@ public:
 
 private:
   virtual void performTest(const Decl *D) = 0;
-};
-
-template <class ConsumerTy> class TestAction : public ASTFrontendAction {
-public:
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler,
-                                                 StringRef File) override {
-    return std::make_unique<ConsumerTy>(Compiler);
-  }
 };
 
 // Test that we can put a value into an int-type variable and load it
@@ -103,7 +97,7 @@ public:
 
 TEST(Store, VariableBind) {
   EXPECT_TRUE(tooling::runToolOnCode(
-      std::make_unique<TestAction<VariableBindConsumer>>(),
+      std::make_unique<GenericTestAction<VariableBindConsumer>>(),
       "void foo() { int x0, y0, z0, x1, y1; }"));
 }
 
@@ -146,7 +140,7 @@ public:
 
 TEST(Store, LiteralCompound) {
   EXPECT_TRUE(tooling::runToolOnCode(
-      std::make_unique<TestAction<LiteralCompoundConsumer>>(),
+      std::make_unique<GenericTestAction<LiteralCompoundConsumer>>(),
       "void foo() { int *test = (int[]){ 1, 2, 3 }; }", "input.c"));
 }
 

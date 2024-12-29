@@ -27,6 +27,7 @@ class CodeInjector;
 
 namespace ento {
   class CheckerManager;
+  class DynamicTypeAnalysis;
 
 class AnalysisManager : public BugReporterData {
   virtual void anchor();
@@ -42,6 +43,7 @@ class AnalysisManager : public BugReporterData {
   ConstraintManagerCreator CreateConstraintMgr;
 
   CheckerManager *CheckerMgr;
+  DynamicTypeAnalysis &DyTyAnalysis;
 
 public:
   AnalyzerOptions &options;
@@ -51,6 +53,7 @@ public:
                   StoreManagerCreator storemgr,
                   ConstraintManagerCreator constraintmgr,
                   CheckerManager *checkerMgr, AnalyzerOptions &Options,
+                  DynamicTypeAnalysis &DyTyAnalysis,
                   CodeInjector *injector = nullptr);
 
   ~AnalysisManager() override;
@@ -78,6 +81,8 @@ public:
   }
 
   CheckerManager *getCheckerManager() const { return CheckerMgr; }
+
+  DynamicTypeAnalysis &getDynamicTypeAnalysis() const { return DyTyAnalysis; }
 
   ASTContext &getASTContext() override {
     return Ctx;

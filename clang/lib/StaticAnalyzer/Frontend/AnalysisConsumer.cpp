@@ -48,6 +48,10 @@
 using namespace clang;
 using namespace ento;
 
+namespace clang::ento {
+class DynamicTypeAnalysis;
+} // namespace clang::ento
+
 #define DEBUG_TYPE "AnalysisConsumer"
 
 STATISTIC(NumFunctionTopLevel, "The # of functions at top level.");
@@ -90,6 +94,7 @@ public:
   AnalyzerOptions &Opts;
   ArrayRef<std::string> Plugins;
   CodeInjector *Injector;
+  DynamicTypeAnalysis &DyTyAnalysis;
   cross_tu::CrossTranslationUnitContext CTU;
 
   /// Stores the declarations from the local translation unit.
@@ -122,10 +127,10 @@ public:
 
   AnalysisConsumer(CompilerInstance &CI, const std::string &outdir,
                    AnalyzerOptions &opts, ArrayRef<std::string> plugins,
-                   CodeInjector *injector)
+                   CodeInjector *injector, DynamicTypeAnalysis &DyTyAnalysis)
       : RecVisitorMode(0), RecVisitorBR(nullptr), Ctx(nullptr),
-        PP(CI.getPreprocessor()), OutDir(outdir), Opts(opts),
-        Plugins(plugins), Injector(injector), CTU(CI),
+        PP(CI.getPreprocessor()), OutDir(outdir), Opts(opts), Plugins(plugins),
+        Injector(injector), DyTyAnalysis(DyTyAnalysis), CTU(CI),
         MacroExpansions(CI.getLangOpts()) {
     DigestAnalyzerOptions();
     if (Opts.AnalyzerDisplayProgress || Opts.PrintStats ||
@@ -228,9 +233,9 @@ public:
     checkerMgr = std::make_unique<CheckerManager>(*Ctx, Opts, PP, Plugins,
                                                   CheckerRegistrationFns);
 
-    Mgr = std::make_unique<AnalysisManager>(*Ctx, PP, PathConsumers,
-                                            CreateStoreMgr, CreateConstraintMgr,
-                                            checkerMgr.get(), Opts, Injector);
+    Mgr = std::make_unique<AnalysisManager>(
+        *Ctx, PP, PathConsumers, CreateStoreMgr, CreateConstraintMgr,
+        checkerMgr.get(), Opts, DyTyAnalysis, Injector);
   }
 
   /// Store the top level decls in the set to be processed later on.
@@ -755,7 +760,8 @@ void AnalysisConsumer::RunPathSensitiveChecks(Decl *D,
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<AnalysisASTConsumer>
-ento::CreateAnalysisConsumer(CompilerInstance &CI) {
+ento::CreateAnalysisConsumer(CompilerInstance &CI,
+                             DynamicTypeAnalysis &DyTyAnalysis) {
   // Disable the effects of '-Werror' when using the AnalysisConsumer.
   CI.getPreprocessor().getDiagnostics().setWarningsAsErrors(false);
 
@@ -765,5 +771,5 @@ ento::CreateAnalysisConsumer(CompilerInstance &CI) {
   return std::make_unique<AnalysisConsumer>(
       CI, CI.getFrontendOpts().OutputFile, analyzerOpts,
       CI.getFrontendOpts().Plugins,
-      hasModelPath ? new ModelInjector(CI) : nullptr);
+      hasModelPath ? new ModelInjector(CI) : nullptr, DyTyAnalysis);
 }

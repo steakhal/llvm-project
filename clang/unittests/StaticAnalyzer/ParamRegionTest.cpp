@@ -59,7 +59,7 @@ class ParamRegionTestConsumer : public ExprEngineConsumer {
   }
 
 public:
-  ParamRegionTestConsumer(CompilerInstance &C) : ExprEngineConsumer(C) {}
+  using ExprEngineConsumer::ExprEngineConsumer;
 
   bool HandleTopLevelDecl(DeclGroupRef DG) override {
     for (const auto *D : DG) {
@@ -69,13 +69,7 @@ public:
   }
 };
 
-class ParamRegionTestAction : public ASTFrontendAction {
-public:
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler,
-                                                 StringRef File) override {
-    return std::make_unique<ParamRegionTestConsumer>(Compiler);
-  }
-};
+using ParamRegionTestAction = GenericTestAction<ParamRegionTestConsumer>;
 
 TEST(ParamRegion, ParamRegionTest) {
   EXPECT_TRUE(

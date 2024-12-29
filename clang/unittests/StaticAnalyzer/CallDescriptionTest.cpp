@@ -11,6 +11,7 @@
 
 #include "clang/AST/ExprCXX.h"
 #include "clang/Analysis/PathDiagnostic.h"
+#include "clang/StaticAnalyzer/Checkers/DynamicType.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/CommonBugCategories.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallDescription.h"
@@ -109,8 +110,8 @@ class CallDescriptionConsumer : public ExprEngineConsumer {
 
 public:
   CallDescriptionConsumer(CompilerInstance &C,
-                          ResultMap &RM)
-      : ExprEngineConsumer(C), RM(RM) {}
+                          DynamicTypeAnalysis &DyTyAnalysis, ResultMap &RM)
+      : ExprEngineConsumer(C, DyTyAnalysis), RM(RM) {}
 
   bool HandleTopLevelDecl(DeclGroupRef DG) override {
     for (const auto *D : DG)
@@ -130,8 +131,11 @@ public:
 
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler,
                                                  StringRef File) override {
-    return std::make_unique<CallDescriptionConsumer<MatchedExprT>>(Compiler,
-                                                                   RM);
+    std::vector<std::unique_ptr<ASTConsumer>> Consumers;
+    DynamicTypeAnalysis &DyTyAnalysis = attachDynamicTypeAnalysis(Consumers);
+    Consumers.push_back(std::make_unique<CallDescriptionConsumer<MatchedExprT>>(
+        Compiler, DyTyAnalysis, RM));
+    return std::make_unique<MultiplexConsumer>(std::move(Consumers));
   }
 };
 

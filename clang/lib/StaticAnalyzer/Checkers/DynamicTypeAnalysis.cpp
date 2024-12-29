@@ -6,11 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DynamicRecursiveASTVisitor.h"
 #include "clang/StaticAnalyzer/Checkers/DynamicType.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "llvm/ADT/TinyPtrVector.h"
@@ -27,31 +29,29 @@ using PotentialOverridersMapping =
 using ClassToClassesMapping = llvm::DenseMap<const CXXRecordDecl *, ClassSet>;
 
 namespace {
-class RootClassesCollector : private DynamicRecursiveASTVisitor {
-public:
-  /// Gathers the polymorphic most derived classes of the TU.
-  static ClassSet collect(ASTContext &AST) {
-    RootClassesCollector Collector(AST);
-    return Collector.RootClasses;
-  }
-
-private:
-  explicit RootClassesCollector(ASTContext &AST);
+/// Gathers the polymorphic most derived classes of the TU.
+class RootClassesCollector : public ASTConsumer,
+                             public DynamicRecursiveASTVisitor {
+protected:
+  RootClassesCollector();
   void recordPotentialRootClass(const CXXRecordDecl *Class);
   bool VisitCXXRecordDecl(CXXRecordDecl *Class) override;
+
+  bool HandleTopLevelDecl(DeclGroupRef DG) override;
+  void HandleInterestingDecl(DeclGroupRef DG) override {
+    HandleTopLevelDecl(DG); // Handle decls of pch the same way.
+  }
 
   ClassSet RootClasses;
   ClassSet HandledClasses;
 };
 } // namespace
 
-RootClassesCollector::RootClassesCollector(ASTContext &AST) {
+RootClassesCollector::RootClassesCollector() {
   ShouldVisitTemplateInstantiations = true;
   ShouldWalkTypesOfTypeLocs = false;
   ShouldVisitImplicitCode = true;
   ShouldVisitLambdaBody = true;
-  TraverseAST(AST);
-  HandledClasses.clear();
 }
 
 void RootClassesCollector::recordPotentialRootClass(
@@ -81,6 +81,15 @@ bool RootClassesCollector::VisitCXXRecordDecl(CXXRecordDecl *Class) {
 
   recordPotentialRootClass(Class);
   return true;
+}
+
+bool RootClassesCollector::HandleTopLevelDecl(DeclGroupRef DG) {
+  for (Decl *D : DG) {
+    if (auto *R = dyn_cast<CXXRecordDecl>(D)) {
+      TraverseDecl(R);
+    }
+  }
+  return true; // Continue parsing.
 }
 
 static void collectPotentialOverrides(PotentialOverridersMapping &Mapping,
@@ -115,10 +124,11 @@ calculateDirectOverriderMapping(const ClassSet &RootClasses) {
 }
 
 namespace {
-class DynamicTypeAnalysisImpl : public DynamicTypeAnalysis {
+class DynamicTypeAnalysisImpl final : public DynamicTypeAnalysis,
+                                      public RootClassesCollector {
 public:
-  explicit DynamicTypeAnalysisImpl(ASTContext &Ctx) {
-    ClassSet RootClasses = RootClassesCollector::collect(Ctx);
+  void HandleTranslationUnit(ASTContext &Ctx) override {
+    HandledClasses.clear(); // We no longer need this - the traversal is done.
     DirectlyOverriddenByMap = calculateDirectOverriderMapping(RootClasses);
   }
 
@@ -138,7 +148,7 @@ static DynamicTypeAnalysisImpl &getAnalysis(DynamicTypeAnalysis &Impl) {
   return static_cast<DynamicTypeAnalysisImpl &>(Impl);
 }
 static DynamicTypeAnalysisImpl &getAnalysis(ProgramStateRef State) {
-  return getAnalysis(State->getStateManager().getDynamicTypeAnalysis());
+  return getAnalysis(State->getAnalysisManager().getDynamicTypeAnalysis());
 }
 
 static MethodVec getOverridersImpl(DynamicTypeAnalysisImpl &Analysis,
@@ -198,9 +208,10 @@ void DynamicTypeAnalysisImpl::dump() const {
 /// Implement the public APIs
 /// -------------------------
 
-std::unique_ptr<DynamicTypeAnalysis>
-ento::createDynamicTypeAnalysis(ASTContext &Ctx) {
-  return std::make_unique<DynamicTypeAnalysisImpl>(Ctx);
+DynamicTypeAnalysis &ento::attachDynamicTypeAnalysis(
+    std::vector<std::unique_ptr<ASTConsumer>> &Consumers) {
+  Consumers.push_back(std::make_unique<DynamicTypeAnalysisImpl>());
+  return *static_cast<DynamicTypeAnalysisImpl *>(Consumers.back().get());
 }
 
 MethodVec ento::getOverriders(const CXXInstanceCall &Call) {

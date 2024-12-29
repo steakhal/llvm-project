@@ -8,6 +8,7 @@
 
 #include "clang/Analysis/PathDiagnostic.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/MultiplexConsumer.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
@@ -81,26 +82,31 @@ void addChecker(AnalysisASTConsumer &AnalysisConsumer,
   Fn1(AnalysisConsumer, AnOpts);
 }
 
-template <AddCheckerFn... Fns> class TestAction : public ASTFrontendAction {
+template <AddCheckerFn... Fns> class DiagTestAction : public ASTFrontendAction {
   llvm::raw_ostream &DiagsOutput;
   bool OnlyEmitWarnings;
 
 public:
-  TestAction(llvm::raw_ostream &DiagsOutput, bool OnlyEmitWarnings)
+  DiagTestAction(llvm::raw_ostream &DiagsOutput, bool OnlyEmitWarnings)
       : DiagsOutput(DiagsOutput), OnlyEmitWarnings(OnlyEmitWarnings) {}
 
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler,
                                                  StringRef File) override {
-    std::unique_ptr<AnalysisASTConsumer> AnalysisConsumer =
-        CreateAnalysisConsumer(Compiler);
-    if (OnlyEmitWarnings)
-      AnalysisConsumer->AddDiagnosticConsumer(
-          new OnlyWarningsDiagConsumer(DiagsOutput));
-    else
-      AnalysisConsumer->AddDiagnosticConsumer(
-          new PathDiagConsumer(DiagsOutput));
+    std::vector<std::unique_ptr<ASTConsumer>> Consumers;
+    DynamicTypeAnalysis &DyTyAnalysis = attachDynamicTypeAnalysis(Consumers);
+
+    auto AnalysisConsumer = CreateAnalysisConsumer(Compiler, DyTyAnalysis);
+
+    PathDiagnosticConsumer *DiagConsumer = [&]() -> PathDiagnosticConsumer * {
+      if (OnlyEmitWarnings)
+        return new OnlyWarningsDiagConsumer(DiagsOutput);
+      return new PathDiagConsumer(DiagsOutput);
+    }();
+    AnalysisConsumer->AddDiagnosticConsumer(DiagConsumer);
+
     addChecker<Fns...>(*AnalysisConsumer, Compiler.getAnalyzerOpts());
-    return std::move(AnalysisConsumer);
+    Consumers.push_back(std::move(AnalysisConsumer));
+    return std::make_unique<MultiplexConsumer>(std::move(Consumers));
   }
 };
 
@@ -119,7 +125,7 @@ bool runCheckerOnCode(const std::string &Code, std::string &Diags,
   const SmallVectorImpl<char> &FileName = getCurrentTestNameAsFileName();
   llvm::raw_string_ostream OS(Diags);
   return tooling::runToolOnCode(
-      std::make_unique<TestAction<Fns...>>(OS, OnlyEmitWarnings), Code,
+      std::make_unique<DiagTestAction<Fns...>>(OS, OnlyEmitWarnings), Code,
       FileName);
 }
 
@@ -136,8 +142,8 @@ bool runCheckerOnCodeWithArgs(const std::string &Code,
   const SmallVectorImpl<char> &FileName = getCurrentTestNameAsFileName();
   llvm::raw_string_ostream OS(Diags);
   return tooling::runToolOnCodeWithArgs(
-      std::make_unique<TestAction<Fns...>>(OS, OnlyEmitWarnings), Code, Args,
-      FileName);
+      std::make_unique<DiagTestAction<Fns...>>(OS, OnlyEmitWarnings), Code,
+      Args, FileName);
 }
 
 template <AddCheckerFn... Fns>

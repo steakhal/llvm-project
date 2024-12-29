@@ -40,8 +40,7 @@ class SuperRegionLivenessConsumer : public ExprEngineConsumer {
   }
 
 public:
-  SuperRegionLivenessConsumer(CompilerInstance &C) : ExprEngineConsumer(C) {}
-  ~SuperRegionLivenessConsumer() override {}
+  using ExprEngineConsumer::ExprEngineConsumer;
 
   bool HandleTopLevelDecl(DeclGroupRef DG) override {
     for (const auto *D : DG)
@@ -50,14 +49,8 @@ public:
   }
 };
 
-class SuperRegionLivenessAction : public ASTFrontendAction {
-public:
-  SuperRegionLivenessAction() {}
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler,
-                                                 StringRef File) override {
-    return std::make_unique<SuperRegionLivenessConsumer>(Compiler);
-  }
-};
+using SuperRegionLivenessAction =
+    GenericTestAction<SuperRegionLivenessConsumer>;
 
 // Test that marking s.x as live would also make s live.
 TEST(SymbolReaper, SuperRegionLiveness) {

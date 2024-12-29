@@ -12,6 +12,9 @@
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/CrossTU/CrossTranslationUnit.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/FrontendAction.h"
+#include "clang/Frontend/MultiplexConsumer.h"
+#include "clang/StaticAnalyzer/Checkers/DynamicType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
 #include "gtest/gtest.h"
 
@@ -56,15 +59,48 @@ protected:
   ExprEngine Eng;
 
 public:
-  ExprEngineConsumer(CompilerInstance &C)
+  ExprEngineConsumer(CompilerInstance &C, DynamicTypeAnalysis &DyTyAnalysis)
       : C(C),
         ChkMgr(C.getASTContext(), C.getAnalyzerOpts(), C.getPreprocessor()),
         CTU(C), Consumers(),
         AMgr(C.getASTContext(), C.getPreprocessor(), Consumers,
              CreateRegionStoreManager, CreateRangeConstraintManager, &ChkMgr,
-             C.getAnalyzerOpts()),
+             C.getAnalyzerOpts(), DyTyAnalysis),
         VisitedCallees(), FS(),
         Eng(CTU, AMgr, &VisitedCallees, &FS, ExprEngine::Inline_Regular) {}
+
+  DynamicTypeAnalysis &getDynamicTypeAnalysis() {
+    return Eng.getAnalysisManager().getDynamicTypeAnalysis();
+  }
+};
+
+template <class ConsumerTy> class GenericTestAction : public ASTFrontendAction {
+public:
+  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler,
+                                                 StringRef File) override {
+    std::vector<std::unique_ptr<ASTConsumer>> Consumers;
+    DynamicTypeAnalysis &DyTyAnalysis = attachDynamicTypeAnalysis(Consumers);
+    Consumers.push_back(std::make_unique<ConsumerTy>(Compiler, DyTyAnalysis));
+    return std::make_unique<MultiplexConsumer>(std::move(Consumers));
+  }
+};
+
+template <class ConsumerTy, class ArgsObject>
+class GenericTestActionWithArgs : public ASTFrontendAction {
+public:
+  explicit GenericTestActionWithArgs(ArgsObject Args) : Args(std::move(Args)) {}
+
+  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler,
+                                                 StringRef File) override {
+    std::vector<std::unique_ptr<ASTConsumer>> Consumers;
+    DynamicTypeAnalysis &DyTyAnalysis = attachDynamicTypeAnalysis(Consumers);
+    Consumers.push_back(
+        std::make_unique<ConsumerTy>(Compiler, DyTyAnalysis, std::move(Args)));
+    return std::make_unique<MultiplexConsumer>(std::move(Consumers));
+  }
+
+private:
+  ArgsObject Args;
 };
 
 struct ExpectedLocationTy {

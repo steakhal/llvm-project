@@ -24,8 +24,9 @@ namespace clang {
 class CompilerInstance;
 
 namespace ento {
-class PathDiagnosticConsumer;
 class CheckerRegistry;
+class DynamicTypeAnalysis;
+class PathDiagnosticConsumer;
 
 class AnalysisASTConsumer : public ASTConsumer {
 public:
@@ -49,7 +50,7 @@ public:
 /// analysis passes.  (The set of analyses run is controlled by command-line
 /// options.)
 std::unique_ptr<AnalysisASTConsumer>
-CreateAnalysisConsumer(CompilerInstance &CI);
+CreateAnalysisConsumer(CompilerInstance &CI, DynamicTypeAnalysis &DyTyAnalysis);
 
 } // namespace ento
 

@@ -126,6 +126,8 @@ union U {
 };
 extern const U extU;
 
+void clang_analyzer_numTimesReached();
+
 void test_virtual_functions(mycls* obj) {
   // The dynamic type is known.
   clang_analyzer_eval(mycls().fvcl(1) == 8);   // newctu-warning{{TRUE}} ctu
@@ -135,10 +137,23 @@ void test_virtual_functions(mycls* obj) {
                                                // newctu-warning@-1{{UNKNOWN}} stu
                                                // oldctu-warning@-2{{TRUE}}
   // We cannot decide about the dynamic type.
-  clang_analyzer_dump(obj->fvcl(1));
+  int fvcl_result1 = obj->fvcl(1);
+  clang_analyzer_dump(fvcl_result1);
   // newctu-warning@-1 {{8 S32b}} oldctu-warning@-1 {{8 S32b}} (Dynamic type assumed to "mycls")
   // newctu-warning@-2 {{9 S32b}} oldctu-warning@-2 {{9 S32b}} (Dynamic type assumed to "derived")
   // newctu-warning@-3 {{conj_}}  oldctu-warning@-3 {{conj_}} conservarive evaluation
+
+  // Call it again to see if the dynamic types are actually assumed and we not just blindly splitting for every possible overrider.
+  int fvcl_result2 = obj->fvcl(1);
+  clang_analyzer_dump(fvcl_result2);
+  // newctu-warning@-1 {{8 S32b}} oldctu-warning@-1 {{8 S32b}} (Dynamic type assumed to "mycls")
+  // newctu-warning@-2 {{9 S32b}} oldctu-warning@-2 {{9 S32b}} (Dynamic type assumed to "derived")
+  // newctu-warning@-3 {{conj_}}  oldctu-warning@-3 {{conj_}} conservarive evaluation
+
+  if (fvcl_result1 == 8) {
+    clang_analyzer_dump(fvcl_result2);
+    // newctu-warning@-1 {{8 S32b}} oldctu-warning@-1 {{8 S32b}} We knew this time that the dynamic type of "obj" was "mycls".
+  }
 }
 
 class TestAnonUnionUSR {
