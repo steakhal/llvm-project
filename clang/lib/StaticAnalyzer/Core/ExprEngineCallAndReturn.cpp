@@ -1292,6 +1292,8 @@ bool ExprEngine::tryMultiVirtualDispatch(NodeBuilder &Bldr, ExplodedNode *Pred,
 
         // If we know already that the dynamic type is incompatible with this
         // definition, skip it.
+        // FIXME: This isn't quite accurate what we do here.
+        // We should rather calculate the possible dynamic types according to the presented by "getDynamicCastInfo".
         if (const auto *Info = getDynamicCastInfo(State, ThisPtr, FromTy, ToTy);
             Info && Info->fails()) {
           continue;
