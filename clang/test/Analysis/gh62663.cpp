@@ -12,15 +12,17 @@ struct Base {
 
 struct Handler final : Base {
   void OnRecvCancel(int port) override {
-    // SECOND CALL to check taint
     clang_analyzer_isTainted(port);
+    // expected-warning@-1 {{YES}}
+    // expected-warning@-2 {{tainted}}
   }
 };
 
 struct AlternativeHandler final : Base {
   void OnRecvCancel(int port) override {
-    // SECOND CALL to check taint
     clang_analyzer_isTainted(port);
+    // expected-warning@-1 {{YES}}
+    // expected-warning@-2 {{tainted}}
   }
 };
 
@@ -38,15 +40,10 @@ struct Parent : Actor, PParent {
   bool RecvCancel(int port) {
     // FIRST CALL to check taint
     clang_analyzer_isTainted(port);
+    // expected-warning@-1 {{YES}}
+    // expected-warning@-2 {{tainted}}
 
-    // Statement 2A: With this statement (and 1A) things behave as we expect.  We report that
-    //               port is tainted on both the first and second calls.
-    // Handler* foo = (Handler*)m;
-
-    // Statement 2B: With this statement (and 1A) we only report that port is tainted on the first call
-    auto foo = m;
-
-    foo->OnRecvCancel(port);
+    m->OnRecvCancel(port); // expected-warning {{tainted}}
     return true;
   }
 };
@@ -56,21 +53,10 @@ struct Parent : Actor, PParent {
 auto PParent::OnMessageReceived() -> bool {
     int port;
     scanf("%i", &port);
+    clang_analyzer_isTainted(port);
+    // expected-warning@-1 {{YES}}
+    // expected-warning@-2 {{tainted}}
 
-    // Not needed, but yes it is Tainted.
-    //clang_analyzer_isTainted(port);
-
-    // Statement 1A: With this value (and statement 2A) we correctly report that port is tainted on
-    //               the first and second calls
     Parent* foo = conjure<Parent *>();
-
-    // Statement 1B: With this value (and statement 2A) we report that port is tainted only on the
-    //               first call.  Parent inherits from PParent.
-    //Parent* foo = static_cast<Parent*>(this);
-
-    // Statement 1C: With this value (and statement 2A) we do not report that port is tainted at all
-    //               I presume this is do to optimization as we're causing Undefined Behavior
-    //Parent* foo = nullptr;
-
-    return foo->RecvCancel(port);
+    return foo->RecvCancel(port); // expected-warning {{tainted}}
 }
