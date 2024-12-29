@@ -79,7 +79,6 @@ ProgramStateManager::ProgramStateManager(ASTContext &Ctx,
     CallEventMgr(new CallEventManager(alloc)), Alloc(alloc) {
   StoreMgr = (*CreateSMgr)(*this);
   ConstraintMgr = (*CreateCMgr)(*this, ExprEng);
-  DynTypeAnalysis = createDynamicTypeAnalysis(Ctx);
 }
 
 

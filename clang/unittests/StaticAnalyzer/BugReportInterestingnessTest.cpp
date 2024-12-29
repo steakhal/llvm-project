@@ -8,6 +8,7 @@
 
 #include "Reusables.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/MultiplexConsumer.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
@@ -17,6 +18,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Frontend/AnalysisConsumer.h"
 #include "clang/StaticAnalyzer/Frontend/CheckerRegistry.h"
+#include "clang/StaticAnalyzer/Frontend/FrontendActions.h"
 #include "clang/Tooling/Tooling.h"
 #include "gtest/gtest.h"
 #include <memory>
@@ -104,17 +106,18 @@ void InterestingnessTestChecker::handleBug(const CallEvent &Call,
 
 namespace {
 
-class TestAction : public ASTFrontendAction {
+class InterestingnessAnalysisAction : public AnalysisAction {
   ExpectedDiagsTy ExpectedDiags;
 
 public:
-  TestAction(ExpectedDiagsTy &&ExpectedDiags)
+  InterestingnessAnalysisAction(ExpectedDiagsTy &&ExpectedDiags)
       : ExpectedDiags(std::move(ExpectedDiags)) {}
 
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler,
                                                  StringRef File) override {
-    std::unique_ptr<AnalysisASTConsumer> AnalysisConsumer =
-        CreateAnalysisConsumer(Compiler);
+    std::vector<std::unique_ptr<ASTConsumer>> Consumers;
+    DynamicTypeAnalysis &DyTyAnalysis = attachDynamicTypeAnalysis(Consumers);
+    auto AnalysisConsumer = CreateAnalysisConsumer(Compiler, DyTyAnalysis);
     AnalysisConsumer->AddDiagnosticConsumer(
         std::make_unique<VerifyPathDiagnosticConsumer>(
             std::move(ExpectedDiags), Compiler.getSourceManager()));
@@ -124,7 +127,9 @@ public:
     });
     Compiler.getAnalyzerOpts().CheckersAndPackages = {
         {"test.Interestingness", true}};
-    return std::move(AnalysisConsumer);
+
+    Consumers.push_back(std::move(AnalysisConsumer));
+    return std::make_unique<MultiplexConsumer>(std::move(Consumers));
   }
 };
 
@@ -132,7 +137,7 @@ public:
 
 TEST(BugReportInterestingness, Symbols) {
   EXPECT_TRUE(tooling::runToolOnCode(
-      std::make_unique<TestAction>(ExpectedDiagsTy{
+      std::make_unique<InterestingnessAnalysisAction>(ExpectedDiagsTy{
           {{15, 7},
            "test bug",
            "test bug",

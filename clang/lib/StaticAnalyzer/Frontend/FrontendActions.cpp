@@ -8,6 +8,7 @@
 
 #include "clang/StaticAnalyzer/Frontend/FrontendActions.h"
 #include "clang/Frontend/MultiplexConsumer.h"
+#include "clang/StaticAnalyzer/Checkers/DynamicType.h"
 #include "clang/StaticAnalyzer/Frontend/AnalysisConsumer.h"
 #include "clang/StaticAnalyzer/Frontend/ModelConsumer.h"
 #include <memory>
@@ -18,8 +19,8 @@ using namespace ento;
 std::unique_ptr<ASTConsumer>
 AnalysisAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
   std::vector<std::unique_ptr<ASTConsumer>> Consumers;
-  Consumers.push_back(CreateAnalysisConsumer(CI));
-  // Consumers.push_back(CreateAnalysisConsumer(CI));
+  DynamicTypeAnalysis &DyTyAnalysis = attachDynamicTypeAnalysis(Consumers);
+  Consumers.push_back(CreateAnalysisConsumer(CI, DyTyAnalysis));
   return std::make_unique<MultiplexConsumer>(std::move(Consumers));
 }
 
