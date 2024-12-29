@@ -12,7 +12,7 @@
 // RUN:   -analyzer-config experimental-enable-naive-ctu-analysis=true \
 // RUN:   -analyzer-config ctu-dir=%t/ctudir \
 // RUN:   -analyzer-config ctu-phase1-inlining=none \
-// RUN:   -verify=newctu %s
+// RUN:   -verify=common,newctu %s
 
 // Simulate the behavior of the previous CTU implementation by inlining all
 // functions during the first phase. This way, the second phase is a noop.
@@ -22,7 +22,7 @@
 // RUN:   -analyzer-config experimental-enable-naive-ctu-analysis=true \
 // RUN:   -analyzer-config ctu-dir=%t/ctudir \
 // RUN:   -analyzer-config ctu-phase1-inlining=all \
-// RUN:   -verify=oldctu %s
+// RUN:   -verify=common,oldctu %s
 
 // RUN: %clang_analyze_cc1 -std=c++14 -triple x86_64-pc-linux-gnu \
 // RUN:   -analyzer-checker=core,debug.ExprInspection \
@@ -35,6 +35,8 @@
 
 #include "ctu-hdr.h"
 
+void clang_analyzer_warnIfReached();
+template <class T> void clang_analyzer_sinkIfSValIs(T value, const char *regex);
 template <class T> void clang_analyzer_dump(T);
 void clang_analyzer_eval(int);
 
@@ -126,8 +128,6 @@ union U {
 };
 extern const U extU;
 
-void clang_analyzer_numTimesReached();
-
 void test_virtual_functions(mycls* obj) {
   // The dynamic type is known.
   clang_analyzer_eval(mycls().fvcl(1) == 8);   // newctu-warning{{TRUE}} ctu
@@ -139,20 +139,28 @@ void test_virtual_functions(mycls* obj) {
   // We cannot decide about the dynamic type.
   int fvcl_result1 = obj->fvcl(1);
   clang_analyzer_dump(fvcl_result1);
-  // newctu-warning@-1 {{8 S32b}} oldctu-warning@-1 {{8 S32b}} (Dynamic type assumed to "mycls")
-  // newctu-warning@-2 {{9 S32b}} oldctu-warning@-2 {{9 S32b}} (Dynamic type assumed to "derived")
-  // newctu-warning@-3 {{conj_}}  oldctu-warning@-3 {{conj_}} conservarive evaluation
+  // common-warning@-1 {{8 S32b}} (Dynamic type assumed to "mycls")
+  // common-warning@-2 {{9 S32b}} (Dynamic type assumed to "derived")
+  // common-warning@-3 {{conj_}} conservative evaluation
+
+  // Sink the conservative eval path.
+  clang_analyzer_sinkIfSValIs(fvcl_result1, "^conj_");
+  // newctu-warning@-1 {{Path sunk}} oldctu-warning@-1 {{Path sunk}}
 
   // Call it again to see if the dynamic types are actually assumed and we not just blindly splitting for every possible overrider.
   int fvcl_result2 = obj->fvcl(1);
   clang_analyzer_dump(fvcl_result2);
-  // newctu-warning@-1 {{8 S32b}} oldctu-warning@-1 {{8 S32b}} (Dynamic type assumed to "mycls")
-  // newctu-warning@-2 {{9 S32b}} oldctu-warning@-2 {{9 S32b}} (Dynamic type assumed to "derived")
-  // newctu-warning@-3 {{conj_}}  oldctu-warning@-3 {{conj_}} conservarive evaluation
+  // common-warning@-1 {{8 S32b}} (Dynamic type assumed to "mycls")
+  // common-warning@-2 {{9 S32b}} (Dynamic type assumed to "derived")
+  // no conservative path here
 
-  if (fvcl_result1 == 8) {
-    clang_analyzer_dump(fvcl_result2);
-    // newctu-warning@-1 {{8 S32b}} oldctu-warning@-1 {{8 S32b}} We knew this time that the dynamic type of "obj" was "mycls".
+  switch (fvcl_result1) {
+    case 8:  clang_analyzer_dump(fvcl_result2); break;
+    // common-warning@-1 {{8 S32b}} (Dynamic type assumed to "mycls")
+    case 9:  clang_analyzer_dump(fvcl_result2); break;
+    // common-warning@-1 {{9 S32b}} (Dynamic type assumed to "derived")
+    default: clang_analyzer_warnIfReached();    break; // no-warning
+    // The conservative path was sunk, so we don't have a speculated path here.
   }
 }
 
