@@ -7,6 +7,7 @@
 void clang_analyzer_numTimesReached();
 void clang_analyzer_warnIfReached();
 void clang_analyzer_eval(bool);
+template <class T> void clang_analyzer_dump(T);
 
 namespace clang {
 struct Shape {
@@ -18,45 +19,185 @@ struct Shape {
   const T *getAs() const;
 
   virtual double area();
+  virtual const char *name() const { return "Shape"; }
 };
-class Triangle : public Shape {};
-class Rectangle : public Shape {};
-class Hexagon : public Shape {};
+class Triangle  : public Shape { public: const char *name() const override { return "Triangle";  } };
+class Rectangle : public Shape { public: const char *name() const override { return "Rectangle"; } };
+class Hexagon   : public Shape { public: const char *name() const override { return "Hexagon";   } };
 class Circle : public Shape {
 public:
   ~Circle() override;
+  const char *name() const override { return "Circle"; }
 };
-class SuspiciouslySpecificCircle : public Circle {};
+class SuspiciouslySpecificCircle : public Circle {
+public:
+  const char *name() const override { return "SuspiciouslySpecificCircle"; }
+};
 } // namespace clang
 
 using namespace llvm;
 using namespace clang;
 
 void test_regions_dyn_cast(const Shape *A, const Shape *B) {
-  if (dyn_cast<Circle>(A) && !dyn_cast<Circle>(B))
+  if (dyn_cast<Circle>(A) && !dyn_cast<Circle>(B)) {
     clang_analyzer_warnIfReached(); // expected-warning {{REACHABLE}}
+
+    // FIXME: We should honor that we "know" that "A" is a Circle.
+    // We should have only 3 paths here:
+    // Circle, SuspiciouslySpecificCircle and conservative eval.
+    clang_analyzer_dump(A->name());
+    // expected-warning@-1 {{Shape}}
+    // expected-warning@-2 {{Triangle}}
+    // expected-warning@-3 {{Rectangle}}
+    // expected-warning@-4 {{Hexagon}}
+    // expected-warning@-5 {{Circle}}
+    // expected-warning@-6 {{SuspiciouslySpecificCircle}}
+    // expected-warning@-7 {{conj_}}
+
+    // FIXME: We should honor that we "know" that "B" is NOT a Circle.
+    // Consequently, it's neither a SuspiciouslySpecificCircle.
+    // We should also know that "Shape" is abstract, so that should be also out.
+    // We should have only 4 paths here:
+    // Triangle, Rectangle, Hexagon and conservative eval.
+    clang_analyzer_dump(B->name());
+    // expected-warning@-1 {{Shape}}
+    // expected-warning@-2 {{Triangle}}
+    // expected-warning@-3 {{Rectangle}}
+    // expected-warning@-4 {{Hexagon}}
+    // expected-warning@-5 {{Circle}}
+    // expected-warning@-6 {{conj_}}
+  }
 }
 
 void test_regions_isa(const Shape *A, const Shape *B) {
-  if (isa<Circle>(A) && !isa<Circle>(B))
+  if (isa<Circle>(A) && !isa<Circle>(B)) {
     clang_analyzer_warnIfReached(); // expected-warning {{REACHABLE}}
+
+    // FIXME: We should honor that we "know" that "A" is a Circle.
+    // We should have only 3 paths here:
+    // Circle, SuspiciouslySpecificCircle and conservative eval.
+    clang_analyzer_dump(A->name());
+    // expected-warning@-1 {{Shape}}
+    // expected-warning@-2 {{Triangle}}
+    // expected-warning@-3 {{Rectangle}}
+    // expected-warning@-4 {{Hexagon}}
+    // expected-warning@-5 {{Circle}}
+    // expected-warning@-6 {{SuspiciouslySpecificCircle}}
+    // expected-warning@-7 {{conj_}}
+
+    // FIXME: We should honor that we "know" that "B" is NOT a Circle.
+    // Consequently, it's neither a SuspiciouslySpecificCircle.
+    // We should also know that "Shape" is abstract, so that should be also out.
+    // We should have only 4 paths here:
+    // Triangle, Rectangle, Hexagon and conservative eval.
+    clang_analyzer_dump(B->name());
+    // expected-warning@-1 {{Shape}}
+    // expected-warning@-2 {{Triangle}}
+    // expected-warning@-3 {{Rectangle}}
+    // expected-warning@-4 {{Hexagon}}
+    // expected-warning@-5 {{Circle}}
+    // expected-warning@-6 {{SuspiciouslySpecificCircle}}
+    // expected-warning@-7 {{conj_}}
+  }
 }
 
 void test_regions_isa_variadic(const Shape *A, const Shape *B) {
   if (isa<Triangle, Rectangle, Hexagon>(A) &&
-      !isa<Rectangle, Hexagon, Circle>(B))
+      !isa<Rectangle, Hexagon, Circle>(B)) {
     clang_analyzer_warnIfReached(); // expected-warning {{REACHABLE}}
+
+    // FIXME: We should honor that we "know" that "A" is either of the 3 Shapes.
+    clang_analyzer_dump(A->name());
+    // expected-warning@-1 {{Shape}}
+    // expected-warning@-2 {{Triangle}}
+    // expected-warning@-3 {{Rectangle}}
+    // expected-warning@-4 {{Hexagon}}
+    // expected-warning@-5 {{Circle}}
+    // expected-warning@-6 {{SuspiciouslySpecificCircle}}
+    // expected-warning@-7 {{conj_}}
+
+    // FIXME: We should honor that we "know" that "A" is neither of the 3 Shapes,
+    // nor the base class Shape (becuase that's abstract), nor SuspiciouslySpecificCircle.
+    // We should have only 2 paths here: Triangle and conservative eval.
+    clang_analyzer_dump(B->name());
+    // expected-warning@-1 {{Shape}}
+    // expected-warning@-2 {{Triangle}}
+    // expected-warning@-3 {{Rectangle}}
+    // expected-warning@-4 {{Hexagon}}
+    // expected-warning@-5 {{Circle}}
+    // expected-warning@-6 {{SuspiciouslySpecificCircle}}
+    // expected-warning@-7 {{conj_}}
+  }
 }
 
 void test_regions_isa_and_nonnull(const Shape *A, const Shape *B) {
-  if (isa_and_nonnull<Circle>(A) && !isa_and_nonnull<Circle>(B))
+  if (isa_and_nonnull<Circle>(A) && !isa_and_nonnull<Circle>(B)) {
     clang_analyzer_warnIfReached(); // expected-warning {{REACHABLE}}
+
+    // FIXME: We should honor that we "know" that "A" is a Circle.
+    // We should have only 3 paths here:
+    // Circle, SuspiciouslySpecificCircle and conservative eval.
+    clang_analyzer_dump(A->name());
+    // expected-warning@-1 {{Shape}}
+    // expected-warning@-2 {{Triangle}}
+    // expected-warning@-3 {{Rectangle}}
+    // expected-warning@-4 {{Hexagon}}
+    // expected-warning@-5 {{Circle}}
+    // expected-warning@-6 {{SuspiciouslySpecificCircle}}
+    // expected-warning@-7 {{conj_}}
+
+    // FIXME: We should have a path where "B" is NULL, and dereference a NULL pointer.
+    // FIXME: We should honor that we "know" that "B" is NOT a Circle.
+    // Consequently, it's neither a SuspiciouslySpecificCircle.
+    // We should also know that "Shape" is abstract, so that should be also out.
+    // We should have only 4 paths here:
+    // Triangle, Rectangle, Hexagon and conservative eval.
+    clang_analyzer_dump(B->name());
+    // expected-warning@-1 {{Shape}}
+    // expected-warning@-2 {{Triangle}}
+    // expected-warning@-3 {{Rectangle}}
+    // expected-warning@-4 {{Hexagon}}
+    // expected-warning@-5 {{Circle}}
+    // expected-warning@-6 {{SuspiciouslySpecificCircle}}
+    // expected-warning@-7 {{conj_}}
+  }
+
+  // FIXME: We should have a path where "A" is NULL, and dereference a NULL pointer.
+  A->name();
 }
 
 void test_regions_isa_and_nonnull_variadic(const Shape *A, const Shape *B) {
   if (isa_and_nonnull<Triangle, Rectangle, Hexagon>(A) &&
-      !isa_and_nonnull<Rectangle, Hexagon, Circle>(B))
+      !isa_and_nonnull<Rectangle, Hexagon, Circle>(B)) {
     clang_analyzer_warnIfReached(); // expected-warning {{REACHABLE}}
+
+
+    // FIXME: We should honor that we "know" that "A" is either of the 3 Shapes.
+    clang_analyzer_dump(A->name());
+    // expected-warning@-1 {{Shape}}
+    // expected-warning@-2 {{Triangle}}
+    // expected-warning@-3 {{Rectangle}}
+    // expected-warning@-4 {{Hexagon}}
+    // expected-warning@-5 {{Circle}}
+    // expected-warning@-6 {{SuspiciouslySpecificCircle}}
+    // expected-warning@-7 {{conj_}}
+
+    // FIXME: We should have a path where "B" is NULL, and dereference a NULL pointer.
+    // FIXME: We should honor that we "know" that "A" is neither of the 3 Shapes,
+    // nor the base class Shape (becuase that's abstract), nor SuspiciouslySpecificCircle.
+    // We should have only 2 paths here: Triangle and conservative eval.
+    clang_analyzer_dump(B->name());
+    // expected-warning@-1 {{Shape}}
+    // expected-warning@-2 {{Triangle}}
+    // expected-warning@-3 {{Rectangle}}
+    // expected-warning@-4 {{Hexagon}}
+    // expected-warning@-5 {{Circle}}
+    // expected-warning@-6 {{SuspiciouslySpecificCircle}}
+    // expected-warning@-7 {{conj_}}
+  }
+
+  // FIXME: We should have a path where "A" is NULL, and dereference a NULL pointer.
+  A->name();
 }
 
 namespace test_cast {
@@ -158,7 +299,8 @@ void evalLogic(const Shape *S) {
 } // namespace test_get_as
 
 namespace crashes {
-void test_non_reference_null_region_crash(Shape s) {
+// Take a non-abstract base by value, and cast it.
+void test_non_reference_null_region_crash(Triangle s) {
   cast<Circle>(s); // no-crash
 }
 
