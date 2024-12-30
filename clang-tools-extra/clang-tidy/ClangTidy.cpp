@@ -32,7 +32,7 @@
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/PreprocessorOptions.h"
 #include "clang/Rewrite/Frontend/FixItRewriter.h"
-#include "clang/Tooling/Core/Diagnostic.h"
+#include "clang/StaticAnalyzer/Checkers/DynamicType.h"
 #include "clang/Tooling/DiagnosticsYaml.h"
 #include "clang/Tooling/Refactoring.h"
 #include "clang/Tooling/Tooling.h"
@@ -472,8 +472,9 @@ ClangTidyASTConsumerFactory::createASTConsumer(
   if (!AnalyzerOptions.CheckersAndPackages.empty()) {
     setStaticAnalyzerCheckerOpts(Context.getOptions(), AnalyzerOptions);
     AnalyzerOptions.AnalysisDiagOpt = PD_NONE;
+    auto &DyTyAnalysis = ento::attachDynamicTypeAnalysis(Consumers);
     std::unique_ptr<ento::AnalysisASTConsumer> AnalysisConsumer =
-        ento::CreateAnalysisConsumer(Compiler);
+        ento::CreateAnalysisConsumer(Compiler, DyTyAnalysis);
     AnalysisConsumer->AddDiagnosticConsumer(
         std::make_unique<AnalyzerDiagnosticConsumer>(Context));
     Consumers.push_back(std::move(AnalysisConsumer));
