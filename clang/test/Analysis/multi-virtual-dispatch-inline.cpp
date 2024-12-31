@@ -68,3 +68,26 @@ void entry_point(const Op &op) {
 }
 
 } // namespace eval_example
+
+namespace calling_pure_methods {
+  struct Base {
+    virtual ~Base() = default;
+    virtual const char *baseFn() const = 0;
+  };
+  struct Derived1 : Base {
+    virtual const char *derived1Fn() const = 0;
+  };
+  struct Derived2 : Base {
+    const char *baseFn() const override { return "Derived2"; }
+  };
+  void entry_point(Derived1 *p) {
+    // Dynamic type is unknown for "p", because it's abstract, and we see no
+    // classes inheriting from it. But we know it can't be "Base" or "Derived2".
+    clang_analyzer_dump(p->baseFn());
+    // common-warning@-1 {{Derived2}} // FIXME: On a "Derived1" object we can never call a "Derived2" method - assuming we see the whole inheritance graph.
+    // common-warning@-2 {{conj_}}
+
+    clang_analyzer_dump(p->derived1Fn()); // no-crash
+    // common-warning@-1 {{conj_}}
+  }
+} // namespace calling_pure_methods
