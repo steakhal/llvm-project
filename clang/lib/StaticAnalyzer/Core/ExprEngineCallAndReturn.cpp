@@ -1272,7 +1272,15 @@ bool ExprEngine::tryMultiVirtualDispatch(NodeBuilder &Bldr, ExplodedNode *Pred,
   if (OrigInfo.isValid() && !OrigInfo.canBeASubClass()) {
     const CXXRecordDecl *RD = OrigInfo.getType()->getPointeeCXXRecordDecl();
     M = M->getCorrespondingMethodInClass(RD, true);
-    assert(M && "Method should be found in the class");
+    if (!M) {
+      // We should never get here, but because we don't calculate the dynamic
+      // types satisfying the already learned type constraints. The type
+      // constraints represent the facts we learned so far from calling
+      // speculatively devirtualized methods, effectively pinning the dynamic
+      // type to satisfy that overrider.
+
+      // assert(M && "Method should be found in the class");
+    }
     const auto *Def = M ? M->getDefinition() : nullptr;
     if (Def && shouldInlineCall(Call, Def, Pred, CallOpts)) {
       ctuBifurcate(Call, Def, Bldr, NewN, State);
