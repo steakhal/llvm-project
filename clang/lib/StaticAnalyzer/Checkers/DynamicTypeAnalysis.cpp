@@ -15,8 +15,10 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/Compiler.h"
+#include <functional>
 
 using namespace clang;
 using namespace ento;
@@ -190,6 +192,10 @@ static MethodVec getOverridersImpl(DynamicTypeAnalysisImpl &Analysis,
 
   // Fill the cache.
   llvm::append_range(CacheSlot->second, TransitiveOverriders);
+
+  // Ignore methods that are in a dependent context because they are effectively
+  // templates.
+  erase_if(CacheSlot->second, std::mem_fn(&CXXMethodDecl::isDependentContext));
   return CacheSlot->second;
 }
 

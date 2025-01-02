@@ -1291,8 +1291,9 @@ bool ExprEngine::tryMultiVirtualDispatch(NodeBuilder &Bldr, ExplodedNode *Pred,
   }
 
   ProgramStateRef ConservativeState = State;
-  auto Res = getOverriders(*InstCall);
-  for (auto const *D : Res) {
+  for (const CXXMethodDecl *D : getOverriders(*InstCall)) {
+    assert(!D->isDependentContext());
+
     if (const auto *Def = cast_if_present<CXXMethodDecl>(D->getDefinition())) {
       if (shouldInlineCall(Call, Def, Pred, CallOpts)) {
         QualType FromTy = getPtrToClass(M->getParent());
