@@ -2,7 +2,7 @@
 // DEFINE:   -analyzer-checker=core,debug.ExprInspection \
 // DEFINE:   -analyzer-config eagerly-assume=false
 
-// RUN: %{run_csa} -DPURE_VIRTUAL -verify=common,pure
+// RUN: %{run_csa} -DPURE_VIRTUAL -verify=common
 // RUN: %{run_csa} -UPURE_VIRTUAL -verify=common,ret-zero
 
 void clang_analyzer_warnIfReached();
@@ -91,3 +91,43 @@ namespace calling_pure_methods {
     // common-warning@-1 {{conj_}}
   }
 } // namespace calling_pure_methods
+
+namespace defined_in_dependent_context {
+struct Base {
+  virtual ~Base() = default;
+  virtual const char *name() const { return "Base"; }
+};
+template <typename T = int> struct not_instantiated_dependent_context {
+  struct NotActuallyDependent final : Base {
+    const char *name() const override { return "NotActuallyDependent"; }
+  };
+};
+void entry_point(Base *p) {
+  // The "NotActuallyDependent" class is a dependent context because it's declared inside a dependent context.
+  // However, it does not actually depend on the template parameter, because it doesn't use it.
+  // In theory, we could somehow inline the method here on one day.
+  clang_analyzer_dump(p->name());
+  // common-warning@-1 {{Base}}
+  // common-warning@-2 {{conj_}}
+}
+} // namespace defined_in_dependent_context
+
+namespace inherit_from_dependent_context {
+struct Base {
+  virtual ~Base() = default;
+  virtual const char *name() const { return "Base"; }
+};
+template <typename T = int> struct not_instantiated_dependent_context {
+  struct ReallyDependent final : Base, T {
+    const char *name() const override { return "ReallyDependent"; }
+  };
+};
+void entry_point(Base *p) {
+  // The "ReallyDependent" class is not instantiated.
+  // In the analyzer, we assume methods we inline have complete type and have a layout.
+  // Otherwise we would just crash, so we must ignore incomplete/dependent classes.
+  clang_analyzer_dump(p->name());
+  // common-warning@-1 {{Base}}
+  // common-warning@-2 {{conj_}}
+}
+} // namespace inherit_from_dependent_context
