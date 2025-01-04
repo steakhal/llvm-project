@@ -131,3 +131,27 @@ void entry_point(Base *p) {
   // common-warning@-2 {{conj_}}
 }
 } // namespace inherit_from_dependent_context
+
+namespace placement_new {
+using size_t = decltype(sizeof(int));
+struct Base {
+  virtual ~Base() = default;
+  virtual const char *name() const { return "Base"; }
+};
+struct Derived final : Base {
+  const char *name() const override { return "Derived"; }
+  void* operator new(size_t size, void* ptr) noexcept; // placement new operator
+};
+
+// We know the accurate dynamic type, so we have a single path.
+void entry_point() {
+  alignas(64) unsigned char stack[1000];
+  auto *p = new (stack) Derived();
+  clang_analyzer_dump(p->name()); // common-warning {{Derived}}
+
+  unsigned char *heap = new unsigned char[1000];
+  auto *q = new (heap) Derived();
+  clang_analyzer_dump(q->name()); // common-warning {{Derived}}
+  delete[] heap;
+}
+} // namespace placement_new
