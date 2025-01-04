@@ -1270,24 +1270,30 @@ bool ExprEngine::tryMultiVirtualDispatch(NodeBuilder &Bldr, ExplodedNode *Pred,
   // If we already have precise dynamic type information of the object, just
   // trust that.
   if (OrigInfo.isValid() && !OrigInfo.canBeASubClass()) {
-    const CXXRecordDecl *RD = OrigInfo.getType()->getPointeeCXXRecordDecl();
-    M = M->getCorrespondingMethodInClass(RD, true);
-    if (!M) {
-      // We should never get here, but because we don't calculate the dynamic
-      // types satisfying the already learned type constraints. The type
-      // constraints represent the facts we learned so far from calling
-      // speculatively devirtualized methods, effectively pinning the dynamic
-      // type to satisfy that overrider.
+    // Ideally, we should always have a record pointee, but for some reason we
+    // may not. E.g. `getDynamicTypeInfo` may return a QualType for
+    // TypedRegions, such as a CXXTempObjectRegion, in which case the type of
+    // the expression would end up here. Interestingly, we have a bug that we
+    // sometimes create a CXXTempObjectRegion of a void expression.
+    if (const auto *RD = OrigInfo.getType()->getPointeeCXXRecordDecl()) {
+      M = M->getCorrespondingMethodInClass(RD, true);
+      if (!M) {
+        // We should never get here, but because we don't calculate the dynamic
+        // types satisfying the already learned type constraints. The type
+        // constraints represent the facts we learned so far from calling
+        // speculatively devirtualized methods, effectively pinning the dynamic
+        // type to satisfy that overrider.
 
-      // assert(M && "Method should be found in the class");
-    }
-    const auto *Def = M ? M->getDefinition() : nullptr;
-    if (Def && shouldInlineCall(Call, Def, Pred, CallOpts)) {
-      ctuBifurcate(Call, Def, Bldr, NewN, State);
+        // assert(M && "Method should be found in the class");
+      }
+      const auto *Def = M ? M->getDefinition() : nullptr;
+      if (Def && shouldInlineCall(Call, Def, Pred, CallOpts)) {
+        ctuBifurcate(Call, Def, Bldr, NewN, State);
+        return true;
+      }
+      conservativeEvalCall(Call, Bldr, NewN, State);
       return true;
     }
-    conservativeEvalCall(Call, Bldr, NewN, State);
-    return true;
   }
 
   ProgramStateRef ConservativeState = State;

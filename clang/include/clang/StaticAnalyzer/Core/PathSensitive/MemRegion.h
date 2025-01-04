@@ -1243,6 +1243,8 @@ class CXXTempObjectRegion : public TypedValueRegion {
   CXXTempObjectRegion(Expr const *E, MemSpaceRegion const *sReg)
       : TypedValueRegion(sReg, CXXTempObjectRegionKind), Ex(E) {
     assert(E);
+    // It would be nice if we could assert this one day.
+    // assert(!E->getType()->isVoidType());
     assert(isa<StackLocalsSpaceRegion>(sReg));
   }
 
