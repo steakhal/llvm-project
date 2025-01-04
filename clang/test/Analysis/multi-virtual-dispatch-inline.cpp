@@ -1,4 +1,5 @@
 // DEFINE: %{run_csa} = %clang_analyze_cc1 %s \
+// DEFINE:   -triple x86_64-pc-linux-gnu \
 // DEFINE:   -analyzer-checker=core,debug.ExprInspection \
 // DEFINE:   -analyzer-config eagerly-assume=false
 
@@ -155,3 +156,15 @@ void entry_point() {
   delete[] heap;
 }
 } // namespace placement_new
+
+namespace reinterpret_cast_ptr_value {
+struct Base {
+  virtual ~Base() = default;
+  virtual const char *name() const { return "Base"; }
+};
+using uintptr_t = unsigned long;
+void entry_point(uintptr_t p1, uintptr_t p2) {
+  reinterpret_cast<Base*>(p1)->~Base();
+  delete reinterpret_cast<Base*>(p2); // no-crash
+}
+} // namespace reinterpret_cast_ptr_value
