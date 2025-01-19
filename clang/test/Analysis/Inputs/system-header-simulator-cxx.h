@@ -1235,6 +1235,9 @@ template<
     Key *val;
     iterator begin() const { return iterator(val); }
     iterator end() const { return iterator(val + 1); }
+
+    template<class K>
+    size_type count(const K& x) const;
 };
 
 template<

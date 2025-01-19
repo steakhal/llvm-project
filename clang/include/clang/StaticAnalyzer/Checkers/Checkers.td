@@ -764,6 +764,10 @@ def VirtualCallChecker : Checker<"VirtualCall">,
 
 let ParentPackage = CplusplusAlpha in {
 
+def RedundantLookupChecker : Checker<"RedundantLookupChecker">,
+  HelpText<"Looks for redundant lookups in C++ containers">,
+  Documentation<HasDocumentation>; // TODO: Add documentation.
+
 def ContainerModeling : Checker<"ContainerModeling">,
   HelpText<"Models C++ containers">,
   Documentation<NotDocumented>,
