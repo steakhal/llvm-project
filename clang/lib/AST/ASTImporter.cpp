@@ -1359,6 +1359,14 @@ ASTNodeImporter::VisitFunctionNoProtoType(const FunctionNoProtoType *T) {
 
 ExpectedType
 ASTNodeImporter::VisitFunctionProtoType(const FunctionProtoType *T) {
+  // hasReturnTypeDeclaredInside
+
+  llvm::errs() << "VisitFunctionProtoType:\n";
+  T->dump();
+  llvm::errs() << "Return type:\n";
+  T->getReturnType()->dump();
+  //assert(false);
+
   ExpectedType ToReturnTypeOrErr = import(T->getReturnType());
   if (!ToReturnTypeOrErr)
     return ToReturnTypeOrErr.takeError();
@@ -3752,6 +3760,13 @@ ASTNodeImporter::importExplicitSpecifier(Error &Err, ExplicitSpecifier ESpec) {
 }
 
 ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
+  // llvm::errs() << "ASTNodeImporter::VisitFunctionDecl  " <<
+  // D->getQualifiedNameAsString() << "\n";
+  static int counter = 0;
+  if (D->getQualifiedNameAsString() == StringRef("mozilla::UnderlyingValue")) {
+    ++counter;
+    assert(counter < 3 && "UnderlyingValue is imported multiple times");
+  }
 
   SmallVector<Decl *, 2> Redecls = getCanonicalForwardRedeclChain(D);
   auto RedeclIt = Redecls.begin();
@@ -3884,6 +3899,9 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
   // do the same with TypeSourceInfo.
   bool UsedDifferentProtoType = false;
   if (const auto *FromFPT = FromTy->getAs<FunctionProtoType>()) {
+    llvm::errs() << "FromTy was a FunctionProtoType\n";
+    FromFPT->dump();
+    D->dumpColor();
     QualType FromReturnTy = FromFPT->getReturnType();
     // Functions with auto return type may define a struct inside their body
     // and the return type could refer to that struct.
@@ -3891,6 +3909,7 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
     // To avoid an infinite recursion when importing, create the FunctionDecl
     // with a simplified return type.
     if (hasReturnTypeDeclaredInside(D)) {
+      llvm::errs() << "hasReturnTypeDeclaredInside, so using a dummy void type for FromReturnTy\n";
       FromReturnTy = Importer.getFromContext().VoidTy;
       UsedDifferentProtoType = true;
     }
@@ -3912,7 +3931,11 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
         FromTy, D->getBeginLoc());
   }
 
+  // Here
   Error Err = Error::success();
+  llvm::errs() << "wanna call import checked of FromTy:\n";
+  FromTy.dump();
+
   auto T = importChecked(Err, FromTy);
   auto TInfo = importChecked(Err, FromTSI);
   auto ToInnerLocStart = importChecked(Err, D->getInnerLocStart());
