@@ -1359,14 +1359,6 @@ ASTNodeImporter::VisitFunctionNoProtoType(const FunctionNoProtoType *T) {
 
 ExpectedType
 ASTNodeImporter::VisitFunctionProtoType(const FunctionProtoType *T) {
-  // hasReturnTypeDeclaredInside
-
-  llvm::errs() << "VisitFunctionProtoType:\n";
-  T->dump();
-  llvm::errs() << "Return type:\n";
-  T->getReturnType()->dump();
-  //assert(false);
-
   ExpectedType ToReturnTypeOrErr = import(T->getReturnType());
   if (!ToReturnTypeOrErr)
     return ToReturnTypeOrErr.takeError();
@@ -3594,7 +3586,7 @@ namespace {
 class IsTypeDeclaredInsideVisitor
     : public TypeVisitor<IsTypeDeclaredInsideVisitor, std::optional<bool>> {
 public:
-  IsTypeDeclaredInsideVisitor(const FunctionDecl *ParentDC)
+  IsTypeDeclaredInsideVisitor(const DeclContext *ParentDC)
       : ParentDC(ParentDC) {}
 
   bool CheckType(QualType T) {
@@ -3642,6 +3634,13 @@ public:
       return true;
 
     return {};
+  }
+
+  std::optional<bool> VisitFunctionProtoType(const FunctionProtoType *T) {
+    for (QualType Param : T->param_types())
+      if (CheckType(Param))
+        return true;
+    return CheckType(T->getReturnType());
   }
 
   std::optional<bool>
@@ -3762,11 +3761,12 @@ ASTNodeImporter::importExplicitSpecifier(Error &Err, ExplicitSpecifier ESpec) {
 ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
   // llvm::errs() << "ASTNodeImporter::VisitFunctionDecl  " <<
   // D->getQualifiedNameAsString() << "\n";
-  static int counter = 0;
-  if (D->getQualifiedNameAsString() == StringRef("mozilla::UnderlyingValue")) {
-    ++counter;
-    assert(counter < 3 && "UnderlyingValue is imported multiple times");
-  }
+  // static int counter = 0;
+  // if (D->getQualifiedNameAsString() == StringRef("mozilla::UnderlyingValue"))
+  // {
+  //   ++counter;
+  //   assert(counter < 3 && "UnderlyingValue is imported multiple times");
+  // }
 
   SmallVector<Decl *, 2> Redecls = getCanonicalForwardRedeclChain(D);
   auto RedeclIt = Redecls.begin();
@@ -3899,9 +3899,6 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
   // do the same with TypeSourceInfo.
   bool UsedDifferentProtoType = false;
   if (const auto *FromFPT = FromTy->getAs<FunctionProtoType>()) {
-    llvm::errs() << "FromTy was a FunctionProtoType\n";
-    FromFPT->dump();
-    D->dumpColor();
     QualType FromReturnTy = FromFPT->getReturnType();
     // Functions with auto return type may define a struct inside their body
     // and the return type could refer to that struct.
@@ -3909,7 +3906,6 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
     // To avoid an infinite recursion when importing, create the FunctionDecl
     // with a simplified return type.
     if (hasReturnTypeDeclaredInside(D)) {
-      llvm::errs() << "hasReturnTypeDeclaredInside, so using a dummy void type for FromReturnTy\n";
       FromReturnTy = Importer.getFromContext().VoidTy;
       UsedDifferentProtoType = true;
     }
@@ -3931,11 +3927,8 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
         FromTy, D->getBeginLoc());
   }
 
-  // Here
+  // This code is important.
   Error Err = Error::success();
-  llvm::errs() << "wanna call import checked of FromTy:\n";
-  FromTy.dump();
-
   auto T = importChecked(Err, FromTy);
   auto TInfo = importChecked(Err, FromTSI);
   auto ToInnerLocStart = importChecked(Err, D->getInnerLocStart());
@@ -7983,6 +7976,18 @@ ASTNodeImporter::ImportCastPath(CastExpr *CE) {
 }
 
 ExpectedStmt ASTNodeImporter::VisitImplicitCastExpr(ImplicitCastExpr *E) {
+  if (const auto *DRE = dyn_cast<DeclRefExpr>(E->getSubExpr())) {
+    if (const auto *FD = dyn_cast<FunctionDecl>(DRE->getDecl())) {
+      const DeclContext *DC = FD->isTemplateInstantiation()
+                                  ? FD->getPrimaryTemplate()->getDeclContext()
+                                  : FD;
+      IsTypeDeclaredInsideVisitor Visitor(DC);
+      if (Visitor.CheckType(E->getType())) {
+        return make_error<ASTImportError>(ASTImportError::UnsupportedConstruct);
+      }
+    }
+  }
+
   ExpectedType ToTypeOrErr = import(E->getType());
   if (!ToTypeOrErr)
     return ToTypeOrErr.takeError();
