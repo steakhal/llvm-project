@@ -236,6 +236,11 @@ New checks
 
   Finds redundant uses of the ``typename`` keyword.
 
+- New :doc:`performance-redundant-lookup
+  <clang-tidy/checks/performance/redundant-lookup>` check.
+
+  Detects redundant container lookups.
+
 New check aliases
 ^^^^^^^^^^^^^^^^^
 
