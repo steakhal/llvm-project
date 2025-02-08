@@ -10,6 +10,7 @@
 #define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_PERFORMANCE_REDUNDANTLOOKUPCHECK_H
 
 #include "../ClangTidyCheck.h"
+#include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
@@ -34,14 +35,36 @@ public:
     return LangOpts.CPlusPlus;
   }
 
+  struct LookupContext {
+    const FunctionDecl *Context;
+    unsigned Hash;
+  };
+
 private:
-  llvm::DenseMap<unsigned, llvm::SmallPtrSet<const CallExpr *, 2>>
+  llvm::DenseMap<LookupContext, llvm::SmallPtrSet<const CallExpr *, 2>>
       RegisteredLookups;
   const StringRef ContainerNameRegex;
   const std::vector<StringRef> LookupMethodNames;
-  const SourceManager *SM = nullptr;
+  ASTContext *Ctx = nullptr;
 };
 
 } // namespace clang::tidy::performance
+
+namespace llvm {
+template <>
+struct DenseMapInfo<
+    clang::tidy::performance::RedundantLookupCheck::LookupContext> {
+  using LookupContext =
+      clang::tidy::performance::RedundantLookupCheck::LookupContext;
+  static inline LookupContext getEmptyKey() { return {nullptr, ~0U}; }
+  static inline LookupContext getTombstoneKey() { return {nullptr, ~0U - 1}; }
+  static unsigned getHashValue(const LookupContext &Val) {
+    return Val.Hash * 37U;
+  }
+  static bool isEqual(const LookupContext &LHS, const LookupContext &RHS) {
+    return LHS.Hash == RHS.Hash;
+  }
+};
+} // namespace llvm
 
 #endif // LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_PERFORMANCE_REDUNDANTLOOKUPCHECK_H
