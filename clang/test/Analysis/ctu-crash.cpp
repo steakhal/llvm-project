@@ -4,19 +4,22 @@
 // RUN: %clang_cc1 -emit-pch -o %t/remote.ast %t/remote.cpp
 
 // RUN: %clang_cc1 -analyze \
-// RUN:   -analyzer-checker=core \
+// RUN:   -analyzer-checker=core,debug.ExprInspection \
 // RUN:   -analyzer-config experimental-enable-naive-ctu-analysis=true \
 // RUN:   -analyzer-config  display-ctu-progress=true \
 // RUN:   -analyzer-config ctu-dir=%t \
 // RUN:   -verify %t/entrypoint.cpp
 
 //--- entrypoint.cpp
+
+void clang_analyzer_dump(int);
 namespace mozilla {
-void remote();
+int remote(int x);
 } // namespace mozilla
 
 void entrypoint() {
-  mozilla::remote();
+  int res = mozilla::remote(12);
+  clang_analyzer_dump(res); // expected-warning {{13 S32b}}
 }
 
 //--- remote.cpp
@@ -29,10 +32,10 @@ template <typename Enum> auto UnderlyingValue(Enum v) {
   return static_cast<typename underlying_type<Enum>::type>(v);
 }
 
-enum class RootKind : char { Nothing };
+enum class RootKind : char { Nothing, Something };
 
-void remote() {
-  UnderlyingValue(RootKind::Nothing);
+int remote(int x) {
+  return x + UnderlyingValue(RootKind::Something);
 }
 } // namespace mozilla
 

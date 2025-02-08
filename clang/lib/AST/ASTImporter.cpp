@@ -1554,7 +1554,7 @@ ASTNodeImporter::VisitFunctionProtoType(const FunctionProtoType *T) {
   T->dump();
   llvm::errs() << "Return type:\n";
   T->getReturnType()->dump();
-  //assert(false);
+  // assert(false);
 
   ExpectedType ToReturnTypeOrErr = import(T->getReturnType());
   if (!ToReturnTypeOrErr)
@@ -3836,6 +3836,14 @@ public:
     return isAncestorDeclContextOf(ParentDC, T->getDecl());
   }
 
+  std::optional<bool> VisitElaboratedType(const ElaboratedType *T) {
+    if (NestedNameSpecifier *NNS = T->getQualifier())
+      if (const Type *T = NNS->getAsType())
+        if (CheckType(QualType(T, 0)))
+          return true;
+    return {};
+  }
+
   std::optional<bool> VisitPointerType(const PointerType *T) {
     return CheckType(T->getPointeeType());
   }
@@ -3847,7 +3855,9 @@ public:
   std::optional<bool> VisitTypedefType(const TypedefType *T) {
     const TypedefNameDecl *TD = T->getDecl();
     assert(TD);
-    return isAncestorDeclContextOf(ParentDC, TD);
+    if (isAncestorDeclContextOf(ParentDC, TD))
+      return true;
+    return {};
   }
 
   std::optional<bool> VisitUsingType(const UsingType *T) {
@@ -4123,7 +4133,8 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
     // To avoid an infinite recursion when importing, create the FunctionDecl
     // with a simplified return type.
     if (hasReturnTypeDeclaredInside(D)) {
-      llvm::errs() << "hasReturnTypeDeclaredInside, so using a dummy void type for FromReturnTy\n";
+      llvm::errs() << "hasReturnTypeDeclaredInside, so using a dummy void type "
+                      "for FromReturnTy\n";
       FromReturnTy = Importer.getFromContext().VoidTy;
       UsedDifferentProtoType = true;
     }
