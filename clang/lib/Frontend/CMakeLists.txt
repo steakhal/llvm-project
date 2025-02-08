@@ -10,6 +10,7 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_clang_library(clangFrontend
+  AnalysisExtension.cpp
   ASTConsumers.cpp
   ASTMerge.cpp
   ASTUnit.cpp

@@ -8258,6 +8258,10 @@ def fexperimental_max_bitint_width_EQ:
 
 let Visibility = [CC1Option] in {
 
+def analyze_module : Flag<["-"], "fanalyze-module">,
+  HelpText<"Attach the AnalysisModule to the clang module">,
+  MarshallingInfoFlag<AnalyzerOpts<"AnalyzeModule">>;
+
 def nostdsysteminc : Flag<["-"], "nostdsysteminc">,
   HelpText<"Disable standard system #include directories">,
   MarshallingInfoNegativeFlag<HeaderSearchOpts<"UseStandardSystemIncludes">>;

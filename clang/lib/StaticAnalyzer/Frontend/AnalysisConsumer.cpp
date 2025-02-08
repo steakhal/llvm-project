@@ -36,6 +36,7 @@
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
@@ -711,6 +712,8 @@ void AnalysisConsumer::HandleCode(Decl *D, AnalysisMode Mode,
 // Path-sensitive checking.
 //===----------------------------------------------------------------------===//
 
+extern llvm::SmallVector<const CXXRecordDecl *> Records;
+
 void AnalysisConsumer::RunPathSensitiveChecks(Decl *D,
                                               ExprEngine::InliningModes IMode,
                                               SetOfConstDecls *VisitedCallees) {
@@ -739,6 +742,14 @@ void AnalysisConsumer::RunPathSensitiveChecks(Decl *D,
     ExprEngineEndTime -= ExprEngineStartTime;
     DisplayTime(ExprEngineEndTime);
   }
+
+  llvm::errs() << "Had " << Records.size() << " loaded records:\n";
+  for (const CXXRecordDecl *R : Records) {
+    R->dump(llvm::errs(), /*Deserialize=*/false, ADOF_Default);
+    R->dumpColor();
+  }
+
+  D->getTranslationUnitDecl()->dumpColor();
 
   if (!Mgr->options.DumpExplodedGraphTo.empty())
     Eng.DumpGraph(Mgr->options.TrimGraph, Mgr->options.DumpExplodedGraphTo);

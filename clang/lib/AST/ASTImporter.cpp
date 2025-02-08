@@ -3753,7 +3753,8 @@ ASTNodeImporter::importExplicitSpecifier(Error &Err, ExplicitSpecifier ESpec) {
 }
 
 ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
-  //llvm::errs() << "ASTNodeImporter::VisitFunctionDecl  " << D->getQualifiedNameAsString() << "\n";
+  // llvm::errs() << "ASTNodeImporter::VisitFunctionDecl  " <<
+  // D->getQualifiedNameAsString() << "\n";
   static int counter = 0;
   if (D->getQualifiedNameAsString() == StringRef("mozilla::UnderlyingValue")) {
     ++counter;
