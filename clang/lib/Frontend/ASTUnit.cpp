@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Frontend/ASTUnit.h"
+#include "AnalysisExtension.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/CommentCommandTraits.h"
@@ -869,9 +870,24 @@ std::unique_ptr<ASTUnit> ASTUnit::LoadFromASTFile(
     disableValid = DisableValidationForModuleKind::All;
   AST->Reader = llvm::makeIntrusiveRefCnt<ASTReader>(
       PP, *AST->ModCache, AST->Ctx.get(), PCHContainerRdr, *AST->CodeGenOpts,
-      ArrayRef<std::shared_ptr<ModuleFileExtension>>(),
+      ArrayRef<std::shared_ptr<ModuleFileExtension>>{
+          std::make_shared<AnalysisExtension>()},
       /*isysroot=*/"",
       /*DisableValidationKind=*/disableValid, AllowASTWithCompilerErrors);
+
+  class DeserializedDeclsDumper : public ASTDeserializationListener {
+  public:
+    void DeclRead(GlobalDeclID ID, const Decl *D) override {
+      llvm::outs() << "PCH DECL: " << D->getDeclKindName();
+      if (const NamedDecl *ND = dyn_cast<NamedDecl>(D)) {
+        llvm::outs() << " - ";
+        ND->printQualifiedName(llvm::outs());
+      }
+      llvm::outs() << "\n";
+    }
+  };
+
+  AST->Reader->setDeserializationListener(new DeserializedDeclsDumper());
 
   unsigned Counter = 0;
   AST->Reader->setListener(std::make_unique<ASTInfoCollector>(

@@ -1215,7 +1215,7 @@ static bool isTrivialObjectAssignment(const CallEvent &Call) {
 
 static QualType getPtrToClass(const CXXRecordDecl *R) {
   ASTContext &Ctx = R->getASTContext();
-  return Ctx.getPointerType(Ctx.getRecordType(R));
+  return Ctx.getPointerType(Ctx.getCanonicalTagType(R));
 }
 
 static ProgramStateRef
