@@ -104,6 +104,8 @@ bool ExprSequence::inSequence(const Stmt *Before, const Stmt *After) const {
   // have an unambiguous successor; the order in which arguments are evaluated
   // is indeterminate.
   for (const Stmt *Parent : BeforeParents) {
+    if (isa<ReturnStmt>(Parent))
+      return false;
     // Special case: If the callee is a `MemberExpr` with a `DeclRefExpr` as its
     // base, we consider it to be sequenced _after_ the arguments. This is
     // because the variable referenced in the base will only actually be

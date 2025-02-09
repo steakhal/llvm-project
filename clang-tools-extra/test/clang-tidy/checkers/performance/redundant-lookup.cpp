@@ -151,3 +151,11 @@ void ifElseChain(std::map<int, int> &m, int rng) {
     m[rng] == 3; // CHECK-MESSAGES: :[[@LINE]]:5: note: possible next lookup here
   }
 }
+
+int returnSeparatingTheTwoLookups(std::map<int, int> &m, bool coin) {
+  if (coin) {
+    return m.count(10); // no-warning: This lookup immediately returns.
+  }
+  m[10] = 21; // no-warning: This can't be the "second" lookup.
+  return 1;
+}
