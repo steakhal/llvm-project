@@ -140,3 +140,14 @@ void sideffectsAreIgnoredInKeyExpr(std::map<int, int> &m, int n) {
   (void)m.contains(rng(++n));   // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
   (void)m.contains(rng(n + 1)); // no-warning: This uses a different lookup key.
 }
+
+void ifElseChain(std::map<int, int> &m, int rng) {
+  (void)m.count(rng); // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups
+  if (rng == 10) {
+    m[rng] == 1; // CHECK-MESSAGES: :[[@LINE]]:5: note: possible next lookup here
+  } else if (rng == 20) {
+    m[rng] == 2; // CHECK-MESSAGES: :[[@LINE]]:5: note: possible next lookup here
+  } else if (rng == 30) {
+    m[rng] == 3; // CHECK-MESSAGES: :[[@LINE]]:5: note: possible next lookup here
+  }
+}
