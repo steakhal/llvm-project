@@ -297,13 +297,13 @@ void RedundantLookupCheck::onEndOfTranslationUnit() {
         continue;
 
       llvm::sort(FinalGroup, ByBeginLoc);
-      const CallExpr *LastLookupCall = FinalGroup.back();
-      diag(LastLookupCall->getBeginLoc(),
+      const CallExpr *FirstLookupCall = FinalGroup.front();
+      diag(FirstLookupCall->getBeginLoc(),
            "possibly redundant container lookups")
-          << LastLookupCall->getSourceRange();
+          << FirstLookupCall->getSourceRange();
 
-      for (const CallExpr *LookupCall : llvm::drop_end(FinalGroup)) {
-        diag(LookupCall->getBeginLoc(), "previous lookup here",
+      for (const CallExpr *LookupCall : llvm::drop_begin(FinalGroup)) {
+        diag(LookupCall->getBeginLoc(), "possible next lookup here",
              DiagnosticIDs::Note)
             << LookupCall->getSourceRange();
       }

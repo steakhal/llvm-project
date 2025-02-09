@@ -36,22 +36,22 @@ private:
 
 void containerNameSpellsSet(my::FancySet<int> &s, int key) {
   (void)s.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups [performance-redundant-lookup]
-  (void)s.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  (void)s.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
 }
 
 void containerNameSpellsMap(my::FancyMap<int, int> &s, int key) {
   (void)s.count(key); // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups [performance-redundant-lookup]
-  (void)s.count(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  (void)s.count(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
 }
 
 void stdSetAlsoWorks(std::set<int> &s, int key) {
   (void)s.count(key); // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups [performance-redundant-lookup]
-  (void)s.count(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  (void)s.count(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
 }
 
 void stdMapAlsoWorks(std::map<int, int> &m, int key) {
   (void)m.count(key); // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups [performance-redundant-lookup]
-  (void)m.count(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  (void)m.count(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
 }
 
 void differentLookupKeys(std::map<int, int> &m, int key, int key2, int val) {
@@ -66,28 +66,28 @@ void differentContainers(std::map<int, int> &first, std::map<int, int> &second, 
 
 void countThenContains(std::map<int, int> &m, int key) {
   (void)m.count(key);    // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups
-  (void)m.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  (void)m.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
 }
 
 void containsThanContains(std::map<int, int> &m, int key) {
   (void)m.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups
-  (void)m.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  (void)m.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
 }
 
 void subscriptThenContains(std::map<int, int> &m, int key) {
   (void)m[key];          // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups
-  (void)m.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  (void)m.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
 }
 
 void allLookupsAreMentioned(std::map<int, int> &m, int key) {
   (void)m.at(key);             // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups
-  (void)m.contains(key);       // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
-  (void)m.count(key);          // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
-  (void)m.find(key);           // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  (void)m.contains(key);       // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
+  (void)m.count(key);          // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
+  (void)m.find(key);           // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
   (void)m.size();              // no-warning: Not a lookup call.
-  m[key] = 1;                  // CHECK-MESSAGES: :[[@LINE]]:3: note: next lookup here
-  (void)m[key];                // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
-  (void)m.count(key);          // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  m[key] = 1;                  // CHECK-MESSAGES: :[[@LINE]]:3: note: possible next lookup here
+  (void)m[key];                // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
+  (void)m.count(key);          // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
   (void)m.emplace(key, 2);
   (void)m.emplace(key, 2);
   (void)m.try_emplace(key, 3);
@@ -108,7 +108,7 @@ void mutationBetweenLookups(std::map<int, int> &m, int key) {
   (void)m.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups
   global_map = &m;
   escape(m);
-  (void)m.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  (void)m.contains(key); // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
 }
 
 void nested(std::map<int, int> &m, int key) {
@@ -123,7 +123,7 @@ void lookupsWithinMacrosAreIgnored(std::map<int, int> &m, int key) {
   myassert(m.count(key) == 0);
   myassert(m.count(key) == 0);
   myassert(m.count(key) == 0);
-  (void)m.count(key); // no-warining: This is just the first lookup that counts.
+  (void)m.count(key); // no-warning: This is just the first lookup that counts.
 }
 
 void lookupsWithinMacrosAreIgnored2(std::map<int, int> &m, int key) {
@@ -131,12 +131,12 @@ void lookupsWithinMacrosAreIgnored2(std::map<int, int> &m, int key) {
   myassert(m.count(key) == 0);
   myassert(m.count(key) == 0);
   myassert(m.count(key) == 0);
-  m[key] = 10; // CHECK-MESSAGES: :[[@LINE]]:3: note: next lookup here
+  m[key] = 10; // CHECK-MESSAGES: :[[@LINE]]:3: note: possible next lookup here
 }
 
 void sideffectsAreIgnoredInKeyExpr(std::map<int, int> &m, int n) {
   // FIXME: This is a FP. We should probably ignore expressions with definite sideffects.
   (void)m.contains(rng(++n));   // CHECK-MESSAGES: :[[@LINE]]:9: warning: possibly redundant container lookups
-  (void)m.contains(rng(++n));   // CHECK-MESSAGES: :[[@LINE]]:9: note: next lookup here
+  (void)m.contains(rng(++n));   // CHECK-MESSAGES: :[[@LINE]]:9: note: possible next lookup here
   (void)m.contains(rng(n + 1)); // no-warning: This uses a different lookup key.
 }
