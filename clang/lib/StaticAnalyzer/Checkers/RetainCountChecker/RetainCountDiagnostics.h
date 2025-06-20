@@ -16,7 +16,6 @@
 
 #include "clang/Analysis/PathDiagnostic.h"
 #include "clang/Analysis/RetainSummaryManager.h"
-#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporterVisitors.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"

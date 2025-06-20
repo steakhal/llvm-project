@@ -9,11 +9,19 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Bitstream/BitstreamReader.h"
 #include "llvm/Bitstream/BitstreamWriter.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/Error.h"
+
+static constexpr auto DEBUG_TYPE = "AnalysisExtension";
 
 using namespace clang;
 
-char AnalysisExtension::ID = 0;
+AnalysisExtension::AnalysisExtension() {
+  LLVM_DEBUG(llvm::dbgs() << "AnalysisExtension was created\n");
+}
+AnalysisExtension::~AnalysisExtension() {
+  LLVM_DEBUG(llvm::dbgs() << "AnalysisExtension was destroyed\n");
+}
 
 class Writer final : public ModuleFileExtensionWriter {
 public:
@@ -40,7 +48,7 @@ private:
 
 std::unique_ptr<ModuleFileExtensionWriter>
 AnalysisExtension::createExtensionWriter(ASTWriter &W) {
-  llvm::errs() << "createExtensionWriter\n";
+  LLVM_DEBUG(llvm::dbgs() << "AnalysisExtension::createExtensionWriter\n");
   return std::make_unique<Writer>(this, W);
 }
 
@@ -48,7 +56,7 @@ std::unique_ptr<ModuleFileExtensionReader>
 AnalysisExtension::createExtensionReader(
     const ModuleFileExtensionMetadata &Metadata, ASTReader &R,
     serialization::ModuleFile &Mod, const llvm::BitstreamCursor &Stream) {
-  llvm::errs() << "createExtensionReader\n";
+  LLVM_DEBUG(llvm::dbgs() << "AnalysisExtension::createExtensionReader\n");
   assert(Metadata.BlockName == BlockName && "Wrong block name");
   if (Metadata.MajorVersion != MajorVersion ||
       Metadata.MinorVersion != MinorVersion) {
@@ -62,12 +70,10 @@ AnalysisExtension::createExtensionReader(
   return std::make_unique<Reader>(this, Stream, R, Mod);
 }
 
-llvm::SmallVector<const CXXRecordDecl *> Records;
-
 Reader::Reader(ModuleFileExtension *Ext, const llvm::BitstreamCursor &InStream,
                ASTReader &R, serialization::ModuleFile &Mod)
     : ModuleFileExtensionReader(Ext), Stream(InStream), R(R), Mod(Mod) {
-  llvm::errs() << "Reader ctor reads\n";
+  LLVM_DEBUG(llvm::dbgs() << "AnalysisExtension Reader ctor reads\n");
 
   SmallVector<uint64_t, 64> Record;
   while (true) {
@@ -86,9 +92,7 @@ Reader::Reader(ModuleFileExtension *Ext, const llvm::BitstreamCursor &InStream,
     if (*RecCode == 111) {
       for (uint64_t v : Record) {
         LocalDeclID ID = LocalDeclID::get(R, Mod, v);
-        Records.push_back(R.GetLocalDeclAs<CXXRecordDecl>(Mod, ID));
-        llvm::errs() << "> " << ID.getRawValue() << ", as ";
-        llvm::errs() << Records.back() << "\n";
+        LLVM_DEBUG(llvm::dbgs() << "> " << ID.getRawValue() << "\n");
       }
     }
 
@@ -100,33 +104,33 @@ Reader::Reader(ModuleFileExtension *Ext, const llvm::BitstreamCursor &InStream,
 void Writer::writeExtensionContents(Sema &SemaRef,
                                     llvm::BitstreamWriter &Stream) {
   using namespace llvm;
-  llvm::errs() << "writeExtensionContents\n";
+  LLVM_DEBUG(llvm::dbgs() << "AnalysisExtension Writer writeExtensionContents");
 
-  const auto *TU = SemaRef.getASTContext().getTranslationUnitDecl();
+  // const auto *TU = SemaRef.getASTContext().getTranslationUnitDecl();
 
   SmallVector<uint64_t, 64> Record;
 
-  for (const auto *D : TU->decls()) {
-    if (const auto *FD = dyn_cast<FunctionDecl>(D);
-        FD && FD->getNameAsString() == "remote" && false) {
-      FD->dumpColor();
-      Record.push_back(W.getDeclID(FD).getRawValue());
-      llvm::errs() << "decl ID: " << W.getDeclID(FD).getRawValue() << "\n";
-    }
-
-    if (const auto *R = dyn_cast<CXXRecordDecl>(D)) {
-      R->dumpColor();
-      Record.push_back(W.getDeclID(R).getRawValue());
-      llvm::errs() << "CXXRecordDecl ID: " << W.getDeclID(R).getRawValue()
-                   << ", as " << R << "\n";
-      R->viewInheritance(R->getASTContext());
-    }
-  }
+  // for (const auto *D : TU->decls()) {
+  //   if (const auto *FD = dyn_cast<FunctionDecl>(D);
+  //       FD && FD->getNameAsString() == "remote" && false) {
+  //     FD->dumpColor();
+  //     Record.push_back(W.getDeclID(FD).getRawValue());
+  //     llvm::errs() << "decl ID: " << W.getDeclID(FD).getRawValue() << "\n";
+  //   }
+  //
+  //   if (const auto *R = dyn_cast<CXXRecordDecl>(D)) {
+  //     R->dumpColor();
+  //     Record.push_back(W.getDeclID(R).getRawValue());
+  //     llvm::errs() << "CXXRecordDecl ID: " << W.getDeclID(R).getRawValue()
+  //                  << ", as " << R << "\n";
+  //     R->viewInheritance(R->getASTContext());
+  //   }
+  // }
 
   // TU->dumpColor();
   // auto *Ext = static_cast<AnalysisExtension *>(getExtension());
 
   // Write a message into the extension block.
-  Stream.EmitRecord(111, Record);
-  llvm::errs() << "Written: " << Record.size() << " decls\n";
+  // Stream.EmitRecord(111, Record);
+  LLVM_DEBUG(llvm::dbgs() << "Written: " << Record.size() << " decls\n");
 }

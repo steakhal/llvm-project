@@ -22,10 +22,8 @@ class AnalysisExtension final
   static constexpr auto MinorVersion = 1;
 
 public:
-  static char ID;
-
-  AnalysisExtension() { llvm::errs() << "AnalysisExtension was created\n"; }
-  ~AnalysisExtension() { llvm::errs() << "AnalysisExtension was destroyed\n"; }
+  AnalysisExtension();
+  ~AnalysisExtension();
 
   ModuleFileExtensionMetadata getExtensionMetadata() const override {
     return {BlockName.str(), MajorVersion, MinorVersion, UserInfo.str()};

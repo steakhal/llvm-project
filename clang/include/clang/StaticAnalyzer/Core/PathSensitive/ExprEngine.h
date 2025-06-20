@@ -729,6 +729,8 @@ public:
                        const CallEvent &Call,
                        const EvalCallOptions &CallOpts = {});
 
+  /// Split the execution for all possible overriders of the current virtual fn.
+  /// Returns true if we handled the virtual function, false otherwise.
   bool tryMultiVirtualDispatch(NodeBuilder &Bldr, ExplodedNode *Pred,
                                const CallEvent &Call, ProgramStateRef State,
                                const EvalCallOptions &CallOpts);

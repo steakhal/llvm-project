@@ -128,17 +128,17 @@ public:
   RuntimeDefinition(const Decl *InD, bool Foreign) : D(InD), Foreign(Foreign) {}
   RuntimeDefinition(const Decl *InD, const MemRegion *InR) : D(InD), R(InR) {}
 
-  const Decl *getDecl() const { return D; }
+  const Decl *getDecl() { return D; }
   bool isForeign() const { return Foreign; }
 
   /// Check if the definition we have is precise.
   /// If not, it is possible that the call dispatches to another definition at
   /// execution time.
-  bool mayHaveOtherDefinitions() const { return R != nullptr; }
+  bool mayHaveOtherDefinitions() { return R != nullptr; }
 
   /// When other definitions are possible, returns the region whose runtime type
   /// determines the method definition.
-  const MemRegion *getDispatchRegion() const { return R; }
+  const MemRegion *getDispatchRegion() { return R; }
 };
 
 /// Represents an abstract call to a function or method along a

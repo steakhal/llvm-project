@@ -875,6 +875,7 @@ std::unique_ptr<ASTUnit> ASTUnit::LoadFromASTFile(
       /*isysroot=*/"",
       /*DisableValidationKind=*/disableValid, AllowASTWithCompilerErrors);
 
+#if 0
   class DeserializedDeclsDumper : public ASTDeserializationListener {
   public:
     void DeclRead(GlobalDeclID ID, const Decl *D) override {
@@ -886,8 +887,8 @@ std::unique_ptr<ASTUnit> ASTUnit::LoadFromASTFile(
       llvm::outs() << "\n";
     }
   };
-
   AST->Reader->setDeserializationListener(new DeserializedDeclsDumper());
+#endif
 
   unsigned Counter = 0;
   AST->Reader->setListener(std::make_unique<ASTInfoCollector>(
