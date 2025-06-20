@@ -781,14 +781,6 @@ void AnalysisConsumer::RunPathSensitiveChecks(Decl *D,
     DisplayTime(ExprEngineEndTime);
   }
 
-  llvm::errs() << "Had " << Records.size() << " loaded records:\n";
-  for (const CXXRecordDecl *R : Records) {
-    R->dump(llvm::errs(), /*Deserialize=*/false, ADOF_Default);
-    R->dumpColor();
-  }
-
-  D->getTranslationUnitDecl()->dumpColor();
-
   if (!Mgr->options.DumpExplodedGraphTo.empty())
     Eng.DumpGraph(Mgr->options.TrimGraph, Mgr->options.DumpExplodedGraphTo);
 
