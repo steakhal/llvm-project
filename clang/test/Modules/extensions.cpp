@@ -9,7 +9,7 @@
 //  CHECK-BCANALYZER: {{Block ID.*EXTENSION_BLOCK}}
 //  CHECK-BCANALYZER: {{100.00.*EXTENSION_METADATA}}
 
-// RUN: cd "%t" && %clang_extdef_map "%t/remote.cpp.ast" > externalDefMap.txt
+// RUN: cd "%t" && %clang_extdef_map "%t/remote.cpp.ast" 2>/dev/null > externalDefMap.txt
 
 // RUN: %clang_cc1 -triple x86_64-pc-linux-gnu -std=c++17 -analyze \
 // RUN:   -analyzer-checker=core,debug.ExprInspection \
@@ -32,7 +32,9 @@ struct Base {
   virtual ~Base() = default;
 };
 struct Derived : Base {
-  virtual void foo();
+  virtual void foo() {
+    if (true) {}
+  }
 };
 
 int remote() {

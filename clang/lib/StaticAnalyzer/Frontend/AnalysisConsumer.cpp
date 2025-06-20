@@ -750,8 +750,6 @@ void AnalysisConsumer::HandleCode(Decl *D, AnalysisMode Mode,
 // Path-sensitive checking.
 //===----------------------------------------------------------------------===//
 
-extern llvm::SmallVector<const CXXRecordDecl *> Records;
-
 void AnalysisConsumer::RunPathSensitiveChecks(Decl *D,
                                               ExprEngine::InliningModes IMode,
                                               SetOfConstDecls *VisitedCallees) {

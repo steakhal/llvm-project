@@ -117,7 +117,9 @@ void Writer::writeExtensionContents(Sema &SemaRef,
     if (const auto *R = dyn_cast<CXXRecordDecl>(D)) {
       R->dumpColor();
       Record.push_back(W.getDeclID(R).getRawValue());
-      llvm::errs() << "decl ID: " << W.getDeclID(R).getRawValue() << "\n";
+      llvm::errs() << "CXXRecordDecl ID: " << W.getDeclID(R).getRawValue()
+                   << ", as " << R << "\n";
+      R->viewInheritance(R->getASTContext());
     }
   }
 
@@ -126,5 +128,5 @@ void Writer::writeExtensionContents(Sema &SemaRef,
 
   // Write a message into the extension block.
   Stream.EmitRecord(111, Record);
-  llvm::errs() << "Written: 2 decls\n";
+  llvm::errs() << "Written: " << Record.size() << " decls\n";
 }
