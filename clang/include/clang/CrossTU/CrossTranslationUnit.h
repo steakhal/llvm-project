@@ -213,6 +213,12 @@ private:
                                                      StringRef CrossTUDir,
                                                      StringRef IndexName,
                                                      bool DisplayCTUProgress);
+
+  template <typename T>
+  llvm::Expected<const T *>
+  getCrossTUDefinitionImpl(StringRef USR, StringRef CrossTUDir,
+                           StringRef IndexName, bool DisplayCTUProgress);
+
   template <typename T>
   const T *findDefInDeclContext(const DeclContext *DC,
                                 StringRef LookupName);

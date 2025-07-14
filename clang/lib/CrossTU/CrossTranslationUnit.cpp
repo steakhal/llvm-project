@@ -287,18 +287,11 @@ CrossTranslationUnitContext::findDefInDeclContext(const DeclContext *DC,
 
 template <typename T>
 llvm::Expected<const T *> CrossTranslationUnitContext::getCrossTUDefinitionImpl(
-    const T *D, StringRef CrossTUDir, StringRef IndexName,
+    StringRef USR, StringRef CrossTUDir, StringRef IndexName,
     bool DisplayCTUProgress) {
-  assert(D && "D is missing, bad call to this function!");
-  assert(!hasBodyOrInit(D) &&
-         "D has a body or init in current translation unit!");
   ++NumGetCTUCalled;
-  const std::optional<std::string> LookupName = getLookupName(D);
-  if (!LookupName)
-    return llvm::make_error<IndexError>(
-        index_error_code::failed_to_generate_usr);
   llvm::Expected<ASTUnit *> ASTUnitOrError =
-      loadExternalAST(*LookupName, CrossTUDir, IndexName, DisplayCTUProgress);
+      loadExternalAST(USR, CrossTUDir, IndexName, DisplayCTUProgress);
   if (!ASTUnitOrError)
     return ASTUnitOrError.takeError();
   ASTUnit *Unit = *ASTUnitOrError;
@@ -354,9 +347,24 @@ llvm::Expected<const T *> CrossTranslationUnitContext::getCrossTUDefinitionImpl(
   }
 
   TranslationUnitDecl *TU = Unit->getASTContext().getTranslationUnitDecl();
-  if (const T *ResultDecl = findDefInDeclContext<T>(TU, *LookupName))
+  if (const T *ResultDecl = findDefInDeclContext<T>(TU, USR))
     return importDefinition(ResultDecl, Unit);
   return llvm::make_error<IndexError>(index_error_code::failed_import);
+}
+
+template <typename T>
+llvm::Expected<const T *> CrossTranslationUnitContext::getCrossTUDefinitionImpl(
+    const T *D, StringRef CrossTUDir, StringRef IndexName,
+    bool DisplayCTUProgress) {
+  assert(D && "D is missing, bad call to this function!");
+  assert(!hasBodyOrInit(D) &&
+         "D has a body or init in current translation unit!");
+  const std::optional<std::string> LookupName = getLookupName(D);
+  if (!LookupName)
+    return llvm::make_error<IndexError>(
+        index_error_code::failed_to_generate_usr);
+  return getCrossTUDefinitionImpl<T>(*LookupName, CrossTUDir, IndexName,
+                                     DisplayCTUProgress);
 }
 
 llvm::Expected<const FunctionDecl *>
