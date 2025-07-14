@@ -265,7 +265,7 @@ public:
   unsigned UnoptimizedCFG : 1;
   unsigned PrintStats : 1;
 
-  unsigned AnalyzeModule : 1;
+  unsigned EmitDirectOverriders : 1;
 
   /// Do not re-analyze paths leading to exhausted nodes with a different
   /// strategy. We get better code coverage when retry is enabled.
@@ -325,7 +325,7 @@ public:
         ShouldEmitErrorsOnInvalidConfigValue(false), AnalyzeAll(false),
         AnalyzerDisplayProgress(false), AnalyzerNoteAnalysisEntryPoints(false),
         TrimGraph(false), visualizeExplodedGraphWithGraphViz(false),
-        UnoptimizedCFG(false), PrintStats(false), AnalyzeModule(false),
+        UnoptimizedCFG(false), PrintStats(false), EmitDirectOverriders(false),
         NoRetryExhausted(false), AnalyzerWerror(false) {}
 
   /// Interprets an option's string value as a boolean. The "true" string is

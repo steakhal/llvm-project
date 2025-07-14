@@ -3144,9 +3144,9 @@ static bool ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
             BlockName, MajorVersion, MinorVersion, Hashed, UserInfo));
   }
 
-  if (Args.getLastArg(OPT_analyze_module)) {
-    Opts.ModuleFileExtensions.push_back(std::make_shared<AnalysisExtension>());
-  }
+  // if (Args.getLastArg(OPT_analyzer_emit_direct_overriders)) {
+  //   Opts.ModuleFileExtensions.push_back(std::make_shared<AnalysisExtension>());
+  // }
 
   if (const Arg *A = Args.getLastArg(OPT_code_completion_at)) {
     Opts.CodeCompletionAt =

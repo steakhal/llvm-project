@@ -3,7 +3,7 @@
 
 // DEFINE: %{emit-ast} = %clang -emit-ast \
 // DEFINE:   -Xclang -triple -Xclang x86_64-pc-linux-gnu -std=c++17 \
-// DEFINE:   -D__clang_analyzer__ -Xclang -fanalyze-module
+// DEFINE:   -D__clang_analyzer__ -Xclang -fanalyzer-emit-direct-overriders
 
 // RUN: %{emit-ast} -o "%t/base.cpp.ast"    "%t/base.cpp"
 // RUN: %{emit-ast} -o "%t/derived.cpp.ast" "%t/derived.cpp"

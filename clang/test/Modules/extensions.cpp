@@ -17,6 +17,8 @@
 // RUN:   -analyzer-config ctu-dir=%t \
 // RUN:   -verify %t/main.cpp -dump-deserialized-decls
 
+// I temporarily pause the development of the AnalisisExtension, so this test doesn't make sense for now.
+// UNSUPPORTED: true
 
 //--- main.cpp
 void clang_analyzer_dump(int);

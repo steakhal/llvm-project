@@ -8650,10 +8650,6 @@ def fexperimental_max_bitint_width_EQ:
 
 let Visibility = [CC1Option] in {
 
-def analyze_module : Flag<["-"], "fanalyze-module">,
-  HelpText<"Attach the AnalysisModule to the clang module">,
-  MarshallingInfoFlag<AnalyzerOpts<"AnalyzeModule">>;
-
 def nostdsysteminc : Flag<["-"], "nostdsysteminc">,
   HelpText<"Disable standard system #include directories">,
   MarshallingInfoNegativeFlag<HeaderSearchOpts<"UseStandardSystemIncludes">>;
@@ -8711,6 +8707,10 @@ def detailed_preprocessing_record : Flag<["-"], "detailed-preprocessing-record">
 def setup_static_analyzer : Flag<["-"], "setup-static-analyzer">,
   HelpText<"Set up preprocessor for static analyzer (done automatically when static analyzer is run).">,
   MarshallingInfoFlag<PreprocessorOpts<"SetUpStaticAnalyzer">>;
+def analyzer_emit_direct_overriders
+    : Flag<["-"], "fanalyzer-emit-direct-overriders">,
+      HelpText<"Attach the AnalysisModule to the clang module">,
+      MarshallingInfoFlag<AnalyzerOpts<"EmitDirectOverriders">>;
 def disable_pragma_debug_crash : Flag<["-"], "disable-pragma-debug-crash">,
   HelpText<"Disable any #pragma clang __debug that can lead to crashing behavior. This is meant for testing.">,
   MarshallingInfoFlag<PreprocessorOpts<"DisablePragmaDebugCrash">>;

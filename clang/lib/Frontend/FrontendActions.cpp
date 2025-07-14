@@ -166,7 +166,7 @@ GeneratePCHAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
       CI, std::string(InFile), OutputFile, std::move(OS), Buffer));
 
   // HACK: This should be somewhere else.
-  if (CI.getAnalyzerOpts().AnalyzeModule) {
+  if (CI.getAnalyzerOpts().EmitDirectOverriders) {
     // First the Dynamic type analysis runs, then the dumpper.
     auto &DyType = ento::attachDynamicTypeAnalysis(Consumers);
     StringRef TUPath = CI.getFrontendOpts().Inputs[0].getFile();
