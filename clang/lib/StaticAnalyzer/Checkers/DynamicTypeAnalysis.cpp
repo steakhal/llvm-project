@@ -173,6 +173,72 @@ static DynamicTypeAnalysisImpl &getAnalysis(ProgramStateRef State) {
   return getAnalysis(State->getAnalysisManager().getDynamicTypeAnalysis());
 }
 
+static void emitErrors(llvm::Expected<const FunctionDecl *> &CTUDeclOrError,
+                       cross_tu::CrossTranslationUnitContext &CTUCtx) {
+  auto Handler = [&](const cross_tu::IndexError &IE) {
+    CTUCtx.emitCrossTUDiagnostics(IE);
+  };
+  handleAllErrors(CTUDeclOrError.takeError(), Handler);
+}
+
+static const CXXMethodDecl *
+importOrEmitErrors(const CXXMethodDecl *D,
+                   cross_tu::CrossTranslationUnitContext &CTUCtx,
+                   const AnalyzerOptions &Opts) {
+  llvm::Expected<const FunctionDecl *> CTUDeclOrError =
+      CTUCtx.getCrossTUDefinition(D, Opts.CTUDir, Opts.CTUIndexName,
+                                  Opts.DisplayCTUProgress);
+  if (!CTUDeclOrError) {
+    emitErrors(CTUDeclOrError, CTUCtx);
+    return nullptr;
+  }
+  return dyn_cast<CXXMethodDecl>(CTUDeclOrError.get());
+}
+
+static const CXXMethodDecl *
+importOrEmitErrors(StringRef MethodUSR,
+                   cross_tu::CrossTranslationUnitContext &CTUCtx,
+                   const AnalyzerOptions &Opts) {
+  llvm::Expected<const FunctionDecl *> CTUDeclOrError =
+      CTUCtx.getCrossTUDefinition(MethodUSR, Opts.CTUDir, Opts.CTUIndexName,
+                                  Opts.DisplayCTUProgress);
+  if (!CTUDeclOrError) {
+    emitErrors(CTUDeclOrError, CTUCtx);
+    return nullptr;
+  }
+  return dyn_cast<CXXMethodDecl>(CTUDeclOrError.get());
+}
+
+static void extendDirectOverridersFromCTU(const CXXMethodDecl *D,
+                                          DynamicTypeAnalysisImpl &Analysis) {
+  auto &CTUCtx = *Analysis.CTUContext;
+  auto &Opts = *Analysis.Opts;
+
+  if (!D->hasBody()) {
+    importOrEmitErrors(D, CTUCtx, Opts);
+  }
+
+  std::string SubjectUSR = getUSRForDecl(D);
+  if (auto It = Analysis.DirectlyOverriddenByMapUSRs.find(SubjectUSR);
+      It != Analysis.DirectlyOverriddenByMapUSRs.end()) {
+    auto &DirectOverriders =
+        Analysis.DirectlyOverriddenByMap.try_emplace(D->getCanonicalDecl())
+            .first->second;
+
+    for (const auto &DirectOverriderUSR : It->second) {
+      if (const CXXMethodDecl *OverriderD =
+              importOrEmitErrors(DirectOverriderUSR, CTUCtx, Opts)) {
+        llvm::errs() << "  Overridden by "
+                     << OverriderD->getQualifiedNameAsString() << "\n";
+        DirectOverriders.insert(OverriderD->getCanonicalDecl());
+      } else {
+        llvm::errs() << "  Failed to import method with USR '"
+                     << DirectOverriderUSR << "'\n";
+      }
+    }
+  }
+}
+
 static MethodVec getOverridersImpl(DynamicTypeAnalysisImpl &Analysis,
                                    const CXXMethodDecl *D) {
   D = D->getCanonicalDecl();
@@ -186,41 +252,8 @@ static MethodVec getOverridersImpl(DynamicTypeAnalysisImpl &Analysis,
     return CacheSlot->second;
   }
 
-  auto &CTUCtx = *Analysis.CTUContext;
-  auto &Opts = *Analysis.Opts;
-
-  auto CTUImportMethodOrNull = [&](StringRef USR) -> const CXXMethodDecl * {
-    llvm::Expected<const FunctionDecl *> CTUDeclOrError =
-        CTUCtx.getCrossTUDefinition(USR, Opts.CTUDir, Opts.CTUIndexName,
-                                    Opts.DisplayCTUProgress);
-    if (!CTUDeclOrError) {
-      handleAllErrors(CTUDeclOrError.takeError(),
-                      [&](const cross_tu::IndexError &IE) {
-                        CTUCtx.emitCrossTUDiagnostics(IE);
-                      });
-      return nullptr;
-    }
-    return dyn_cast<CXXMethodDecl>(CTUDeclOrError.get());
-  };
-
-  std::string SubjectUSR = getUSRForDecl(D);
-  if (auto It = Analysis.DirectlyOverriddenByMapUSRs.find(SubjectUSR);
-      It != Analysis.DirectlyOverriddenByMapUSRs.end()) {
-    auto &DirectOverriders =
-        Analysis.DirectlyOverriddenByMap.try_emplace(D->getCanonicalDecl())
-            .first->second;
-
-    for (const auto &DirectOverriderUSR : It->second) {
-      if (const CXXMethodDecl *OverriderD =
-              CTUImportMethodOrNull(DirectOverriderUSR)) {
-        llvm::errs() << "  Overridden by "
-                     << OverriderD->getQualifiedNameAsString() << "\n";
-        DirectOverriders.insert(OverriderD->getCanonicalDecl());
-      } else {
-        llvm::errs() << "  Failed to import method with USR '"
-                     << DirectOverriderUSR << "'\n";
-      }
-    }
+  if (Analysis.Opts && Analysis.Opts->IsNaiveCTUEnabled) {
+    extendDirectOverridersFromCTU(D, Analysis);
   }
 
   llvm::DenseSet<const CXXMethodDecl *> Visited;
