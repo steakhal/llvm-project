@@ -7,8 +7,11 @@
 // RUN: %{run_csa} -UPURE_VIRTUAL -verify=common,ret-zero
 
 void clang_analyzer_warnIfReached();
+void clang_analyzer_eval(bool);
 template <class T> void clang_analyzer_dump(T);
 template <class T> void clang_analyzer_sinkIfSValIs(T value, const char *regex);
+
+bool coin();
 
 namespace eval_example {
 struct Op {
@@ -65,6 +68,116 @@ void entry_point(const Op &op) {
     // path we are only left with paths where we exactly know the dynamic type,
     // thus we won't have a speculated path even for the second invocation of
     // the same virtual function.
+  }
+}
+
+void test_dynamic_cast(const Op *op) {
+  if (coin()) {
+    const Op *same = dynamic_cast<const Op*>(op); // no-op
+    clang_analyzer_eval(same == op); // common-warning {{TRUE}}
+    int res1 = same->eval(10, 2);
+    clang_analyzer_dump(res1); // #dump-d1
+    // common-warning-re@#dump-d1 {{{{^5 S32b}}}}    10/2
+    // common-warning-re@#dump-d1 {{{{^8 S32b}}}}    10-2
+    // common-warning-re@#dump-d1 {{{{^12 S32b}}}}   10+2
+    // common-warning-re@#dump-d1 {{{{^20 S32b}}}}   10*2
+    // common-warning-re@#dump-d1 {{{{^conj_}}}}     conservative evaluation
+    // ret-zero-warning-re@#dump-d1 {{{{^0 S32b}}}}  "default" impl for non-pure virtual
+    return;
+  }
+
+  if (coin()) {
+    if (const auto *add = dynamic_cast<const Add*>(op)) {
+      clang_analyzer_eval(add == op); // common-warning {{TRUE}}
+      int res2 = add->eval(10, 2);
+      clang_analyzer_dump(res2); // #dump-d2
+      // common-warning-re@#dump-d2 {{{{^12 S32b}}}} 10+2
+      // common-warning-re@#dump-d2 {{{{^conj_}}}}   conservative evaluation
+    }
+    return;
+  }
+
+  if (coin()) {
+    if (const auto *sub = dynamic_cast<const Sub*>(op)) {
+      clang_analyzer_eval(sub == op); // common-warning {{TRUE}}
+      int res3 = sub->eval(10, 2);
+      clang_analyzer_dump(res3); // #dump-d3
+      // common-warning-re@#dump-d3 {{{{^8 S32b}}}} 10-2
+      // common-warning-re@#dump-d3 {{{{^conj_}}}}   conservative evaluation
+    }
+    return;
+  }
+
+  if (coin()) {
+    // Sink all the paths except the "Add" case. After this we should know when a dynamic_cast should succeed.
+    int res = op->eval(10, 2);
+    clang_analyzer_sinkIfSValIs(res, "^conj_");   // common-warning {{Path sunk}}   conservative evaluation
+    clang_analyzer_sinkIfSValIs(res, "^5 S32b");  // common-warning {{Path sunk}}   10/2
+    clang_analyzer_sinkIfSValIs(res, "^8 S32b");  // common-warning {{Path sunk}}   10-2
+    clang_analyzer_sinkIfSValIs(res, "^20 S32b"); // common-warning {{Path sunk}}   10*2
+    clang_analyzer_sinkIfSValIs(res, "^0 S32b");  // ret-zero-warning {{Path sunk}} "default" impl for non-pure virtual
+
+    // The only path reaching this is the "Add" one.
+    clang_analyzer_dump(res); // common-warning-re {{{{^12 S32b}}}} 10+2
+
+    const auto *add = dynamic_cast<const Add*>(op);
+    clang_analyzer_eval(add == nullptr); // common-warning {{FALSE}} Deduced to be false, as expected
+  }
+}
+
+void test_static_cast(const Op *op) {
+  if (coin()) {
+    const Op *same = static_cast<const Op*>(op); // no-op
+    clang_analyzer_eval(same == op); // common-warning {{TRUE}}
+    int res1 = same->eval(10, 2);
+    clang_analyzer_dump(res1); // #dump-s1
+    // common-warning-re@#dump-s1 {{{{^5 S32b}}}}    10/2
+    // common-warning-re@#dump-s1 {{{{^8 S32b}}}}    10-2
+    // common-warning-re@#dump-s1 {{{{^12 S32b}}}}   10+2
+    // common-warning-re@#dump-s1 {{{{^20 S32b}}}}   10*2
+    // common-warning-re@#dump-s1 {{{{^conj_}}}}     conservative evaluation
+    // ret-zero-warning-re@#dump-s1 {{{{^0 S32b}}}}  "default" impl for non-pure virtual
+    return;
+  }
+
+  if (coin()) {
+    if (const auto *add = static_cast<const Add*>(op)) {
+      clang_analyzer_eval(add == op); // common-warning {{TRUE}}
+      int res2 = add->eval(10, 2);
+      clang_analyzer_dump(res2); // #dump-s2
+      // common-warning-re@#dump-s2 {{{{^12 S32b}}}} 10+2
+      // common-warning-re@#dump-s2 {{{{^conj_}}}}   conservative evaluation
+    }
+    return;
+  }
+
+  if (coin()) {
+    if (const auto *sub = static_cast<const Sub*>(op)) {
+      clang_analyzer_eval(sub == op); // common-warning {{TRUE}}
+      int res3 = sub->eval(10, 2);
+      clang_analyzer_dump(res3); // #dump-s3
+      // common-warning-re@#dump-s3 {{{{^8 S32b}}}} 10-2
+      // common-warning-re@#dump-s3 {{{{^conj_}}}}   conservative evaluation
+    }
+    return;
+  }
+
+  if (coin()) {
+    // Sink all the paths except the "Add" case. After this we should know when a dynamic_cast should succeed.
+    int res = op->eval(10, 2);
+    clang_analyzer_sinkIfSValIs(res, "^conj_");   // common-warning {{Path sunk}}   conservative evaluation
+    clang_analyzer_sinkIfSValIs(res, "^5 S32b");  // common-warning {{Path sunk}}   10/2
+    clang_analyzer_sinkIfSValIs(res, "^8 S32b");  // common-warning {{Path sunk}}   10-2
+    clang_analyzer_sinkIfSValIs(res, "^20 S32b"); // common-warning {{Path sunk}}   10*2
+    clang_analyzer_sinkIfSValIs(res, "^0 S32b");  // ret-zero-warning {{Path sunk}} "default" impl for non-pure virtual
+
+    // The only path reaching this is the "Add" one.
+    clang_analyzer_dump(res); // common-warning-re {{{{^12 S32b}}}} 10+2
+
+    // FIXME: This static_cast should collapse (sink) all the paths where we know the dynamic type is not "Add", because otherwise this would be UB.
+    // We should not need the `clang_analyzer_sinkIfSValIs` calls above for achieving that.
+    const auto *add = static_cast<const Add*>(op);
+    clang_analyzer_eval(add == nullptr); // common-warning {{FALSE}} Deduced to be false, as expected
   }
 }
 
