@@ -152,6 +152,11 @@ public:
   getCrossTUDefinition(const VarDecl *VD, StringRef CrossTUDir,
                        StringRef IndexName, bool DisplayCTUProgress = false);
 
+  /// Same as the other ovarloads, except it allows the load of a USR.
+  llvm::Expected<const FunctionDecl *>
+  getCrossTUDefinition(StringRef USR, StringRef CrossTUDir, StringRef IndexName,
+                       bool DisplayCTUProgress = false);
+
   /// This function loads a definition from an external AST file.
   ///
   /// A definition with the same declaration will be looked up in the

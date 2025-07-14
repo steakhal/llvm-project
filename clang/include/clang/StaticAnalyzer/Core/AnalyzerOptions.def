@@ -552,6 +552,11 @@ ANALYZER_OPTION(
     "{/main.cpp: [clang++, /main.cpp], other.cpp: [clang++, /other.cpp]}",
     "invocations.yaml")
 
+    ANALYZER_OPTION(
+        StringRef, DirectOverridersFile, "direct-overriders-file",
+        "Path to the file containing the direct overriders of virtual methods.",
+        "")
+
 ANALYZER_OPTION(
     StringRef, ModelPath, "model-path",
     "The analyzer can inline an alternative implementation written in C at the "

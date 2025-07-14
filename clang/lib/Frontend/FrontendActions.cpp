@@ -27,6 +27,7 @@
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Serialization/ASTWriter.h"
 #include "clang/Serialization/ModuleFile.h"
+#include "clang/StaticAnalyzer/Checkers/DynamicType.h"
 #include "llvm/Config/llvm-config.h" // for LLVM_HOST_TRIPLE
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
@@ -120,6 +121,23 @@ ASTViewAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
   return CreateASTViewer();
 }
 
+namespace {
+class DynamicTypeAnalysisDumpper : public ASTConsumer {
+public:
+  DynamicTypeAnalysisDumpper(ento::DynamicTypeAnalysis &DyType,
+                             std::string OutputFile)
+      : DyType(DyType), OutputFile(std::move(OutputFile)) {}
+
+  void HandleTranslationUnit(ASTContext &Ctx) override {
+    ento::dumpDynamicTypeAnalysis(DyType, OutputFile);
+  }
+
+private:
+  ento::DynamicTypeAnalysis &DyType;
+  std::string OutputFile;
+};
+} // namespace
+
 std::unique_ptr<ASTConsumer>
 GeneratePCHAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
   std::string Sysroot;
@@ -146,6 +164,15 @@ GeneratePCHAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
       +CI.getLangOpts().CacheGeneratedPCH));
   Consumers.push_back(CI.getPCHContainerWriter().CreatePCHContainerGenerator(
       CI, std::string(InFile), OutputFile, std::move(OS), Buffer));
+
+  // HACK: This should be somewhere else.
+  if (CI.getAnalyzerOpts().AnalyzeModule) {
+    // First the Dynamic type analysis runs, then the dumpper.
+    auto &DyType = ento::attachDynamicTypeAnalysis(Consumers);
+    StringRef TUPath = CI.getFrontendOpts().Inputs[0].getFile();
+    Consumers.push_back(std::make_unique<DynamicTypeAnalysisDumpper>(
+        DyType, (TUPath + ".direct-overriders").str()));
+  }
 
   return std::make_unique<MultiplexConsumer>(std::move(Consumers));
 }

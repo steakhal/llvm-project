@@ -385,6 +385,15 @@ CrossTranslationUnitContext::getCrossTUDefinition(const VarDecl *VD,
                                   DisplayCTUProgress);
 }
 
+llvm::Expected<const FunctionDecl *>
+CrossTranslationUnitContext::getCrossTUDefinition(StringRef USR,
+                                                  StringRef CrossTUDir,
+                                                  StringRef IndexName,
+                                                  bool DisplayCTUProgress) {
+  return getCrossTUDefinitionImpl<FunctionDecl>(USR, CrossTUDir, IndexName,
+                                                DisplayCTUProgress);
+}
+
 void CrossTranslationUnitContext::emitCrossTUDiagnostics(const IndexError &IE) {
   switch (IE.getCode()) {
   case index_error_code::missing_index_file:

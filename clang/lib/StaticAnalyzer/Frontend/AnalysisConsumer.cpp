@@ -27,6 +27,7 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Rewrite/Core/Rewriter.h"
+#include "clang/StaticAnalyzer/Checkers/DynamicType.h"
 #include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
@@ -716,6 +717,16 @@ void AnalysisConsumer::HandleCode(Decl *D, AnalysisMode Mode,
   CFG *DeclCFG = Mgr->getCFG(D);
   if (DeclCFG)
     MaxCFGSize.updateMax(DeclCFG->size());
+
+  static bool OnceFlag = false;
+  if (!OnceFlag) {
+    OnceFlag = true;
+    setCTUContext(Mgr->getDynamicTypeAnalysis(), CTU);
+    setOpts(Mgr->getDynamicTypeAnalysis(), Mgr->getAnalyzerOptions());
+    ento::loadDynamicTypeAnalysis(
+        Mgr->getDynamicTypeAnalysis(),
+        Mgr->getAnalyzerOptions().DirectOverridersFile);
+  }
 
   DisplayFunction(D, Mode, IMode);
   BugReporter BR(*Mgr);

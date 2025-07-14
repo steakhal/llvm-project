@@ -11,6 +11,8 @@
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DynamicRecursiveASTVisitor.h"
+#include "clang/CrossTU/CrossTranslationUnit.h"
+#include "clang/Index/USRGeneration.h"
 #include "clang/StaticAnalyzer/Checkers/DynamicType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
@@ -18,7 +20,10 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/raw_ostream.h"
 #include <functional>
+#include <unordered_map>
 
 using namespace clang;
 using namespace ento;
@@ -125,6 +130,13 @@ calculateDirectOverriderMapping(const ClassSet &RootClasses) {
   return PotentialOverriders;
 }
 
+static std::string getUSRForDecl(const Decl *Decl) {
+  llvm::SmallString<128> Buff;
+  if (!Decl || index::generateUSRForDecl(Decl, Buff))
+    return "";
+  return std::string(Buff);
+}
+
 namespace {
 class DynamicTypeAnalysisImpl final : public DynamicTypeAnalysis,
                                       public RootClassesCollector {
@@ -137,9 +149,16 @@ public:
 
   LLVM_DUMP_METHOD void dump() const;
 
+  cross_tu::CrossTranslationUnitContext *CTUContext = nullptr;
+  const AnalyzerOptions *Opts = nullptr;
+
   /// Methods overridden by an another method.
   /// E.g. If M overrides M', then this has a mapping from M' to M.
   PotentialOverridersMapping DirectlyOverriddenByMap;
+
+  /// Same as \p DirectlyOverriddenByMap, but with USRs as keys.
+  std::unordered_map<std::string, llvm::SmallSet<std::string, 1>>
+      DirectlyOverriddenByMapUSRs;
 
   /// This is just a cache for holding the reflexive transitive closure of the
   /// direct mapping.
@@ -165,6 +184,51 @@ static MethodVec getOverridersImpl(DynamicTypeAnalysisImpl &Analysis,
       Analysis.TransitiveOverridersCache.try_emplace(D);
   if (!InsertedIntoCache) {
     return CacheSlot->second;
+  }
+
+  auto &CTUCtx = *Analysis.CTUContext;
+  auto &Opts = *Analysis.Opts;
+
+  auto CTUImportMethodOrNull = [&](StringRef USR) -> const CXXMethodDecl * {
+    llvm::Expected<const FunctionDecl *> CTUDeclOrError =
+        CTUCtx.getCrossTUDefinition(USR, Opts.CTUDir, Opts.CTUIndexName,
+                                    Opts.DisplayCTUProgress);
+    if (!CTUDeclOrError) {
+      handleAllErrors(CTUDeclOrError.takeError(),
+                      [&](const cross_tu::IndexError &IE) {
+                        CTUCtx.emitCrossTUDiagnostics(IE);
+                      });
+      return nullptr;
+    }
+    return dyn_cast<CXXMethodDecl>(CTUDeclOrError.get());
+  };
+
+  std::string SubjectUSR = getUSRForDecl(D);
+  if (auto It = Analysis.DirectlyOverriddenByMapUSRs.find(SubjectUSR);
+      It != Analysis.DirectlyOverriddenByMapUSRs.end()) {
+    if (const auto *SubjectD = CTUImportMethodOrNull(SubjectUSR)) {
+      llvm::errs() << "Found method " << SubjectD->getQualifiedNameAsString()
+                   << "\n";
+
+      auto &DirectOverriders = Analysis.DirectlyOverriddenByMap
+                                   .try_emplace(SubjectD->getCanonicalDecl())
+                                   .first->second;
+
+      for (const auto &DirectOverriderUSR : It->second) {
+        if (const CXXMethodDecl *OverriderD =
+                CTUImportMethodOrNull(DirectOverriderUSR)) {
+          llvm::errs() << "  Overridden by "
+                       << OverriderD->getQualifiedNameAsString() << "\n";
+          DirectOverriders.insert(OverriderD->getCanonicalDecl());
+        } else {
+          llvm::errs() << "  Failed to import method with USR '"
+                       << DirectOverriderUSR << "'\n";
+        }
+      }
+    } else {
+      llvm::errs() << "Method with USR '" << SubjectUSR
+                   << "' failed to import.\n";
+    }
   }
 
   llvm::DenseSet<const CXXMethodDecl *> Visited;
@@ -234,4 +298,95 @@ MethodVec ento::getOverriders(ProgramStateRef State,
 MethodVec ento::getOverriders(DynamicTypeAnalysis &Analysis,
                               const CXXMethodDecl *Method) {
   return getOverridersImpl(getAnalysis(Analysis), Method);
+}
+
+void ento::dumpDynamicTypeAnalysis(DynamicTypeAnalysis &Analysis,
+                                   llvm::StringRef OutputFile) {
+  assert(!OutputFile.empty());
+  llvm::errs() << "Dumping dynamic type analysis to " << OutputFile << "\n";
+
+  std::error_code EC;
+  llvm::raw_fd_ostream Out(OutputFile, EC);
+  if (EC) {
+    llvm::errs() << "Error opening output file '" << OutputFile
+                 << "': " << EC.message() << "\n";
+    return;
+  }
+
+  llvm::DenseMap<const CXXMethodDecl *, std::string> USRCache;
+  auto GetCachedUSRForDecl = [&USRCache](const CXXMethodDecl *D) {
+    auto [Slot, Inserted] = USRCache.try_emplace(D);
+    if (Inserted)
+      Slot->second = getUSRForDecl(D);
+    return Slot->second;
+  };
+
+  for (const auto &[Method, OverriddenBy] :
+       getAnalysis(Analysis).DirectlyOverriddenByMap) {
+    Out << OverriddenBy.size() << " " << GetCachedUSRForDecl(Method) << "\n";
+    for (const CXXMethodDecl *M : OverriddenBy) {
+      Out << GetCachedUSRForDecl(M) << "\n";
+    }
+  }
+}
+
+void ento::setCTUContext(DynamicTypeAnalysis &Analysis,
+                         cross_tu::CrossTranslationUnitContext &CTUContext) {
+  getAnalysis(Analysis).CTUContext = &CTUContext;
+}
+
+void ento::setOpts(DynamicTypeAnalysis &Analysis, const AnalyzerOptions &Opts) {
+  getAnalysis(Analysis).Opts = &Opts;
+}
+
+void ento::loadDynamicTypeAnalysis(DynamicTypeAnalysis &Analysis,
+                                   llvm::StringRef InputFile) {
+  if (InputFile.empty())
+    return;
+  llvm::errs() << "Loading dynamic type analysis from " << InputFile << "\n";
+
+  auto BufOrErr = llvm::MemoryBuffer::getFile(InputFile);
+  if (!BufOrErr) {
+    llvm::errs() << "Error opening input file '" << InputFile
+                 << "': " << BufOrErr.getError().message() << "\n";
+    return;
+  }
+  llvm::StringRef Buf = (**BufOrErr).getBuffer();
+
+  auto &DynTyAnalysis = getAnalysis(Analysis);
+  auto IsNewLine = [](char c) { return c == '\n'; };
+  DynTyAnalysis.DirectlyOverriddenByMapUSRs.clear();
+
+  unsigned NumPotentialOverriders = 0;
+  while (!Buf.consumeInteger(/*Radix=*/10, NumPotentialOverriders)) {
+    if (!Buf.consume_front(" ")) { // Consume the space before the USR.
+      llvm::errs() << "Expected a space characted; abort.\n";
+      return;
+    }
+    StringRef SubjectUSR = Buf.take_until(IsNewLine);
+    Buf = Buf.drop_front(SubjectUSR.size() + 1); // +1 for \n.
+    auto [Place, Inserted] =
+        DynTyAnalysis.DirectlyOverriddenByMapUSRs.try_emplace(SubjectUSR.str());
+
+    if (!Inserted) {
+      llvm::errs() << "Subject USR was already present: " << SubjectUSR << "\n";
+    }
+
+    auto &OverriddenByUSRs = Place->second;
+    for (unsigned i = 0; i < NumPotentialOverriders; ++i) {
+      StringRef OverriderUSR = Buf.take_until(IsNewLine);
+      Buf = Buf.drop_front(OverriderUSR.size() + 1); // +1 for \n.
+
+      auto [Place, Inserted] = OverriddenByUSRs.insert(OverriderUSR.str());
+      if (!Inserted) {
+        llvm::errs() << "Overrider USR " << OverriderUSR
+                     << " was already present inside SubjectUSR " << SubjectUSR
+                     << "\n";
+      }
+    }
+  }
+  // llvm::errs() << "Consumed the whole metadata file? " << Buf.empty() <<
+  // "\n";
+
+  DynTyAnalysis.dump();
 }

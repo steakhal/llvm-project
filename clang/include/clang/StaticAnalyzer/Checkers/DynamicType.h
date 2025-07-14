@@ -10,14 +10,20 @@
 #define LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_DYNAMIC_TYPE_H
 
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState_Fwd.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include <memory>
 
 namespace clang {
+class AnalyzerOptions;
 class ASTConsumer;
 class ASTContext;
 class CXXMethodDecl;
 } // namespace clang
+
+namespace clang::cross_tu {
+class CrossTranslationUnitContext;
+} // namespace clang::cross_tu
 
 namespace clang::ento {
 class CXXInstanceCall;
@@ -37,6 +43,18 @@ public:
 };
 DynamicTypeAnalysis &
 attachDynamicTypeAnalysis(std::vector<std::unique_ptr<ASTConsumer>> &Consumers);
+
+void dumpDynamicTypeAnalysis(DynamicTypeAnalysis &Analysis,
+                             llvm::StringRef OutputFile);
+
+// Hack
+void loadDynamicTypeAnalysis(DynamicTypeAnalysis &Analysis,
+                             llvm::StringRef InputFile);
+
+// Hack
+void setCTUContext(DynamicTypeAnalysis &Analysis,
+                   cross_tu::CrossTranslationUnitContext &CTUContext);
+void setOpts(DynamicTypeAnalysis &Analysis, const AnalyzerOptions &Opts);
 
 } // namespace clang::ento
 

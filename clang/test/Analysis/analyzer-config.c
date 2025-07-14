@@ -77,6 +77,7 @@
 // CHECK-NEXT: debug.AnalysisOrder:PreStmtCastExpr = false
 // CHECK-NEXT: debug.AnalysisOrder:PreStmtOffsetOfExpr = false
 // CHECK-NEXT: debug.AnalysisOrder:RegionChanges = false
+// CHECK-NEXT: direct-overriders-file = ""
 // CHECK-NEXT: display-checker-name = true
 // CHECK-NEXT: display-ctu-progress = false
 // CHECK-NEXT: dump-entry-point-stats-to-csv = ""
