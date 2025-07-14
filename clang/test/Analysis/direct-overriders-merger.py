@@ -57,7 +57,11 @@ for root, _, files in os.walk(directory_path):
         if file.endswith('.direct-overriders'):
             file_path = os.path.join(root, file)
             try:
-                result = {**result, **parse_file(file_path)}
+                for key, values in parse_file(file_path).items():
+                    if key not in result:
+                        result[key] = values
+                    else:
+                        result[key].update(values)
             except Exception as e:
                 print(f"Error reading file {file_path}: {e}")
 

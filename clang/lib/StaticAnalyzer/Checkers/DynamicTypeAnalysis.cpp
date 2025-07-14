@@ -206,28 +206,20 @@ static MethodVec getOverridersImpl(DynamicTypeAnalysisImpl &Analysis,
   std::string SubjectUSR = getUSRForDecl(D);
   if (auto It = Analysis.DirectlyOverriddenByMapUSRs.find(SubjectUSR);
       It != Analysis.DirectlyOverriddenByMapUSRs.end()) {
-    if (const auto *SubjectD = CTUImportMethodOrNull(SubjectUSR)) {
-      llvm::errs() << "Found method " << SubjectD->getQualifiedNameAsString()
-                   << "\n";
+    auto &DirectOverriders =
+        Analysis.DirectlyOverriddenByMap.try_emplace(D->getCanonicalDecl())
+            .first->second;
 
-      auto &DirectOverriders = Analysis.DirectlyOverriddenByMap
-                                   .try_emplace(SubjectD->getCanonicalDecl())
-                                   .first->second;
-
-      for (const auto &DirectOverriderUSR : It->second) {
-        if (const CXXMethodDecl *OverriderD =
-                CTUImportMethodOrNull(DirectOverriderUSR)) {
-          llvm::errs() << "  Overridden by "
-                       << OverriderD->getQualifiedNameAsString() << "\n";
-          DirectOverriders.insert(OverriderD->getCanonicalDecl());
-        } else {
-          llvm::errs() << "  Failed to import method with USR '"
-                       << DirectOverriderUSR << "'\n";
-        }
+    for (const auto &DirectOverriderUSR : It->second) {
+      if (const CXXMethodDecl *OverriderD =
+              CTUImportMethodOrNull(DirectOverriderUSR)) {
+        llvm::errs() << "  Overridden by "
+                     << OverriderD->getQualifiedNameAsString() << "\n";
+        DirectOverriders.insert(OverriderD->getCanonicalDecl());
+      } else {
+        llvm::errs() << "  Failed to import method with USR '"
+                     << DirectOverriderUSR << "'\n";
       }
-    } else {
-      llvm::errs() << "Method with USR '" << SubjectUSR
-                   << "' failed to import.\n";
     }
   }
 
