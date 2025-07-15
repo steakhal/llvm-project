@@ -1,20 +1,14 @@
 // RUN: rm -rf %t && mkdir %t
 // RUN: split-file %s %t
 
-// DEFINE: %{emit-ast} = %clang -emit-ast \
-// DEFINE:   -Xclang -triple -Xclang x86_64-pc-linux-gnu -std=c++17 \
-// DEFINE:   -D__clang_analyzer__ -Xclang -fanalyzer-emit-direct-overriders
+// RUN: %analyzer-emit-ast -o "%t/base.cpp.ast"    "%t/base.cpp"
+// RUN: %analyzer-emit-ast -o "%t/derived.cpp.ast" "%t/derived.cpp"
 
-// RUN: %{emit-ast} -o "%t/base.cpp.ast"    "%t/base.cpp"
-// RUN: %{emit-ast} -o "%t/derived.cpp.ast" "%t/derived.cpp"
-
-// RUN: cd "%t" && %clang_extdef_map "%t/base.cpp.ast"    2>/dev/null >> externalDefMap.txt
-// RUN: cd "%t" && %clang_extdef_map "%t/derived.cpp.ast" 2>/dev/null >> externalDefMap.txt
-
-// Create the direct-overriders file.
+// RUN: cd "%t" && %clang_extdef_map "%t/base.cpp.ast"    >> externalDefMap.txt
+// RUN: cd "%t" && %clang_extdef_map "%t/derived.cpp.ast" >> externalDefMap.txt
 // RUN: %direct-overriders-merger.py %t %t/direct-overriders.txt
 
-// RUN: %clang_cc1 -triple x86_64-pc-linux-gnu -std=c++17 -analyze -I %t \
+// RUN: %clang_analyze_cc1 -I %t \
 // RUN:   -analyzer-checker=core,debug.ExprInspection \
 // RUN:   -analyzer-config experimental-enable-naive-ctu-analysis=true \
 // RUN:   -analyzer-config ctu-dir=%t \

@@ -224,14 +224,6 @@ if config.clang_staticanalyzer:
         )
     )
 
-    direct_overriders_merger_path = os.path.join(config.test_source_root, "Analysis", "direct-overriders-merger.py")
-    config.substitutions.append(
-        (
-            "%direct-overriders-merger.py",
-            '"%s" %s' % (config.python_executable, direct_overriders_merger_path),
-        )
-    )
-
 # ClangIR support
 if config.clang_enable_cir:
     config.available_features.add("cir-support")
