@@ -1,11 +1,11 @@
 // RUN: rm -rf %t && mkdir %t
 // RUN: split-file %s %t
 
-// RUN: %analyzer-emit-ast -o "%t/base.cpp.ast"    "%t/base.cpp"
-// RUN: %analyzer-emit-ast -o "%t/derived.cpp.ast" "%t/derived.cpp"
+// RUN: %analyzer-emit-ast -o "%t/base.ast"    "%t/base.cpp"
+// RUN: %analyzer-emit-ast -o "%t/derived.ast" "%t/derived.cpp"
 
-// RUN: cd "%t" && %clang_extdef_map "%t/base.cpp.ast"    >> externalDefMap.txt
-// RUN: cd "%t" && %clang_extdef_map "%t/derived.cpp.ast" >> externalDefMap.txt
+// RUN: cd "%t" && %clang_extdef_map "%t/base.ast"    >> externalDefMap.txt
+// RUN: cd "%t" && %clang_extdef_map "%t/derived.ast" >> externalDefMap.txt
 // RUN: %direct-overriders-merger.py %t %t/direct-overriders.txt
 
 // RUN: %clang_analyze_cc1 -I %t \
