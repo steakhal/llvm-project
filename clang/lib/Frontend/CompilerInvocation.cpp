@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Frontend/CompilerInvocation.h"
-#include "AnalysisExtension.h"
 #include "TestModuleFileExtension.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/CharInfo.h"
@@ -3143,10 +3142,6 @@ static bool ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
         std::make_shared<TestModuleFileExtension>(
             BlockName, MajorVersion, MinorVersion, Hashed, UserInfo));
   }
-
-  // if (Args.getLastArg(OPT_analyzer_emit_direct_overriders)) {
-  //   Opts.ModuleFileExtensions.push_back(std::make_shared<AnalysisExtension>());
-  // }
 
   if (const Arg *A = Args.getLastArg(OPT_code_completion_at)) {
     Opts.CodeCompletionAt =
