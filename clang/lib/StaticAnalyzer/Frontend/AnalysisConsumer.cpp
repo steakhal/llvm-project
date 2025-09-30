@@ -46,10 +46,6 @@
 using namespace clang;
 using namespace ento;
 
-namespace clang::ento {
-class DynamicTypeAnalysis;
-} // namespace clang::ento
-
 #define DEBUG_TYPE "AnalysisConsumer"
 
 STAT_COUNTER(NumFunctionTopLevel, "The # of functions at top level.");
