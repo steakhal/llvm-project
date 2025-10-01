@@ -2032,14 +2032,14 @@ ProgramStateRef MallocChecker::MallocMemAux(CheckerContext &C,
   const LocationContext *LCtx = C.getPredecessor()->getLocationContext();
   SVal RetVal = State->getSVal(CE, C.getLocationContext());
 
-  // Fill the region with the initialization value.
-  State = State->bindDefaultInitial(RetVal, Init, LCtx);
-
   // If Size is somehow undefined at this point, this line prevents a crash.
   if (Size.isUndef())
     Size = UnknownVal();
 
   checkTaintedness(C, Call, Size, State, AllocationFamily(AF_Malloc));
+
+  // Fill the region with the initialization value.
+  State = State->bindDefaultInitial(RetVal, Init, LCtx, Size);
 
   // Set the region's extent.
   State = setDynamicExtent(State, RetVal.getAsRegion(),

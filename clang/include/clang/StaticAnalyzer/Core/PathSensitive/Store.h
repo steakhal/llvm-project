@@ -118,12 +118,13 @@ public:
   /// Return a store with the specified value bound to all sub-regions of the
   /// region. The region must not have previous bindings. If you need to
   /// invalidate existing bindings, consider invalidateRegions().
-  virtual BindResult BindDefaultInitial(Store store, const MemRegion *R,
-                                        SVal V) = 0;
+  virtual BindResult BindDefaultInitial(Store S, const MemRegion *R,
+                                        SVal ExtentInBytes, SVal V) = 0;
 
   /// Return a store with in which all values within the given region are
   /// reset to zero. This method is allowed to overwrite previous bindings.
-  virtual BindResult BindDefaultZero(Store store, const MemRegion *R) = 0;
+  virtual BindResult BindDefaultZero(Store S, const MemRegion *R,
+                                     SVal ExtentInBytes) = 0;
 
   /// Create a new store with the specified binding removed.
   /// \param ST the original store, that is the basis for the new store.
@@ -264,9 +265,8 @@ public:
   public:
     virtual ~BindingsHandler();
 
-    /// \return whether the iteration should continue.
-    virtual bool HandleBinding(StoreManager& SMgr, Store store,
-                               const MemRegion *region, SVal val) = 0;
+    enum Continuation { ContinueHandling, DoneHandling };
+    virtual Continuation HandleBinding(const MemRegion *BaseRegion, SVal V) = 0;
   };
 
   class FindUniqueBinding : public BindingsHandler {
@@ -279,8 +279,7 @@ public:
 
     explicit operator bool() { return First && Binding; }
 
-    bool HandleBinding(StoreManager& SMgr, Store store, const MemRegion* R,
-                       SVal val) override;
+    Continuation HandleBinding(const MemRegion *BaseRegion, SVal V) override;
     const MemRegion *getRegion() { return Binding; }
   };
 
@@ -327,6 +326,8 @@ inline StoreRef &StoreRef::operator=(StoreRef const &newStore) {
 // FIXME: Do we need to pass ProgramStateManager anymore?
 std::unique_ptr<StoreManager>
 CreateRegionStoreManager(ProgramStateManager &StMgr);
+
+std::unique_ptr<StoreManager> CreateRegionStoreV2(ProgramStateManager &StMgr);
 
 } // namespace ento
 

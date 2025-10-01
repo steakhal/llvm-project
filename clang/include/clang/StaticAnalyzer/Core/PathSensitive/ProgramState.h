@@ -293,13 +293,14 @@ public:
   /// This method should not be used on regions that are already initialized.
   /// If you need to indicate that memory contents have suddenly become unknown
   /// within a certain region of memory, consider invalidateRegions().
-  [[nodiscard]] ProgramStateRef
-  bindDefaultInitial(SVal loc, SVal V, const LocationContext *LCtx) const;
+  [[nodiscard]] ProgramStateRef bindDefaultInitial(SVal loc, SVal V,
+                                                   const LocationContext *LCtx,
+                                                   SVal extent) const;
 
   /// Performs C++ zero-initialization procedure on the region of memory
   /// represented by \p loc.
   [[nodiscard]] ProgramStateRef
-  bindDefaultZero(SVal loc, const LocationContext *LCtx) const;
+  bindDefaultZero(SVal loc, const LocationContext *LCtx, SVal extent) const;
 
   [[nodiscard]] ProgramStateRef killBinding(Loc LV) const;
 

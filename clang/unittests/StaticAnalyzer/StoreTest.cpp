@@ -53,6 +53,13 @@ class VariableBindConsumer : public StoreTestConsumer {
     const auto *VDY1 = findDeclByName<VarDecl>(D, "y1");
 
     ASSERT_TRUE(VDX0 && VDY0 && VDZ0 && VDX1 && VDY1);
+    ASSERT_EQ(VDX0->getType()->getCanonicalTypeUnqualified(), ASTCtxt.IntTy);
+    ASSERT_EQ(VDY0->getType()->getCanonicalTypeUnqualified(), ASTCtxt.IntTy);
+    ASSERT_EQ(VDZ0->getType()->getCanonicalTypeUnqualified(), ASTCtxt.IntTy);
+    ASSERT_EQ(VDX1->getType()->getCanonicalTypeUnqualified(), ASTCtxt.IntTy);
+    ASSERT_EQ(VDY1->getType()->getCanonicalTypeUnqualified(), ASTCtxt.IntTy);
+    SVal IntSize = Builder.makeIntVal(
+        ASTCtxt.getTypeSizeInChars(ASTCtxt.IntTy).getQuantity(), ASTCtxt.IntTy);
 
     const StackFrameContext *SFC =
         Eng.getAnalysisDeclContextManager().getStackFrame(D);
@@ -73,13 +80,14 @@ class VariableBindConsumer : public StoreTestConsumer {
     EXPECT_EQ(Zero, SManager.getBinding(StX0, LX0, ASTCtxt.IntTy));
 
     // BindDefaultInitial(Zero)
-    Store StY0 = SManager.BindDefaultInitial(StInit, LY0.getAsRegion(), Zero)
-                     .ResultingStore.getStore();
+    Store StY0 =
+        SManager.BindDefaultInitial(StInit, LY0.getAsRegion(), IntSize, Zero)
+            .ResultingStore.getStore();
     EXPECT_EQ(Zero, SManager.getBinding(StY0, LY0, ASTCtxt.IntTy));
     EXPECT_EQ(Zero, *SManager.getDefaultBinding(StY0, LY0.getAsRegion()));
 
     // BindDefaultZero()
-    Store StZ0 = SManager.BindDefaultZero(StInit, LZ0.getAsRegion())
+    Store StZ0 = SManager.BindDefaultZero(StInit, LZ0.getAsRegion(), IntSize)
                      .ResultingStore.getStore();
     // BindDefaultZero wipes the region with '0 S8b', not with out Zero.
     // Direct load, however, does give us back the object of the type
@@ -92,8 +100,9 @@ class VariableBindConsumer : public StoreTestConsumer {
     EXPECT_EQ(One, SManager.getBinding(StX1, LX1, ASTCtxt.IntTy));
 
     // BindDefaultInitial(One)
-    Store StY1 = SManager.BindDefaultInitial(StInit, LY1.getAsRegion(), One)
-                     .ResultingStore.getStore();
+    Store StY1 =
+        SManager.BindDefaultInitial(StInit, LY1.getAsRegion(), IntSize, One)
+            .ResultingStore.getStore();
     EXPECT_EQ(One, SManager.getBinding(StY1, LY1, ASTCtxt.IntTy));
     EXPECT_EQ(One, *SManager.getDefaultBinding(StY1, LY1.getAsRegion()));
   }

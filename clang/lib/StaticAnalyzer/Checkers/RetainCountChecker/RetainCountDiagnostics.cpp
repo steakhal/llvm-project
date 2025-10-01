@@ -567,16 +567,15 @@ public:
   VarBindingsCollector(SymbolRef Sym, Bindings &ToFill)
       : Sym(Sym), Result(ToFill) {}
 
-  bool HandleBinding(StoreManager &SMgr, Store Store, const MemRegion *R,
-                     SVal Val) override {
+  Continuation HandleBinding(const MemRegion *BaseRegion, SVal Val) override {
     SymbolRef SymV = Val.getAsLocSymbol();
     if (!SymV || SymV != Sym)
-      return true;
+      return ContinueHandling;
 
-    if (isa<NonParamVarRegion>(R))
-      Result.emplace_back(R, Val);
+    if (isa<NonParamVarRegion>(BaseRegion))
+      Result.emplace_back(BaseRegion, Val);
 
-    return true;
+    return ContinueHandling;
   }
 };
 } // namespace

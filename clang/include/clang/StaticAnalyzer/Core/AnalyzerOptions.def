@@ -85,6 +85,10 @@ ANALYZER_OPTION(
 // Boolean analyzer options.
 //===----------------------------------------------------------------------===//
 
+ANALYZER_OPTION(
+    bool, ShouldUseNewStoreImpl, "enable-new-store",
+    "Whether enable the new store component or not.", false)
+
 ANALYZER_OPTION(bool, ShouldIncludeImplicitDtorsInCFG, "cfg-implicit-dtors",
                 "Whether or not implicit destructors for C++ objects "
                 "should be included in the CFG.",

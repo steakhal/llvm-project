@@ -1343,7 +1343,7 @@ bool CStringChecker::memsetAux(const Expr *DstBuffer, ConstCFGElementRef Elem,
       // can only deal with zero value here. In the future, we need to deal with
       // the binding of non-zero value in the case of whole region.
       State = State->bindDefaultZero(svalBuilder.makeLoc(BR),
-                                     C.getLocationContext());
+                                     C.getLocationContext(), SizeDV);
     } else {
       // If the destination buffer's extent is not equal to the value of
       // third argument, just invalidate buffer.
@@ -2342,8 +2342,8 @@ void CStringChecker::evalStrxfrm(CheckerContext &C,
     // `dest` buffer content is undefined
     if (auto DestLoc = DestVal.getAs<loc::MemRegionVal>()) {
       StateFailure = StateFailure->killBinding(*DestLoc);
-      StateFailure =
-          StateFailure->bindDefaultInitial(*DestLoc, UndefinedVal{}, LCtx);
+      StateFailure = StateFailure->bindDefaultInitial(*DestLoc, UndefinedVal{},
+                                                      LCtx, SizeVal);
     }
 
     BindReturnAndTransition(StateFailure);

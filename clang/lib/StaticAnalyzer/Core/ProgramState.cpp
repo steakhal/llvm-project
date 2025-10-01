@@ -125,23 +125,25 @@ ProgramStateRef ProgramState::bindLoc(Loc LV,
   return State;
 }
 
-ProgramStateRef
-ProgramState::bindDefaultInitial(SVal loc, SVal V,
-                                 const LocationContext *LCtx) const {
+ProgramStateRef ProgramState::bindDefaultInitial(SVal loc, SVal V,
+                                                 const LocationContext *LCtx,
+                                                 SVal Extent) const {
   ProgramStateManager &Mgr = getStateManager();
   const MemRegion *R = loc.castAs<loc::MemRegionVal>().getRegion();
-  BindResult BindRes = Mgr.StoreMgr->BindDefaultInitial(getStore(), R, V);
-  ProgramStateRef State = makeWithStore(BindRes);
-  return Mgr.getOwningEngine().processRegionChange(State, R, LCtx);
+  BindResult BindRes =
+      Mgr.StoreMgr->BindDefaultInitial(getStore(), R, Extent, V);
+  ProgramStateRef NewState = makeWithStore(BindRes);
+  return Mgr.getOwningEngine().processRegionChange(NewState, R, LCtx);
 }
 
-ProgramStateRef
-ProgramState::bindDefaultZero(SVal loc, const LocationContext *LCtx) const {
+ProgramStateRef ProgramState::bindDefaultZero(SVal loc,
+                                              const LocationContext *LCtx,
+                                              SVal Extent) const {
   ProgramStateManager &Mgr = getStateManager();
   const MemRegion *R = loc.castAs<loc::MemRegionVal>().getRegion();
-  BindResult BindRes = Mgr.StoreMgr->BindDefaultZero(getStore(), R);
-  ProgramStateRef State = makeWithStore(BindRes);
-  return Mgr.getOwningEngine().processRegionChange(State, R, LCtx);
+  BindResult BindRes = Mgr.StoreMgr->BindDefaultZero(getStore(), R, Extent);
+  ProgramStateRef NewState = makeWithStore(BindRes);
+  return Mgr.getOwningEngine().processRegionChange(NewState, R, LCtx);
 }
 
 typedef ArrayRef<const MemRegion *> RegionList;

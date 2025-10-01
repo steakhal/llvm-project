@@ -606,7 +606,7 @@ public: // Part of public interface to class.
 
   // BindDefaultInitial is only used to initialize a region with
   // a default value.
-  BindResult BindDefaultInitial(Store store, const MemRegion *R,
+  BindResult BindDefaultInitial(Store store, const MemRegion *R, SVal Extent,
                                 SVal V) override {
     RegionBindingsRef B = getRegionBindings(store);
     // Use other APIs when you have to wipe the region that was initialized
@@ -620,7 +620,8 @@ public: // Part of public interface to class.
 
   // BindDefaultZero is used for zeroing constructors that may accidentally
   // overwrite existing bindings.
-  BindResult BindDefaultZero(Store store, const MemRegion *R) override {
+  BindResult BindDefaultZero(Store store, const MemRegion *R,
+                             SVal Extent) override {
     // FIXME: The offsets of empty bases can be tricky because of
     // of the so called "empty base class optimization".
     // If a base class has been optimized out
@@ -825,7 +826,8 @@ public: // Part of public interface to class.
           continue;
         if (const SubRegion *R = dyn_cast<SubRegion>(Key.getRegion())) {
           // FIXME: Possibly incorporate the offset?
-          if (!f.HandleBinding(*this, store, R, Value))
+          if (f.HandleBinding(R->getBaseRegion(), Value) ==
+              BindingsHandler::DoneHandling)
             return;
         }
       }

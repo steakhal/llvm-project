@@ -173,7 +173,8 @@ public:
     }
 
     // Create the analyzer component creators.
-    CreateStoreMgr = &CreateRegionStoreManager;
+    CreateStoreMgr = Opts.ShouldUseNewStoreImpl ? &CreateRegionStoreV2
+                                                : &CreateRegionStoreManager;
 
     switch (Opts.AnalysisConstraintsOpt) {
     default:

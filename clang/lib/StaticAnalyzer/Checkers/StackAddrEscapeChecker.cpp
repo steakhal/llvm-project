@@ -534,28 +534,28 @@ void StackAddrEscapeChecker::checkEndFunction(const ReturnStmt *RS,
         : Ctx(CC), State(CC.getState()), PoppedFrame(CC.getStackFrame()),
           TopFrame(TopFrame) {}
 
-    bool HandleBinding(StoreManager &SMgr, Store S, const MemRegion *Region,
-                       SVal Val) override {
-      recordInInvalidatedRegions(Region);
+    Continuation HandleBinding(const MemRegion *BaseRegion, SVal Val) override {
+      recordInInvalidatedRegions(BaseRegion);
       const MemRegion *VR = Val.getAsRegion();
       if (!VR)
-        return true;
+        return ContinueHandling;
 
-      if (checkForDanglingStackVariable(Region, VR))
-        return true;
+      if (checkForDanglingStackVariable(BaseRegion, VR))
+        return ContinueHandling;
 
       // Check the globals for the same.
       if (!isa_and_nonnull<GlobalsSpaceRegion>(
-              getStackOrGlobalSpaceRegion(State, Region)))
-        return true;
+              getStackOrGlobalSpaceRegion(State, BaseRegion))) {
+        return ContinueHandling;
+      }
 
       if (VR) {
         if (const auto *S = VR->getMemorySpaceAs<StackSpaceRegion>(State);
             S && !isNotInCurrentFrame(S, Ctx)) {
-          V.emplace_back(Region, VR);
+          V.emplace_back(BaseRegion, VR);
         }
       }
-      return true;
+      return ContinueHandling;
     }
   };
 
@@ -572,9 +572,8 @@ void StackAddrEscapeChecker::checkEndFunction(const ReturnStmt *RS,
   if (!N)
     return;
 
-  for (const auto &P : Cb.V) {
-    const MemRegion *Referrer = P.first->getBaseRegion();
-    const MemRegion *Referred = P.second;
+  for (auto [Referrer, Referred] : Cb.V) {
+    assert(Referrer == Referrer->getBaseRegion());
     if (Cb.ExcludedRegions.contains(getOriginBaseRegion(Referrer))) {
       continue;
     }

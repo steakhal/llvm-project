@@ -29,11 +29,10 @@ public:
   OwnershipBindingsHandler(SymbolRef Sym, OwnerSet &Owners)
       : Sym(Sym), Owners(Owners) {}
 
-  bool HandleBinding(StoreManager &SMgr, Store Store, const MemRegion *Region,
-                     SVal Val) override {
+  Continuation HandleBinding(const MemRegion *BaseRegion, SVal Val) override {
     if (Val.getAsSymbol() == Sym)
-      Owners.insert(Region);
-    return true;
+      Owners.insert(BaseRegion);
+    return ContinueHandling;
   }
 
   LLVM_DUMP_METHOD void dump() const { dumpToStream(llvm::errs()); }

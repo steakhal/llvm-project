@@ -729,8 +729,10 @@ void ExprEngine::handleConstructor(const Expr *E,
         const CXXRecordDecl *TargetHeldRecord =
             dyn_cast_or_null<CXXRecordDecl>(CE->getType()->getAsRecordDecl());
 
-        if (!TargetHeldRecord || !TargetHeldRecord->isEmpty())
-          State = State->bindDefaultZero(Target, LCtx);
+        if (!TargetHeldRecord || !TargetHeldRecord->isEmpty()) {
+          // TODO: Determine the proper extent here.
+          State = State->bindDefaultZero(Target, LCtx, UnknownVal());
+        }
       }
 
       Bldr.generateNode(CE, N, State, /*tag=*/nullptr,
@@ -937,11 +939,17 @@ void ExprEngine::VisitCXXNewAllocatorCall(const CXXNewExpr *CNE,
     // skip it for now.
     ProgramStateRef State = I->getState();
     SVal RetVal = State->getSVal(CNE, LCtx);
+    CharUnits NumBytes = getContext().getTypeSizeInChars(CNE->getType());
+    APSIntPtr NumBytesInt =
+        svalBuilder.getBasicValueFactory().getIntValue(NumBytes.getQuantity(),
+                                                       /*isUnsigned=*/true);
     // [basic.stc.dynamic.allocation] (on the return value of an allocation
     // function):
     // "The order, contiguity, and initial value of storage allocated by
     // successive calls to an allocation function are unspecified."
-    State = State->bindDefaultInitial(RetVal, UndefinedVal{}, LCtx);
+
+    State = State->bindDefaultInitial(RetVal, UndefinedVal{}, LCtx,
+                                      nonloc::ConcreteInt{NumBytesInt});
 
     // If this allocation function is not declared as non-throwing, failures
     // /must/ be signalled by exceptions, and thus the return value will never

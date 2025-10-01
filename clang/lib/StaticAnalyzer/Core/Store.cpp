@@ -528,20 +528,16 @@ SVal StoreManager::getLValueElement(QualType elementType, NonLoc Offset,
 
 StoreManager::BindingsHandler::~BindingsHandler() = default;
 
-bool StoreManager::FindUniqueBinding::HandleBinding(StoreManager& SMgr,
-                                                    Store store,
-                                                    const MemRegion* R,
-                                                    SVal val) {
-  SymbolRef SymV = val.getAsLocSymbol();
-  if (!SymV || SymV != Sym)
-    return true;
+StoreManager::FindUniqueBinding::Continuation
+StoreManager::FindUniqueBinding::HandleBinding(const MemRegion *BaseRegion,
+                                               SVal V) {
+  if (SymbolRef SymV = V.getAsLocSymbol(); !SymV || SymV != Sym)
+    return ContinueHandling;
 
   if (Binding) {
     First = false;
-    return false;
+    return DoneHandling;
   }
-  else
-    Binding = R;
-
-  return true;
+  Binding = BaseRegion;
+  return ContinueHandling;
 }
