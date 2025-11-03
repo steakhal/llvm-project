@@ -14,6 +14,7 @@
 #include "clang/AST/DeclVisitor.h"
 #include "clang/AST/ODRHash.h"
 #include "clang/Lex/PreprocessingRecord.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -1179,6 +1180,20 @@ void clang::index::generateUSRForGlobalEnum(StringRef EnumName, raw_ostream &OS,
 void clang::index::generateUSRForEnumConstant(StringRef EnumConstantName,
                                               raw_ostream &OS) {
   OS << '@' << EnumConstantName;
+}
+
+std::optional<std::string> clang::index::generateUSRForDecl(const Decl *D) {
+  if (!D)
+    return std::nullopt;
+  return generateUSRForDecl(D, D->getASTContext().getLangOpts());
+}
+
+std::optional<std::string>
+clang::index::generateUSRForDecl(const Decl *D, const LangOptions &LangOpts) {
+  SmallVector<char, 50> Buf;
+  if (generateUSRForDecl(D, Buf, LangOpts))
+    return std::nullopt;
+  return llvm::toStringRef(Buf).str();
 }
 
 bool clang::index::generateUSRForDecl(const Decl *D,

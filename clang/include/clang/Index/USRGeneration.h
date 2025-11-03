@@ -29,6 +29,11 @@ static inline StringRef getUSRSpacePrefix() {
 }
 
 /// Generate a USR for a Decl, including the USR prefix.
+std::optional<std::string> generateUSRForDecl(const Decl *D);
+std::optional<std::string> generateUSRForDecl(const Decl *D,
+                                              const LangOptions &LangOpts);
+
+/// Generate a USR for a Decl, including the USR prefix.
 /// \returns true if the results should be ignored, false otherwise.
 bool generateUSRForDecl(const Decl *D, SmallVectorImpl<char> &Buf);
 bool generateUSRForDecl(const Decl *D, SmallVectorImpl<char> &Buf,

@@ -20,10 +20,15 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/VirtualFileSystem.h"
+#include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
 #include <functional>
+#include <memory>
 #include <unordered_map>
+#include <vector>
 
 using namespace clang;
 using namespace ento;
@@ -34,70 +39,6 @@ using PotentialOverridersMapping =
     llvm::DenseMap<const CXXMethodDecl *,
                    llvm::SmallSet<const CXXMethodDecl *, 1>>;
 using ClassToClassesMapping = llvm::DenseMap<const CXXRecordDecl *, ClassSet>;
-
-namespace {
-/// Gathers the polymorphic most derived classes of the TU.
-class RootClassesCollector : public ASTConsumer,
-                             public DynamicRecursiveASTVisitor {
-protected:
-  RootClassesCollector();
-  void recordPotentialRootClass(const CXXRecordDecl *Class);
-  bool VisitCXXRecordDecl(CXXRecordDecl *Class) override;
-
-  // bool HandleTopLevelDecl(DeclGroupRef DG) override;
-  // void HandleInterestingDecl(DeclGroupRef DG) override {
-  //   HandleTopLevelDecl(DG); // Handle decls of pch the same way.
-  // }
-
-  ClassSet RootClasses;
-  ClassSet HandledClasses;
-};
-} // namespace
-
-RootClassesCollector::RootClassesCollector() {
-  ShouldVisitTemplateInstantiations = true;
-  ShouldWalkTypesOfTypeLocs = false;
-  ShouldVisitImplicitCode = true;
-  ShouldVisitLambdaBody = true;
-}
-
-void RootClassesCollector::recordPotentialRootClass(
-    const CXXRecordDecl *Class) {
-  assert(Class->isCanonicalDecl());
-  assert(Class->hasDefinition());
-
-  if (!HandledClasses.insert(Class).second)
-    return;
-
-  // If we have base classes, then exclude all the bases from the
-  // potential root class set. We also don't need to visit them later.
-  auto RemoveConcreteClasses = [this](const CXXRecordDecl *Base) {
-    RootClasses.erase(Base);
-    HandledClasses.insert(Base);
-    return true; // Continue.
-  };
-
-  Class->forallBases(RemoveConcreteClasses);
-  RootClasses.insert(Class);
-}
-
-bool RootClassesCollector::VisitCXXRecordDecl(CXXRecordDecl *Class) {
-  Class = Class->getCanonicalDecl();
-  if (!Class->hasDefinition())
-    return true;
-
-  recordPotentialRootClass(Class);
-  return true;
-}
-
-// bool RootClassesCollector::HandleTopLevelDecl(DeclGroupRef DG) {
-//   for (Decl *D : DG) {
-//     if (auto *R = dyn_cast<CXXRecordDecl>(D)) {
-//       TraverseDecl(R);
-//     }
-//   }
-//   return true; // Continue parsing.
-// }
 
 static void collectPotentialOverrides(PotentialOverridersMapping &Mapping,
                                       const CXXRecordDecl *Class) {
@@ -306,6 +247,28 @@ void DynamicTypeAnalysisImpl::dump() const {
 
 DynamicTypeAnalysis &ento::attachDynamicTypeAnalysis(
     std::vector<std::unique_ptr<ASTConsumer>> &Consumers) {
+  auto Data = readOverridersYAML("/home/steak/git/llvm-project/yaa.yaml");
+  if (!Data) {
+    llvm::logAllUnhandledErrors(Data.takeError(), llvm::errs());
+  }
+
+  for (const auto &R : *Data) {
+    llvm::errs() << "R.Overridee: " << R.Overridee << ": [";
+    llvm::interleaveComma(R.OverriddenBy, llvm::errs());
+    llvm::errs() << "]\n";
+  }
+
+  llvm::Error Err =
+      writeOverridersYAML(*Data, "/home/steak/git/llvm-project/outt.yaml");
+  if (Err) {
+    llvm::logAllUnhandledErrors(std::move(Err), llvm::errs());
+  }
+
+  // NE.push_back(DirectOverridersDataEntry{"newusr", {"other", "other2"}});
+  // llvm::yaml::Output Outs(llvm::errs() << "YAML out:\n");
+  // Outs << NE;
+  std::abort();
+
   Consumers.push_back(std::make_unique<DynamicTypeAnalysisImpl>());
   return *static_cast<DynamicTypeAnalysisImpl *>(Consumers.back().get());
 }
