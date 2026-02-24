@@ -69,12 +69,11 @@ protected:
         Builder(TUSummary),
         Extractor(UnsafeBufferUsageTUSummaryExtractor(Builder)) {}
 
-  std::unique_ptr<UnsafeBufferUsageEntitySummary>
-  setUpTest(StringRef Code, StringRef ContributorName) {
-    AST = tooling::buildASTFromCodeWithArgs(Code, {});
+  std::unique_ptr<UnsafeBufferUsageEntitySummary> setUpTest(StringRef Code) {
+    AST = tooling::buildASTFromCode(Code);
 
     const auto *ContributorDefn =
-        findDeclByName(ContributorName, AST->getASTContext());
+        findDeclByName("test_subject", AST->getASTContext());
     std::optional<EntityName> EN = getEntityName(ContributorDefn);
 
     if (!ContributorDefn || !EN)
@@ -200,11 +199,10 @@ TEST_F(UnsafeBufferUsageTest, UnsafeBufferUsageEntitySummaryTest) {
 
 TEST_F(UnsafeBufferUsageTest, SimpleFunctionWithUnsafePointer) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int *p) {
+    void test_subject(int *p) {
       p[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({{"p", 1u}}));
@@ -212,12 +210,11 @@ TEST_F(UnsafeBufferUsageTest, SimpleFunctionWithUnsafePointer) {
 
 TEST_F(UnsafeBufferUsageTest, PointerArithmetic) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int *p, int *q) {
+    void test_subject(int *p, int *q) {
       *(p + 5);
       *(q - 3);
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({{"p", 1u}, {"q", 1u}}));
@@ -225,14 +222,13 @@ TEST_F(UnsafeBufferUsageTest, PointerArithmetic) {
 
 TEST_F(UnsafeBufferUsageTest, PointerIncrementDecrement) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int *p, int *q, int *r, int *s) {
+    void test_subject(int *p, int *q, int *r, int *s) {
       (++p)[5];
       (q++)[5];
       (--r)[5];
       (s--)[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
 
@@ -246,11 +242,10 @@ TEST_F(UnsafeBufferUsageTest, PointerIncrementDecrement) {
 
 TEST_F(UnsafeBufferUsageTest, PointerAssignment) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int *p, int *q) {
+    void test_subject(int *p, int *q) {
       (p = q + 5)[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({{"p", 1u}, {"q", 1u}}));
@@ -258,12 +253,11 @@ TEST_F(UnsafeBufferUsageTest, PointerAssignment) {
 
 TEST_F(UnsafeBufferUsageTest, CompoundAssignment) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int *p, int *q) {
+    void test_subject(int *p, int *q) {
       (p += 5)[5];
       (q -= 3)[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({{"p", 1u}, {"q", 1u}}));
@@ -271,14 +265,13 @@ TEST_F(UnsafeBufferUsageTest, CompoundAssignment) {
 
 TEST_F(UnsafeBufferUsageTest, MultiLevelPointer) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int **p, int **q, int **r) {
+    void test_subject(int **p, int **q, int **r) {
       (*p)[5];
       *(*q);
       *(q[5]);
       r[5][5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({
@@ -291,12 +284,11 @@ TEST_F(UnsafeBufferUsageTest, MultiLevelPointer) {
 
 TEST_F(UnsafeBufferUsageTest, ConditionalOperator) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int **p, int **q, int cond) {
+    void test_subject(int **p, int **q, int cond) {
       (cond ? *p : *q)[5];
       cond ? p[5] : q[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({
@@ -309,12 +301,11 @@ TEST_F(UnsafeBufferUsageTest, ConditionalOperator) {
 
 TEST_F(UnsafeBufferUsageTest, CastExpression) {
   auto Sum = setUpTest(R"cpp(
-    void foo(void *p, int q) {
+    void test_subject(void *p, int q) {
       ((int*)p)[5];
       ((int*)q)[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({{"p", 1u}}));
@@ -322,11 +313,10 @@ TEST_F(UnsafeBufferUsageTest, CastExpression) {
 
 TEST_F(UnsafeBufferUsageTest, CommaOperator) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int *p, int x) {
+    void test_subject(int *p, int x) {
       (x++, p)[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({{"p", 1u}}));
@@ -334,11 +324,10 @@ TEST_F(UnsafeBufferUsageTest, CommaOperator) {
 
 TEST_F(UnsafeBufferUsageTest, ParenthesizedExpression) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int *p) {
+    void test_subject(int *p) {
       (((p)))[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({{"p", 1u}}));
@@ -346,13 +335,12 @@ TEST_F(UnsafeBufferUsageTest, ParenthesizedExpression) {
 
 TEST_F(UnsafeBufferUsageTest, ArrayParameter) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int arr[], int arr2[][10]) {
+    void test_subject(int arr[], int arr2[][10]) {
       int n = 5;
       arr[100];
       arr2[5][n];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre(
@@ -362,17 +350,16 @@ TEST_F(UnsafeBufferUsageTest, ArrayParameter) {
 TEST_F(UnsafeBufferUsageTest, FunctionCall) {
   auto Sum = setUpTest(R"cpp(
     int ** (*fp)();
-    int ** foo() {
-      fp = &foo;
-      foo()[5];
+    int ** test_subject() {
+      fp = &test_subject;
+      test_subject()[5];
       (*fp())[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   // No (foo, 2) because indirect calls are ignored.
-  EXPECT_THAT(*Sum, UnorderedReturnPointerLevelsAre({{"foo", 1u}}));
+  EXPECT_THAT(*Sum, UnorderedReturnPointerLevelsAre({{"test_subject", 1u}}));
 }
 
 TEST_F(UnsafeBufferUsageTest, StructMemberAccess) {
@@ -381,13 +368,12 @@ TEST_F(UnsafeBufferUsageTest, StructMemberAccess) {
       int *ptr;
       int (*ptr_to_arr)[10];
     };
-    void foo(struct S obj) {
+    void test_subject(struct S obj) {
       int n = 5;
       obj.ptr[5];
       (*obj.ptr_to_arr)[n];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum,
@@ -396,11 +382,10 @@ TEST_F(UnsafeBufferUsageTest, StructMemberAccess) {
 
 TEST_F(UnsafeBufferUsageTest, StringLiteralSubscript) {
   auto Sum = setUpTest(R"cpp(
-    void foo() {
+    void test_subject() {
       "hello"[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   // String literals should not generate pointer kind variables
@@ -409,11 +394,10 @@ TEST_F(UnsafeBufferUsageTest, StringLiteralSubscript) {
 
 TEST_F(UnsafeBufferUsageTest, OpaqueValueExpr) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int *p, int *q) {
+    void test_subject(int *p, int *q) {
        (p ?: q)[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({{"p", 1u}, {"q", 1u}}));
@@ -421,11 +405,10 @@ TEST_F(UnsafeBufferUsageTest, OpaqueValueExpr) {
 
 TEST_F(UnsafeBufferUsageTest, AddressOfOperator) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int x) {
+    void test_subject(int x) {
       (&x)[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   // Address-of should not generate pointer kind variables for 'x'
@@ -434,12 +417,11 @@ TEST_F(UnsafeBufferUsageTest, AddressOfOperator) {
 
 TEST_F(UnsafeBufferUsageTest, AddressOfThenDereference) {
   auto Sum = setUpTest(R"cpp(
-    void foo(int *p, int *q) {
+    void test_subject(int *p, int *q) {
       (*(&p))[5];
       (&(*q))[5];
     }
-  )cpp",
-                       "foo");
+  )cpp");
 
   ASSERT_NE(Sum, nullptr);
   EXPECT_THAT(*Sum, UnorderedPointerLevelsAre({{"p", 1u}, {"q", 1u}}));
