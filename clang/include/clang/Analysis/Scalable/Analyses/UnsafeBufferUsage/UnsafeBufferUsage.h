@@ -13,6 +13,7 @@
 #include "clang/Analysis/Scalable/Model/SummaryName.h"
 #include "clang/Analysis/Scalable/TUSummary/EntitySummary.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/Support/raw_ostream.h"
 #include <set>
 #include <tuple>
 
@@ -81,6 +82,12 @@ public:
       return L.getEntity() < R;
     }
   };
+
+  friend llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
+                                       EntityPointerLevel Obj) {
+    return OS << "EntityPointerLevel{" << Obj.Entity << ", " << Obj.PointerLevel
+              << "}";
+  }
 };
 
 using EntityPointerLevelSet =
