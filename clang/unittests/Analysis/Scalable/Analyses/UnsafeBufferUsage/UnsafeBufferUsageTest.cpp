@@ -70,7 +70,8 @@ protected:
         Extractor(UnsafeBufferUsageTUSummaryExtractor(Builder)) {}
 
   std::unique_ptr<UnsafeBufferUsageEntitySummary> setUpTest(StringRef Code) {
-    AST = tooling::buildASTFromCode(Code);
+    AST = tooling::buildASTFromCodeWithArgs(
+        Code, {"-Wall", "-Wextra", "-Wno-unused"});
 
     const auto *ContributorDefn =
         findDeclByName("test_subject", AST->getASTContext());
@@ -301,7 +302,7 @@ TEST_F(UnsafeBufferUsageTest, ConditionalOperator) {
 
 TEST_F(UnsafeBufferUsageTest, CastExpression) {
   auto Sum = setUpTest(R"cpp(
-    void test_subject(void *p, int q) {
+    void test_subject(void *p, long q) {
       ((int*)p)[5];
       ((int*)q)[5];
     }
@@ -313,7 +314,7 @@ TEST_F(UnsafeBufferUsageTest, CastExpression) {
 
 TEST_F(UnsafeBufferUsageTest, CommaOperator) {
   auto Sum = setUpTest(R"cpp(
-    void test_subject(int *p, int x) {
+    void test_subject(int *p, int &x) {
       (x++, p)[5];
     }
   )cpp");
@@ -349,11 +350,15 @@ TEST_F(UnsafeBufferUsageTest, ArrayParameter) {
 
 TEST_F(UnsafeBufferUsageTest, FunctionCall) {
   auto Sum = setUpTest(R"cpp(
+    bool coin();
     int ** (*fp)();
     int ** test_subject() {
-      fp = &test_subject;
-      test_subject()[5];
-      (*fp())[5];
+      if (coin()) {
+        fp = &test_subject;
+        test_subject()[5];
+        (*fp())[5];
+      }
+      return nullptr;
     }
   )cpp");
 
