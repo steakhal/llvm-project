@@ -21,6 +21,7 @@
 
 using namespace clang;
 using namespace ssaf;
+using testing::UnorderedElementsAre;
 
 namespace {
 
@@ -106,7 +107,7 @@ constexpr inline auto buildUnsafeBufferUsageEntitySummary =
 //////////////////////////////////////////////////////////////
 
 MATCHER_P2(EXPECT_CONTAINS, Set, Elt, "Check a set contains an element") {
-  return (Set).find(Elt) != (Set).end();
+  return Set.find(Elt) != Set.end();
 }
 
 TEST_F(UnsafeBufferUsageTest, EntityPointerLevelComparison) {
@@ -128,6 +129,12 @@ TEST_F(UnsafeBufferUsageTest, EntityPointerLevelComparison) {
   EXPECT_FALSE(P2 < P1);
 }
 
+static EntityPointerLevelSet
+getSubsetOf(const UnsafeBufferUsageEntitySummary &Summary, EntityId Id) {
+  auto Subset = Summary.getSubsetOf(Id);
+  return {Subset.begin(), Subset.end()};
+}
+
 TEST_F(UnsafeBufferUsageTest, UnsafeBufferUsageEntitySummaryTest) {
   EntityId E1 = Builder.addEntity({"c:@F@foo", "", {}});
   EntityId E2 = Builder.addEntity({"c:@F@bar", "", {}});
@@ -139,36 +146,12 @@ TEST_F(UnsafeBufferUsageTest, UnsafeBufferUsageEntitySummaryTest) {
   auto P4 = buildEntityPointerLevel(E2, 2);
   auto P5 = buildEntityPointerLevel(E3, 1);
 
-  EntityPointerLevelSet Set{P1, P2, P3, P4, P5};
-  auto ES = buildUnsafeBufferUsageEntitySummary(std::move(Set));
+  auto ES = buildUnsafeBufferUsageEntitySummary({P1, P2, P3, P4, P5});
   ASSERT_TRUE(ES);
-
-  EXPECT_CONTAINS(*ES, P1);
-  EXPECT_CONTAINS(*ES, P2);
-  EXPECT_CONTAINS(*ES, P3);
-  EXPECT_CONTAINS(*ES, P4);
-  EXPECT_CONTAINS(*ES, P5);
-  EXPECT_EQ(ES->getNumUnsafeBuffers(), 5U);
-
-  EntityPointerLevelSet Subset1{ES->getSubsetOf(E1).begin(),
-                                ES->getSubsetOf(E1).end()};
-
-  EXPECT_CONTAINS(Subset1, P1);
-  EXPECT_CONTAINS(Subset1, P2);
-  EXPECT_EQ(Subset1.size(), 2U);
-
-  EntityPointerLevelSet Subset2{ES->getSubsetOf(E2).begin(),
-                                ES->getSubsetOf(E2).end()};
-
-  EXPECT_CONTAINS(Subset2, P3);
-  EXPECT_CONTAINS(Subset2, P4);
-  EXPECT_EQ(Subset2.size(), 2U);
-
-  EntityPointerLevelSet Subset3{ES->getSubsetOf(E3).begin(),
-                                ES->getSubsetOf(E3).end()};
-
-  EXPECT_CONTAINS(Subset3, P5);
-  EXPECT_EQ(Subset3.size(), 1U);
+  EXPECT_THAT(*ES, UnorderedElementsAre(P1, P2, P3, P4, P5));
+  EXPECT_THAT(getSubsetOf(*ES, E1), UnorderedElementsAre(P1, P2));
+  EXPECT_THAT(getSubsetOf(*ES, E2), UnorderedElementsAre(P3, P4));
+  EXPECT_THAT(getSubsetOf(*ES, E3), UnorderedElementsAre(P5));
 }
 
 //////////////////////////////////////////////////////////////
