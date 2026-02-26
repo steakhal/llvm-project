@@ -592,8 +592,7 @@ extern void friend_template_ool_in_suppressed_class(T);
 struct [[clang::suppress]] Friend_SuppressedClassWithTemplate {
   template <typename T>
   friend void friend_template_in_suppressed_class(T) {
-    // FIXME: This should be suppressed.
-    clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
+    clang_analyzer_warnIfReached(); // no-warning
   }
 
   template <typename T>
@@ -635,4 +634,95 @@ void instantiate_friends() {
 
   friend_template_in_unsuppressed_class(0);
   friend_template_ool_in_unsuppressed_class(0);
+}
+
+// === Group 1: Inline friend called via ADL (no namespace-scope forward declaration) ===
+
+// Non-template version.
+struct [[clang::suppress]] ADL_InlineFriend_Suppressed {
+  friend void adl_inline_friend_suppressed(ADL_InlineFriend_Suppressed) {
+    clang_analyzer_warnIfReached(); // no-warning
+  }
+};
+struct ADL_InlineFriend_Unsuppressed {
+  friend void adl_inline_friend_unsuppressed(ADL_InlineFriend_Unsuppressed) {
+    clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
+  }
+};
+
+// Template version – exercises getTemplateInstantiationPattern() without a fwd decl.
+struct [[clang::suppress]] ADL_InlineFriendTemplate_Suppressed {
+  template <typename T>
+  friend void adl_inline_friend_template_suppressed(ADL_InlineFriendTemplate_Suppressed, T) {
+    clang_analyzer_warnIfReached(); // no-warning
+  }
+};
+struct ADL_InlineFriendTemplate_Unsuppressed {
+  template <typename T>
+  friend void adl_inline_friend_template_unsuppressed(ADL_InlineFriendTemplate_Unsuppressed, T) {
+    clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
+  }
+};
+
+void instantiate_adl_inline_friends() {
+  adl_inline_friend_suppressed(ADL_InlineFriend_Suppressed{});
+  adl_inline_friend_unsuppressed(ADL_InlineFriend_Unsuppressed{});
+  adl_inline_friend_template_suppressed(ADL_InlineFriendTemplate_Suppressed{}, 0);
+  adl_inline_friend_template_unsuppressed(ADL_InlineFriendTemplate_Unsuppressed{}, 0);
+}
+
+// === Group 2: OOL friend, no namespace-scope forward declaration (only reachable via ADL) ===
+
+// The out-of-line definition is not covered by the class's [[clang::suppress]].
+
+// Non-template version.
+struct [[clang::suppress]] OOL_NoFwd_Suppressed {
+  friend void ool_no_fwd_suppressed(OOL_NoFwd_Suppressed);
+};
+void ool_no_fwd_suppressed(OOL_NoFwd_Suppressed) {
+  clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
+}
+
+// Template version.
+struct [[clang::suppress]] OOL_NoFwd_Template_Suppressed {
+  template <typename T>
+  friend void ool_no_fwd_template_suppressed(OOL_NoFwd_Template_Suppressed, T);
+};
+template <typename T>
+void ool_no_fwd_template_suppressed(OOL_NoFwd_Template_Suppressed, T) {
+  clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
+}
+
+void instantiate_ool_no_fwd_friends() {
+  ool_no_fwd_suppressed(OOL_NoFwd_Suppressed{});
+  ool_no_fwd_template_suppressed(OOL_NoFwd_Template_Suppressed{}, 0);
+}
+
+// === Group 3: OOL friend, WITH namespace-scope forward declaration ===
+
+// Non-template: friend declared in class + fwd decl before class + ool def outside.
+// (Template version is already covered by friend_template_ool_in_suppressed_class above.)
+extern void ool_fwd_suppressed();
+struct [[clang::suppress]] OOL_Fwd_Suppressed {
+  friend void ool_fwd_suppressed();
+};
+void ool_fwd_suppressed() {
+  clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
+}
+
+// Template: fwd decl before class, friend decl in class (not defined inline), ool def outside.
+template <typename T>
+extern void ool_fwd_template_suppressed(T);
+struct [[clang::suppress]] OOL_Fwd_Template_Suppressed {
+  template <typename T>
+  friend void ool_fwd_template_suppressed(T);
+};
+template <typename T>
+void ool_fwd_template_suppressed(T) {
+  clang_analyzer_warnIfReached(); // expected-warning{{REACHABLE}}
+}
+
+void instantiate_ool_fwd_friends() {
+  ool_fwd_suppressed();
+  ool_fwd_template_suppressed(0);
 }
