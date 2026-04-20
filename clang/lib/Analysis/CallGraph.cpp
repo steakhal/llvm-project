@@ -13,8 +13,10 @@
 #include "clang/Analysis/CallGraph.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
+#include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtVisitor.h"
@@ -72,6 +74,19 @@ public:
     }
   }
 
+  void addDestructorForType(QualType T, Expr *E) {
+    const CXXRecordDecl *RD = T.isNull() ? nullptr : T->getAsCXXRecordDecl();
+    if (!RD)
+      return;
+    CXXDestructorDecl *Dtor = RD->getDestructor();
+    if (!Dtor)
+      return;
+    if (FunctionDecl *Def = Dtor->getDefinition())
+      addCalledDecl(Def, E);
+    else
+      addCalledDecl(Dtor, E);
+  }
+
   void VisitCallExpr(CallExpr *CE) {
     if (Decl *D = getDeclFromCall(CE))
       addCalledDecl(D, CE);
@@ -96,6 +111,16 @@ public:
     CXXConstructorDecl *Ctor = E->getConstructor();
     if (FunctionDecl *Def = Ctor->getDefinition())
       addCalledDecl(Def, E);
+    else
+      addCalledDecl(Ctor, E);
+    VisitChildren(E);
+  }
+
+  void VisitCXXDeleteExpr(CXXDeleteExpr *E) {
+    // Add the destructor call implied by 'delete p'.
+    addDestructorForType(E->getDestroyedType(), E);
+    if (FunctionDecl *FD = E->getOperatorDelete())
+      addCalledDecl(FD, E);
     VisitChildren(E);
   }
 
@@ -189,9 +214,34 @@ void CallGraph::addNodeForDecl(Decl* D, bool IsGlobal) {
     builder.Visit(Body);
 
   // Include C++ constructor member initializers.
-  if (auto constructor = dyn_cast<CXXConstructorDecl>(D)) {
-    for (CXXCtorInitializer *init : constructor->inits()) {
-      builder.Visit(init->getInit());
+  if (auto *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
+    for (CXXCtorInitializer *Init : Ctor->inits()) {
+      builder.Visit(Init->getInit());
+    }
+  }
+
+  // Include implicit destructor calls for local variables with non-trivial
+  // destructors. These are not represented as statements in the AST but
+  // are called implicitly when variables go out of scope.
+  if (auto *DC = dyn_cast<DeclContext>(D)) {
+    for (Decl *Child : DC->decls()) {
+      auto *VD = dyn_cast<VarDecl>(Child);
+      if (!VD || !VD->hasLocalStorage() || VD->isExceptionVariable())
+        continue;
+      QualType T = VD->getType();
+      // References don't own the object — no implicit destructor call.
+      if (T->isReferenceType())
+        continue;
+      const auto *RD = T->getAsCXXRecordDecl();
+      if (!RD)
+        continue;
+      CXXDestructorDecl *Dtor = RD->getDestructor();
+      if (!Dtor || !includeCalleeInGraph(Dtor))
+        continue;
+      Decl *Callee =
+          Dtor->getDefinition() ? Dtor->getDefinition() : cast<Decl>(Dtor);
+      CallGraphNode *CalleeNode = getOrInsertNode(Callee);
+      Node->addCallee({CalleeNode, /*CallExpr=*/nullptr});
     }
   }
 }

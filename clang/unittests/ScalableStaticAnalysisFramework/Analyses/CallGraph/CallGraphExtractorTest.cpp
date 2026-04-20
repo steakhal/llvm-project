@@ -375,9 +375,9 @@ TEST_F(CallGraphExtractorTest, NonVirtualMethodCalls) {
     }
   )cpp");
 
-  ASSERT_THAT_EXPECTED(
-      findSummary("caller"),
-      hasSummaryThat(hasDirectCallees({"method"}), HasNoVirtualCallees()));
+  ASSERT_THAT_EXPECTED(findSummary("caller"),
+                       hasSummaryThat(hasDirectCallees({"S::S", "method"}),
+                                      HasNoVirtualCallees()));
 }
 
 TEST_F(CallGraphExtractorTest, StaticMethodCalls) {
@@ -467,6 +467,68 @@ TEST_F(CallGraphExtractorTest, PrettyName) {
       findSummary("templated_function"),
       hasSummaryThat(HasNoDirectCallees(), HasNoVirtualCallees(),
                      HasPrettyName("templated_function(int *)")));
+}
+
+TEST_F(CallGraphExtractorTest, Constructors) {
+  runExtractor(R"cpp(
+    struct HasCtor {
+      HasCtor();
+    };
+    extern void *sink;
+    void caller() {
+      sink = new HasCtor;
+    }
+  )cpp");
+
+  ASSERT_THAT_EXPECTED(findSummary("caller"),
+                       hasSummaryThat(hasDirectCallees({"HasCtor::HasCtor"}),
+                                      HasNoVirtualCallees()));
+}
+
+TEST_F(CallGraphExtractorTest, ImplicitDestructorCall) {
+  runExtractor(R"cpp(
+    struct HasCtor {
+      ~HasCtor();
+    };
+    void dtor_via_end_of_scope() {
+      HasCtor Obj;
+    }
+  )cpp");
+
+  ASSERT_THAT_EXPECTED(findSummary("dtor_via_end_of_scope"),
+                       hasSummaryThat(hasDirectCallees({"HasCtor::HasCtor",
+                                                        "HasCtor::~HasCtor"}),
+                                      HasNoVirtualCallees()));
+}
+
+TEST_F(CallGraphExtractorTest, ExplicitDestructorCall) {
+  runExtractor(R"cpp(
+    struct HasCtor {
+      ~HasCtor();
+    };
+    void dtor_by_call(HasCtor *p) {
+      p->~HasCtor(); // CXXMemberCallExpr to the dtor decl.
+    }
+  )cpp");
+
+  ASSERT_THAT_EXPECTED(findSummary("dtor_by_call"),
+                       hasSummaryThat(hasDirectCallees({"HasCtor::~HasCtor"}),
+                                      HasNoVirtualCallees()));
+}
+
+TEST_F(CallGraphExtractorTest, DeleteExpr) {
+  runExtractor(R"cpp(
+    struct HasCtor {
+      ~HasCtor();
+    };
+    void dtor_via_delete(HasCtor *p) {
+      delete p; // CXXDeleteExpr to 'operator delete'
+    }
+  )cpp");
+
+  ASSERT_THAT_EXPECTED(findSummary("dtor_via_delete"),
+                       hasSummaryThat(hasDirectCallees({"HasCtor::~HasCtor"}),
+                                      HasNoVirtualCallees()));
 }
 
 } // namespace

@@ -12,6 +12,7 @@
 
 #include "clang/ScalableStaticAnalysisFramework/Core/ASTEntityMapping.h"
 #include "clang/AST/Decl.h"
+#include "clang/AST/DeclCXX.h"
 #include "clang/ScalableStaticAnalysisFramework/Core/Model/BuildNamespace.h"
 #include "clang/UnifiedSymbolResolution/USRGeneration.h"
 #include "llvm/ADT/SmallString.h"
@@ -22,7 +23,10 @@ std::optional<EntityName> getEntityName(const Decl *D) {
   if (!D)
     return std::nullopt;
 
-  if (D->isImplicit())
+  // Filter out implicit decls, but keep implicit special member functions
+  // (default/copy/move ctors, dtor, copy/move assign) since they represent
+  // real callable code in the call graph.
+  if (D->isImplicit() && !isa<CXXMethodDecl>(D))
     return std::nullopt;
 
   if (isa<FunctionDecl>(D) && cast<FunctionDecl>(D)->getBuiltinID())
