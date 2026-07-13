@@ -76,7 +76,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/facebook/zstd.git",
-    "commit": "2af4e073",
+    "commit": "5c7b7bad26808e6b40ac3b3d0075466e27738a9d",
     "size": "small"
   },
   {
@@ -148,7 +148,7 @@
     "mode": 1,
     "source": "git",
     "origin": "https://github.com/tmux/tmux.git",
-    "commit": "a5f99e1",
+    "commit": "db115c6b97b06103a76934fb0e4abf588a6ae318",
     "size": "big"
   },
   {
