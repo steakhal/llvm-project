@@ -51,10 +51,14 @@ def is_cmake_needed():
 
 
 CMAKE_COMMAND = (
-    "cmake -G Ninja -DCMAKE_BUILD_TYPE=Release "
-    "-DCMAKE_INSTALL_PREFIX=/analyzer -DLLVM_TARGETS_TO_BUILD=X86 "
-    '-DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="openmp" '
-    "-DLLVM_BUILD_RUNTIME=OFF -DCLANG_ENABLE_STATIC_ANALYZER=ON"
+    "cmake -G Ninja "
+    "-DCMAKE_BUILD_TYPE=Release "
+    "-DLLVM_ENABLE_LLD=ON "
+    "-DCMAKE_INSTALL_PREFIX=/analyzer "
+    "-DLLVM_TARGETS_TO_BUILD=host "
+    "-DLLVM_ENABLE_PROJECTS='clang' "
+    "-DCLANG_ENABLE_STATIC_ANALYZER=ON "
+    "-DLLVM_CCACHE_BUILD=ON"
 )
 
 
