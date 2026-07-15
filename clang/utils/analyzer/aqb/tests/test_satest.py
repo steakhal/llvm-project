@@ -15,3 +15,10 @@ class SatestReuseTest(unittest.TestCase):
         # The corpus registry we reuse in Phase 3.
         self.assertTrue(hasattr(_satest.ProjectMap, "ProjectInfo"))
         self.assertTrue(hasattr(_satest.ProjectMap, "ProjectMap"))
+
+    def test_projectinfo_is_actually_usable(self):
+        # Not just importable: construct a real ProjectInfo and read it back,
+        # so a breaking upstream signature change is caught, not just a rename.
+        info = _satest.ProjectMap.ProjectInfo(name="demo", mode=1)
+        self.assertEqual(info.name, "demo")
+        self.assertEqual(info.mode, 1)
