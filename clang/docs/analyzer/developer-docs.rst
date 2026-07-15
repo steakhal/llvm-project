@@ -13,3 +13,4 @@ Contents:
    developer-docs/RegionStore
    developer-docs/PerformanceInvestigation
    developer-docs/Statistics
+   developer-docs/StatisticsReference
