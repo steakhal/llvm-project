@@ -342,14 +342,19 @@ Expected: FAIL — `ImportError: cannot import name 'parse_tu_stats_json'`.
 Add `import json` to the imports at the top of `clang/utils/analyzer/aqb/metrics.py` (alongside `import csv`, `import io`), then append this function:
 
 ```python
-def parse_tu_stats_json(text: str) -> Dict[str, int]:
+def parse_tu_stats_json(text: str) -> Dict[str, float]:
     """Parse ``serialize-stats=true`` / ``PrintStatisticsJSON`` output.
 
-    The output is a JSON object mapping ``"<debugtype>.<name>"`` to an integer
-    value (see llvm/lib/Support/Statistic.cpp ``PrintStatisticsJSON``).
+    The output is a JSON object mapping ``"<debugtype>.<name>"`` to a numeric
+    value. Most are integer counters, but ``PrintStatisticsJSON`` also appends
+    ``TimerGroup`` values (keys like ``"time.<group>.<name>.wall"``) whose
+    values are floating-point. Values are therefore preserved with their JSON
+    numeric type (``int`` for counters, ``float`` for timers) rather than
+    coerced to ``int`` — coercing would silently truncate sub-second timings
+    to zero.
     """
     raw = json.loads(text)
-    return {key: int(value) for key, value in raw.items()}
+    return dict(raw)
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
