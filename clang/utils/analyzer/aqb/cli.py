@@ -64,6 +64,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="container runtime (default: $AQB_RUNTIME or docker)",
     )
+    build.add_argument(
+        "--memory", default="24G", help="builder container memory limit (default: 24G)"
+    )
+    build.add_argument(
+        "--cpus", default="8", help="builder container CPU limit (default: 8)"
+    )
     build.set_defaults(func=cmd_build_clang)
 
     for name in STUB_COMMANDS:
@@ -102,6 +108,8 @@ def cmd_build_clang(args: argparse.Namespace) -> int:
             user_overlay_json=overlay,
             builder_image=args.builder_image,
             created=created,
+            memory=args.memory,
+            cpus=args.cpus,
         )
     except (ClangBuildError, RuntimeCommandError) as exc:
         print(f"aqb build-clang: {exc}", file=sys.stderr)

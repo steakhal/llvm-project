@@ -72,6 +72,9 @@ class BuildClangCliTest(unittest.TestCase):
         self.assertEqual(captured["commit"], "abc")
         self.assertEqual(captured["preset"], "mine")
         self.assertIsNone(captured["user_overlay_json"])
+        # Default resource limits are forwarded.
+        self.assertEqual(captured["memory"], "24G")
+        self.assertEqual(captured["cpus"], "8")
 
     def test_reads_preset_file(self):
         import tempfile

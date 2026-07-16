@@ -358,6 +358,11 @@ class BuildClangVolumeTest(unittest.TestCase):
                 if a.startswith("AQB_USER_PRESETS_JSON=")
             )
         )
+        # Default resource limits are passed to the build (docker-standard flags).
+        self.assertIn("-m", build)
+        self.assertEqual(build[build.index("-m") + 1], "24G")
+        self.assertIn("--cpus", build)
+        self.assertEqual(build[build.index("--cpus") + 1], "8")
 
 
 class WorktreeCommonDirMountTest(unittest.TestCase):

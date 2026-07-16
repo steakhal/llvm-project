@@ -94,6 +94,8 @@ class ClangBuildSpec:
     created: str  # ISO-8601, provenance only (excluded from the digest)
     build_config: str  # human-readable recipe string, for the label
     extra_mounts: List[str] = field(default_factory=list)  # extra ``-v`` values
+    builder_memory: str = ""  # ``-m`` limit for the build (e.g. "24G"); "" = none
+    builder_cpus: str = ""  # ``--cpus`` limit for the build (e.g. "8"); "" = none
 
 
 @dataclass
@@ -154,11 +156,17 @@ def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
     needs no mount. The builder image is expected to read: ``AQB_COMMIT``,
     ``AQB_SOURCE``, ``AQB_PRESET`` (configure-preset name), and
     ``AQB_USER_PRESETS_JSON`` (the assembled CMakeUserPresets.json content,
-    written into ``$SRC/llvm/``).
+    written into ``$SRC/llvm/``). Optional ``builder_memory``/``builder_cpus``
+    are passed as docker-standard ``-m``/``--cpus`` resource limits (building
+    LLVM is memory-hungry); they do not affect the built binary and so are not
+    part of the volume digest.
     """
-    args = [
-        "run",
-        "--rm",
+    args = ["run", "--rm"]
+    if spec.builder_memory:
+        args += ["-m", spec.builder_memory]
+    if spec.builder_cpus:
+        args += ["--cpus", spec.builder_cpus]
+    args += [
         "-v",
         f"{volume}:{CLANG_INSTALL_MOUNT}",
         "-v",
@@ -279,12 +287,15 @@ def build_clang_volume(
     user_overlay_json: Optional[str],
     builder_image: str,
     created: str,
+    memory: str = "24G",
+    cpus: str = "8",
 ) -> ClangVolume:
     """Resolve (or build) the Clang Volume for ``commit`` using ``builder_image``.
 
     Assembles ``aqb-base`` + the user's preset overlay into a canonical
     CMakeUserPresets.json, resolves the builder image's content digest
-    (``{{.Id}}``), and delegates to ``resolve_or_build_clang``.
+    (``{{.Id}}``), and delegates to ``resolve_or_build_clang``. ``memory``/``cpus``
+    cap the builder container's resources (building LLVM is memory-hungry).
     """
     user_presets_json = assemble_user_presets(user_overlay_json)
     builder_image_id = runtime.image_id(builder_image)
@@ -304,5 +315,7 @@ def build_clang_volume(
         created=created,
         build_config=f"preset={preset}",
         extra_mounts=extra_mounts,
+        builder_memory=memory,
+        builder_cpus=cpus,
     )
     return resolve_or_build_clang(runtime, spec)
