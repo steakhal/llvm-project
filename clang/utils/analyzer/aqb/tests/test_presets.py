@@ -14,6 +14,10 @@ class AssembleUserPresetsTest(unittest.TestCase):
         base = doc["configurePresets"][0]
         self.assertEqual(base["cacheVariables"]["CMAKE_BUILD_TYPE"], "Release")
         self.assertEqual(base["cacheVariables"]["LLVM_ENABLE_PROJECTS"], "clang")
+        # Mirrors SATest's recipe: host target, static analyzer on, lld linker.
+        self.assertEqual(base["cacheVariables"]["LLVM_TARGETS_TO_BUILD"], "host")
+        self.assertEqual(base["cacheVariables"]["CLANG_ENABLE_STATIC_ANALYZER"], "ON")
+        self.assertEqual(base["cacheVariables"]["LLVM_ENABLE_LLD"], "ON")
 
     def test_overlay_presets_appended_after_base(self):
         overlay = json.dumps(

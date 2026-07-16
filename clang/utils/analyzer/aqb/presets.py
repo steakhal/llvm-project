@@ -8,7 +8,11 @@ AQB_BASE_PRESET_NAME = "aqb-base"
 
 # Self-contained so it works at any pinned commit (does not depend on LLVM's own
 # presets existing). AQB always overrides binaryDir (-B) and CMAKE_INSTALL_PREFIX
-# (-D) on the command line, but they are set here too as sane defaults.
+# (-D) on the command line, but they are set here too as sane defaults. The cache
+# variables mirror SATest's build recipe (clang/utils/analyzer/entrypoint.py):
+# host target only, lld linker, and the static analyzer explicitly enabled --
+# plus LLVM_ENABLE_ASSERTIONS, which AQB keeps ON so analyzer invariant
+# violations surface as assertion failures (a qualification robustness signal).
 AQB_BASE_PRESET = {
     "name": AQB_BASE_PRESET_NAME,
     "displayName": "AQB base clang build",
@@ -17,6 +21,9 @@ AQB_BASE_PRESET = {
     "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "LLVM_ENABLE_PROJECTS": "clang",
+        "LLVM_TARGETS_TO_BUILD": "host",
+        "CLANG_ENABLE_STATIC_ANALYZER": "ON",
+        "LLVM_ENABLE_LLD": "ON",
         "LLVM_ENABLE_ASSERTIONS": "ON",
         "LLVM_CCACHE_BUILD": "ON",
         "CMAKE_INSTALL_PREFIX": "/opt/aqb/clang",
