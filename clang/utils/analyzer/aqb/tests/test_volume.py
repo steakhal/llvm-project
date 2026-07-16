@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from typing import Callable, List
 
-from aqb.errors import ClangBuildError
+from aqb.errors import ClangBuildError, RuntimeCommandError
 from aqb.runtime import ProcResult, Runtime
 from aqb.volume import (
     CCACHE_VOLUME,
@@ -204,3 +204,22 @@ class ResolveOrBuildTest(unittest.TestCase):
             resolve_or_build_clang(Runtime("docker", runner), spec)
         removed = [c for c in runner.calls if c[1:3] == ["volume", "rm"]]
         self.assertTrue(any(name in c for c in removed))
+
+    def test_raises_and_keeps_volume_when_check_cannot_run(self):
+        spec = _spec()
+        name = _expected_name(spec)
+
+        def handler(argv):
+            if argv[1:3] == ["volume", "inspect"]:
+                return ProcResult(0, "", "")  # volume present
+            if argv[1:2] == ["run"] and "test" in argv:
+                # docker/podman exit 125 == the run itself could not start
+                # (e.g. builder image was pruned), NOT "marker absent".
+                return ProcResult(125, "", "Unable to find image")
+            return ProcResult(0, "", "")
+
+        runner = ScriptedRunner(handler)
+        with self.assertRaises(RuntimeCommandError):
+            resolve_or_build_clang(Runtime("docker", runner), spec)
+        # A good volume must NOT be destroyed when the check couldn't run.
+        self.assertFalse([c for c in runner.calls if c[1:3] == ["volume", "rm"]])
