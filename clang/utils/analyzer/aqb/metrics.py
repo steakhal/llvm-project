@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from dataclasses import dataclass
 from typing import Dict, Iterable, List
 
@@ -55,3 +56,13 @@ def dedup_entry_points(
         if row.usr not in seen:
             seen[row.usr] = row
     return list(seen.values())
+
+
+def parse_tu_stats_json(text: str) -> Dict[str, int]:
+    """Parse ``serialize-stats=true`` / ``PrintStatisticsJSON`` output.
+
+    The output is a JSON object mapping ``"<debugtype>.<name>"`` to an integer
+    value (see llvm/lib/Support/Statistic.cpp ``PrintStatisticsJSON``).
+    """
+    raw = json.loads(text)
+    return {key: int(value) for key, value in raw.items()}

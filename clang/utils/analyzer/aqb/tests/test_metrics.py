@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from aqb.metrics import dedup_entry_points, parse_entry_point_csv
+from aqb.metrics import dedup_entry_points, parse_entry_point_csv, parse_tu_stats_json
 
 CSV = (
     "USR,File,DebugName,CFGSize,PathRunningTime,NumSteps\n"
@@ -36,3 +36,21 @@ class EntryPointCsvTest(unittest.TestCase):
         rows = parse_entry_point_csv(CSV)
         deduped = dedup_entry_points(rows + [rows[0]])
         self.assertEqual([r.usr for r in deduped], ["c:@F@fib#i#", "c:@F@main#"])
+
+
+TU_STATS_JSON = (
+    "{\n"
+    '\t"Analysis.NumFunctionsAnalyzed": 3,\n'
+    '\t"CoreEngine.NumSteps": 240\n'
+    "}\n"
+)
+
+
+class TuStatsJsonTest(unittest.TestCase):
+    def test_parses_object_of_int_values(self):
+        stats = parse_tu_stats_json(TU_STATS_JSON)
+        self.assertEqual(stats["Analysis.NumFunctionsAnalyzed"], 3)
+        self.assertEqual(stats["CoreEngine.NumSteps"], 240)
+
+    def test_empty_object(self):
+        self.assertEqual(parse_tu_stats_json("{}"), {})
