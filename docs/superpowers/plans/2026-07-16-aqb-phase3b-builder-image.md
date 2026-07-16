@@ -161,13 +161,17 @@ class ClangVolume:
 (c) Add the completeness helper immediately before `resolve_or_build_clang`:
 
 ```python
-def _volume_complete(runtime: Runtime, volume: str, builder_image: str) -> bool:
-    """Return True if ``volume`` holds a *completed* clang install.
+def _clang_volume_status(runtime: Runtime, volume: str, builder_image: str) -> str:
+    """Classify an existing Clang Volume as ``"complete"`` or ``"incomplete"``.
 
     A successful build writes ``COMPLETE_MARKER`` into the install tree as its
-    final step, so a volume that exists but lacks the marker is the residue of an
-    interrupted build and must not be reused. The check runs the builder image
-    with ``test -e`` since reading a file inside a volume requires a container.
+    final step; the check runs the builder image with ``test -e`` (reading a
+    file inside a volume requires a container). ``test`` exits 0 when the marker
+    is present and 1 when it is absent. Any other exit code means the check
+    itself could not run (e.g. the builder image was pruned, or the daemon is
+    unreachable); in that case we must NOT treat the volume as incomplete and
+    destroy it, so ``RuntimeCommandError`` is raised instead — a good volume is
+    never deleted because of an unrelated runtime problem.
     """
     check = runtime.run(
         [
@@ -181,7 +185,15 @@ def _volume_complete(runtime: Runtime, volume: str, builder_image: str) -> bool:
             COMPLETE_MARKER,
         ]
     )
-    return check.returncode == 0
+    if check.returncode == 0:
+        return "complete"
+    if check.returncode == 1:
+        return "incomplete"
+    raise RuntimeCommandError(
+        f"cannot verify Clang Volume {volume}: completeness check exited "
+        f"{check.returncode} (is builder image {builder_image} available?): "
+        f"{check.stderr.strip()}"
+    )
 ```
 
 (d) Replace the entire `resolve_or_build_clang` function (lines 125–159) with:
@@ -202,7 +214,7 @@ def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> ClangVolum
     name = clang_volume_name(spec.commit, digest)
 
     if runtime.volume_exists(name):
-        if _volume_complete(runtime, name, spec.builder_image):
+        if _clang_volume_status(runtime, name, spec.builder_image) == "complete":
             return ClangVolume(name=name, config_digest=digest, built=False)
         # Residue of an interrupted build: discard and rebuild.
         runtime.remove_volume(name)
