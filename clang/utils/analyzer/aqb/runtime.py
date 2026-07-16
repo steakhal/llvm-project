@@ -32,10 +32,15 @@ class ProcResult:
     stderr: str
 
 
-Runner = Callable[[List[str]], "ProcResult"]
+Runner = Callable[..., "ProcResult"]
 
 
-def _subprocess_runner(argv: List[str]) -> ProcResult:
+def _subprocess_runner(argv: List[str], capture: bool = True) -> ProcResult:
+    if not capture:
+        # Stream stdout/stderr straight to the terminal (e.g. so a long clang
+        # build shows live cmake/ninja progress). Nothing is captured.
+        completed = subprocess.run(argv)
+        return ProcResult(completed.returncode, "", "")
     completed = subprocess.run(argv, capture_output=True, text=True)
     return ProcResult(completed.returncode, completed.stdout, completed.stderr)
 
@@ -51,8 +56,13 @@ class Runtime:
         self.name = name
         self._runner = runner or _subprocess_runner
 
-    def run(self, args: List[str], check: bool = False) -> ProcResult:
-        result = self._runner([self.name, *args])
+    def run(
+        self, args: List[str], check: bool = False, capture: bool = True
+    ) -> ProcResult:
+        """Run ``[name, *args]``. With ``capture=False`` the command's output
+        streams to the terminal instead of being captured (for long, chatty
+        commands like the clang build)."""
+        result = self._runner([self.name, *args], capture=capture)
         if check and result.returncode != 0:
             raise RuntimeCommandError(
                 f"{self.name} {' '.join(args)} failed "

@@ -263,7 +263,8 @@ def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> ClangVolum
         ),
     )
     ensure_cache_volume(runtime)
-    result = runtime.run(_builder_run_argv(name, spec))
+    # Stream the build so cmake/ninja progress and warnings are visible live.
+    result = runtime.run(_builder_run_argv(name, spec), capture=False)
     if result.returncode != 0:
         # Best-effort cleanup: don't let a failed removal mask the build error.
         try:

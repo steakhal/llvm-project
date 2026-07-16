@@ -8,7 +8,7 @@ from typing import Callable, List
 
 from aqb.errors import RuntimeCommandError
 from aqb.runtime import resolve_runtime
-from aqb.runtime import ProcResult, Runtime
+from aqb.runtime import ProcResult, Runtime, _subprocess_runner
 
 
 class ResolveRuntimeTest(unittest.TestCase):
@@ -33,10 +33,12 @@ class RecordingRunner:
 
     def __init__(self, handler: Callable[[List[str]], ProcResult] = None):
         self.calls: List[List[str]] = []
+        self.captures: List[bool] = []
         self._handler = handler or (lambda argv: ProcResult(0, "", ""))
 
-    def __call__(self, argv: List[str]) -> ProcResult:
+    def __call__(self, argv: List[str], capture: bool = True) -> ProcResult:
         self.calls.append(list(argv))
+        self.captures.append(capture)
         return self._handler(argv)
 
 
@@ -84,3 +86,24 @@ class RuntimeTest(unittest.TestCase):
             runner.calls[0],
             ["docker", "image", "inspect", "--format", "{{.Id}}", "img"],
         )
+
+
+class CaptureModeTest(unittest.TestCase):
+    def test_run_forwards_capture_flag_to_runner(self):
+        runner = RecordingRunner()
+        rt = Runtime("docker", runner)
+        rt.run(["ps"])  # default: capture
+        rt.run(["build", "."], capture=False)  # streaming
+        self.assertEqual(runner.captures, [True, False])
+
+    def test_subprocess_runner_captures_by_default(self):
+        # A real trivial command; capture=True returns its stdout.
+        result = _subprocess_runner(["printf", "hi"], capture=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "hi")
+
+    def test_subprocess_runner_streams_when_not_capturing(self):
+        # capture=False inherits stdio (nothing captured), returncode still set.
+        result = _subprocess_runner(["true"], capture=False)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")

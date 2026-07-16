@@ -76,10 +76,12 @@ class ScriptedRunner:
 
     def __init__(self, handler: Callable[[List[str]], ProcResult]):
         self.calls: List[List[str]] = []
+        self.captures: List[bool] = []
         self._handler = handler
 
-    def __call__(self, argv: List[str]) -> ProcResult:
+    def __call__(self, argv: List[str], capture: bool = True) -> ProcResult:
         self.calls.append(list(argv))
+        self.captures.append(capture)
         return self._handler(argv)
 
 
@@ -363,6 +365,13 @@ class BuildClangVolumeTest(unittest.TestCase):
         self.assertEqual(build[build.index("-m") + 1], "24G")
         self.assertIn("--cpus", build)
         self.assertEqual(build[build.index("--cpus") + 1], "8")
+        # The build streams (not captured) so its progress is visible live.
+        build_idx = next(
+            i
+            for i, c in enumerate(runner.calls)
+            if c[1:2] == ["run"] and "test" not in c
+        )
+        self.assertFalse(runner.captures[build_idx])
 
 
 class WorktreeCommonDirMountTest(unittest.TestCase):
