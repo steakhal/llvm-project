@@ -1,0 +1,38 @@
+from __future__ import annotations
+
+import unittest
+
+from aqb.metrics import dedup_entry_points, parse_entry_point_csv
+
+CSV = (
+    "USR,File,DebugName,CFGSize,PathRunningTime,NumSteps\n"
+    '"c:@F@fib#i#","/src/fib.c","fib",5,12,120\n'
+    '"c:@F@main#","/src/main.c","main",,,240\n'
+)
+
+
+class EntryPointCsvTest(unittest.TestCase):
+    def test_parses_rows_and_stats(self):
+        rows = parse_entry_point_csv(CSV)
+        self.assertEqual([r.usr for r in rows], ["c:@F@fib#i#", "c:@F@main#"])
+        fib = rows[0]
+        self.assertEqual(fib.file, "/src/fib.c")
+        self.assertEqual(fib.debug_name, "fib")
+        self.assertEqual(fib.stats["CFGSize"], 5)
+        self.assertEqual(fib.stats["PathRunningTime"], 12)
+        self.assertEqual(fib.stats["NumSteps"], 120)
+
+    def test_empty_cells_are_omitted_from_stats(self):
+        rows = parse_entry_point_csv(CSV)
+        main = rows[1]
+        self.assertNotIn("CFGSize", main.stats)
+        self.assertNotIn("PathRunningTime", main.stats)
+        self.assertEqual(main.stats["NumSteps"], 240)
+
+    def test_empty_input_yields_no_rows(self):
+        self.assertEqual(parse_entry_point_csv(""), [])
+
+    def test_dedup_keeps_first_per_usr(self):
+        rows = parse_entry_point_csv(CSV)
+        deduped = dedup_entry_points(rows + [rows[0]])
+        self.assertEqual([r.usr for r in deduped], ["c:@F@fib#i#", "c:@F@main#"])
