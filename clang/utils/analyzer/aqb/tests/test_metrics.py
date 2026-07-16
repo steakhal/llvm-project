@@ -54,3 +54,16 @@ class TuStatsJsonTest(unittest.TestCase):
 
     def test_empty_object(self):
         self.assertEqual(parse_tu_stats_json("{}"), {})
+
+    def test_preserves_float_timer_values(self):
+        # PrintStatisticsJSON appends TimerGroup float values into the same
+        # object; they must not be truncated to int.
+        text = (
+            "{\n"
+            '\t"CoreEngine.NumSteps": 240,\n'
+            '\t"time.analyzer.exprengine.wall": 1.25e-01\n'
+            "}\n"
+        )
+        stats = parse_tu_stats_json(text)
+        self.assertEqual(stats["CoreEngine.NumSteps"], 240)
+        self.assertAlmostEqual(stats["time.analyzer.exprengine.wall"], 0.125)
