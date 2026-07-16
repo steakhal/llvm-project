@@ -230,6 +230,21 @@ class ResolveOrBuildTest(unittest.TestCase):
         # A good volume must NOT be destroyed when the check couldn't run.
         self.assertFalse([c for c in runner.calls if c[1:3] == ["volume", "rm"]])
 
+    def test_completeness_check_overrides_entrypoint_to_test(self):
+        # The builder image's ENTRYPOINT is the build script; the completeness
+        # check must override it with `test`, else it would run the build script
+        # (which fails on missing AQB_* env) and every volume would look
+        # incomplete. Regression guard for that container-semantics bug.
+        spec = _spec()
+        runner = ScriptedRunner(lambda argv: ProcResult(0, "", ""))
+        resolve_or_build_clang(Runtime("docker", runner), spec)
+        check = self._check_runs(runner)[0]
+        self.assertIn("--entrypoint", check)
+        self.assertEqual(check[check.index("--entrypoint") + 1], "test")
+        # The marker path is an argument to `test` (after the image), and the
+        # bare "test" command is NOT appended after the image.
+        self.assertIn("/opt/aqb/clang/.aqb-complete", check)
+
 
 class BuildClangVolumeTest(unittest.TestCase):
     def test_assembles_presets_resolves_image_and_builds(self):

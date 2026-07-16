@@ -136,21 +136,27 @@ def _clang_volume_status(runtime: Runtime, volume: str, builder_image: str) -> s
 
     A successful build writes ``COMPLETE_MARKER`` into the install tree as its
     final step; the check runs the builder image with ``test -e`` (reading a
-    file inside a volume requires a container). ``test`` exits 0 when the marker
-    is present and 1 when it is absent. Any other exit code means the check
-    itself could not run (e.g. the builder image was pruned, or the daemon is
-    unreachable); in that case we must NOT treat the volume as incomplete and
-    destroy it, so ``RuntimeCommandError`` is raised instead — a good volume is
-    never deleted because of an unrelated runtime problem.
+    file inside a volume requires a container). The builder image's
+    ``ENTRYPOINT`` is the build script itself, so ``--entrypoint test``
+    overrides it for this invocation — otherwise the arguments below would be
+    appended to the build script instead of replacing it, running a build
+    (which fails immediately on missing ``AQB_*`` env vars) instead of the
+    intended completeness check. ``test`` exits 0 when the marker is present
+    and 1 when it is absent. Any other exit code means the check itself could
+    not run (e.g. the builder image was pruned, or the daemon is unreachable);
+    in that case we must NOT treat the volume as incomplete and destroy it, so
+    ``RuntimeCommandError`` is raised instead — a good volume is never deleted
+    because of an unrelated runtime problem.
     """
     check = runtime.run(
         [
             "run",
             "--rm",
+            "--entrypoint",
+            "test",
             "-v",
             f"{volume}:{CLANG_INSTALL_MOUNT}",
             builder_image,
-            "test",
             "-e",
             COMPLETE_MARKER,
         ]
