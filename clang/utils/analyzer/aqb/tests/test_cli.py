@@ -4,6 +4,7 @@ import contextlib
 import io
 import tempfile
 import unittest
+from unittest import mock
 
 from aqb.cli import main
 from aqb.metadata import (
@@ -47,3 +48,71 @@ class CliTest(unittest.TestCase):
                 code = main(["--home", root, "list"])
             self.assertEqual(code, 0)
             self.assertIn("r-xyz", out.getvalue())
+
+
+class BuildClangCliTest(unittest.TestCase):
+    def test_invokes_orchestration_with_preset(self):
+        from aqb.volume import ClangVolume
+
+        captured = {}
+
+        def fake_build(runtime, **kwargs):
+            captured.update(kwargs)
+            return ClangVolume(name="aqb-clang-x-y", config_digest="y", built=True)
+
+        out = io.StringIO()
+        with mock.patch(
+            "aqb.cli.build_clang_volume", fake_build
+        ), contextlib.redirect_stdout(out):
+            code = main(
+                ["build-clang", "--commit", "abc", "--source", "/s", "--preset", "mine"]
+            )
+        self.assertEqual(code, 0)
+        self.assertIn("aqb-clang-x-y", out.getvalue())
+        self.assertEqual(captured["commit"], "abc")
+        self.assertEqual(captured["preset"], "mine")
+        self.assertIsNone(captured["user_overlay_json"])
+
+    def test_reads_preset_file(self):
+        import tempfile
+        from aqb.volume import ClangVolume
+
+        captured = {}
+
+        def fake_build(runtime, **kwargs):
+            captured.update(kwargs)
+            return ClangVolume(name="v", config_digest="d", built=False)
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            handle.write('{"version": 6, "configurePresets": []}')
+            preset_path = handle.name
+        with mock.patch("aqb.cli.build_clang_volume", fake_build):
+            code = main(
+                [
+                    "build-clang",
+                    "--commit",
+                    "c",
+                    "--source",
+                    "/s",
+                    "--preset",
+                    "mine",
+                    "--preset-file",
+                    preset_path,
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertIn("configurePresets", captured["user_overlay_json"])
+
+    def test_reports_build_error(self):
+        from aqb.errors import ClangBuildError
+
+        def fake_build(runtime, **kwargs):
+            raise ClangBuildError("boom")
+
+        err = io.StringIO()
+        with mock.patch(
+            "aqb.cli.build_clang_volume", fake_build
+        ), contextlib.redirect_stderr(err):
+            code = main(["build-clang", "--commit", "c", "--source", "/s"])
+        self.assertEqual(code, 1)
+        self.assertIn("boom", err.getvalue())

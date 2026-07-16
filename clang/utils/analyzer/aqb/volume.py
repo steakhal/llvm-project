@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from aqb.errors import ClangBuildError, RuntimeCommandError
+from aqb.presets import assemble_user_presets
 from aqb.runtime import Runtime
 
 CLANG_VOLUME_PREFIX = "aqb-clang"
@@ -205,3 +206,36 @@ def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> ClangVolum
             f"(exit {result.returncode}): {result.stderr.strip()}"
         )
     return ClangVolume(name=name, config_digest=digest, built=True)
+
+
+def build_clang_volume(
+    runtime: Runtime,
+    *,
+    commit: str,
+    source: str,
+    commit_title: str,
+    preset: str,
+    user_overlay_json: Optional[str],
+    builder_image: str,
+    created: str,
+) -> ClangVolume:
+    """Resolve (or build) the Clang Volume for ``commit`` using ``builder_image``.
+
+    Assembles ``aqb-base`` + the user's preset overlay into a canonical
+    CMakeUserPresets.json, resolves the builder image's content digest
+    (``{{.Id}}``), and delegates to ``resolve_or_build_clang``.
+    """
+    user_presets_json = assemble_user_presets(user_overlay_json)
+    builder_image_id = runtime.image_id(builder_image)
+    spec = ClangBuildSpec(
+        commit=commit,
+        source=source,
+        commit_title=commit_title,
+        preset=preset,
+        user_presets_json=user_presets_json,
+        builder_image=builder_image,
+        builder_image_id=builder_image_id,
+        created=created,
+        build_config=f"preset={preset}",
+    )
+    return resolve_or_build_clang(runtime, spec)

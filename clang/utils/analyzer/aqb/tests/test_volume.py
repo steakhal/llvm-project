@@ -8,6 +8,7 @@ from aqb.runtime import ProcResult, Runtime
 from aqb.volume import (
     CCACHE_VOLUME,
     ClangBuildSpec,
+    build_clang_volume,
     build_config_digest,
     clang_volume_labels,
     clang_volume_name,
@@ -228,3 +229,36 @@ class ResolveOrBuildTest(unittest.TestCase):
             resolve_or_build_clang(Runtime("docker", runner), spec)
         # A good volume must NOT be destroyed when the check couldn't run.
         self.assertFalse([c for c in runner.calls if c[1:3] == ["volume", "rm"]])
+
+
+class BuildClangVolumeTest(unittest.TestCase):
+    def test_assembles_presets_resolves_image_and_builds(self):
+        def handler(argv):
+            if argv[1:3] == ["image", "inspect"]:
+                return ProcResult(0, "sha256:BUILDERID\n", "")
+            if argv[1:3] == ["volume", "inspect"]:
+                return ProcResult(1, "", "")  # absent -> build
+            return ProcResult(0, "", "")
+
+        runner = ScriptedRunner(handler)
+        vol = build_clang_volume(
+            Runtime("docker", runner),
+            commit="349146dabe4b07651d02fb",
+            source="/work/llvm-project",
+            commit_title="t",
+            preset="aqb-base",
+            user_overlay_json=None,
+            builder_image="aqb-clang-builder:latest",
+            created="2026-07-16T13:15:00+00:00",
+        )
+        self.assertTrue(vol.name.startswith("aqb-clang-349146dabe4b-"))
+        self.assertTrue(vol.built)
+        self.assertTrue([c for c in runner.calls if c[1:3] == ["image", "inspect"]])
+        build = [c for c in runner.calls if c[1:2] == ["run"] and "test" not in c][0]
+        self.assertTrue(
+            any(
+                '"aqb-base"' in a
+                for a in build
+                if a.startswith("AQB_USER_PRESETS_JSON=")
+            )
+        )
