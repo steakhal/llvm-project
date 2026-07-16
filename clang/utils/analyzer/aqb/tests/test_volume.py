@@ -286,6 +286,25 @@ class ResolveOrBuildTest(unittest.TestCase):
         # No read-only source bind-mount for a remote URL.
         self.assertFalse(any(":ro" in arg for arg in build))
 
+    def test_rebuild_surfaces_removal_failure(self):
+        # If discarding an incomplete volume fails, surface it loudly rather than
+        # silently proceeding to a create that collides with "already exists".
+        spec = _spec()
+        name = _expected_name(spec)
+
+        def handler(argv):
+            if argv[1:3] == ["volume", "inspect"]:
+                return ProcResult(0, "", "")  # present
+            if argv[1:2] == ["run"] and "test" in argv:
+                return ProcResult(1, "", "")  # incomplete
+            if argv[1:3] == ["volume", "rm"]:
+                return ProcResult(1, "", "cannot remove")  # removal fails
+            return ProcResult(0, "", "")
+
+        runner = ScriptedRunner(handler)
+        with self.assertRaises(RuntimeCommandError):
+            resolve_or_build_clang(Runtime("docker", runner), spec)
+
 
 class BuildClangVolumeTest(unittest.TestCase):
     def test_assembles_presets_resolves_image_and_builds(self):

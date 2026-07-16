@@ -66,10 +66,16 @@ class RuntimeTest(unittest.TestCase):
             ["docker", "volume", "create", "--label", "a=1", "--label", "b=2", "v"],
         )
 
-    def test_remove_volume_forces(self):
+    def test_remove_volume(self):
         runner = RecordingRunner()
         Runtime("docker", runner).remove_volume("v")
-        self.assertEqual(runner.calls[0], ["docker", "volume", "rm", "-f", "v"])
+        # No -f: portable across runtimes (some runtimes' `volume delete` takes no flags).
+        self.assertEqual(runner.calls[0], ["docker", "volume", "rm", "v"])
+
+    def test_remove_volume_raises_on_failure(self):
+        runner = RecordingRunner(lambda argv: ProcResult(1, "", "no such volume"))
+        with self.assertRaises(RuntimeCommandError):
+            Runtime("docker", runner).remove_volume("v")
 
     def test_image_id_strips_output(self):
         runner = RecordingRunner(lambda argv: ProcResult(0, "sha256:abc\n", ""))

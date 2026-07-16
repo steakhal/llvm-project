@@ -220,7 +220,11 @@ def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> ClangVolum
     ensure_cache_volume(runtime)
     result = runtime.run(_builder_run_argv(name, spec))
     if result.returncode != 0:
-        runtime.remove_volume(name)
+        # Best-effort cleanup: don't let a failed removal mask the build error.
+        try:
+            runtime.remove_volume(name)
+        except RuntimeCommandError:
+            pass
         raise ClangBuildError(
             f"building clang for {spec.commit} failed "
             f"(exit {result.returncode}): {result.stderr.strip()}"

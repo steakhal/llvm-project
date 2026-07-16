@@ -73,7 +73,12 @@ class Runtime:
         self.run(args, check=True)
 
     def remove_volume(self, volume: str) -> None:
-        self.run(["volume", "rm", "-f", volume])
+        # No ``-f``: AQB only removes volumes it has confirmed exist, so the
+        # force flag is unnecessary on docker and unsupported by some runtimes
+        # whose ``volume delete`` takes no flags. ``check=True`` so a
+        # failed removal surfaces loudly instead of silently leaving a stale
+        # volume that a later ``create`` would collide with.
+        self.run(["volume", "rm", volume], check=True)
 
     def image_id(self, image: str) -> str:
         result = self.run(
