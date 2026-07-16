@@ -17,24 +17,27 @@ from aqb.volume import (
 
 
 class DigestTest(unittest.TestCase):
+    _PRESETS = '{"version": 3, "configurePresets": [{"name": "aqb-base"}]}'
+
     def test_digest_is_stable(self):
-        a = build_config_digest(["-DA=1", "-DB=2"], True, "sha256:img")
-        b = build_config_digest(["-DA=1", "-DB=2"], True, "sha256:img")
+        a = build_config_digest(self._PRESETS, "aqb-base", "sha256:img")
+        b = build_config_digest(self._PRESETS, "aqb-base", "sha256:img")
         self.assertEqual(a, b)
 
-    def test_digest_is_order_independent_over_cmake_args(self):
-        a = build_config_digest(["-DA=1", "-DB=2"], True, "sha256:img")
-        b = build_config_digest(["-DB=2", "-DA=1"], True, "sha256:img")
-        self.assertEqual(a, b)
+    def test_digest_changes_with_preset_name(self):
+        a = build_config_digest(self._PRESETS, "aqb-base", "sha256:img")
+        b = build_config_digest(self._PRESETS, "other", "sha256:img")
+        self.assertNotEqual(a, b)
 
-    def test_digest_changes_with_assertions(self):
-        on = build_config_digest(["-DA=1"], True, "sha256:img")
-        off = build_config_digest(["-DA=1"], False, "sha256:img")
-        self.assertNotEqual(on, off)
+    def test_digest_changes_with_presets_content(self):
+        other = '{"version": 3, "configurePresets": [{"name": "aqb-base", "x": 1}]}'
+        a = build_config_digest(self._PRESETS, "aqb-base", "sha256:img")
+        b = build_config_digest(other, "aqb-base", "sha256:img")
+        self.assertNotEqual(a, b)
 
     def test_digest_changes_with_builder_image(self):
-        a = build_config_digest(["-DA=1"], True, "sha256:one")
-        b = build_config_digest(["-DA=1"], True, "sha256:two")
+        a = build_config_digest(self._PRESETS, "aqb-base", "sha256:one")
+        b = build_config_digest(self._PRESETS, "aqb-base", "sha256:two")
         self.assertNotEqual(a, b)
 
 
@@ -80,12 +83,12 @@ def _spec() -> ClangBuildSpec:
         commit="349146dabe4b07651d02fb",
         source="/work/llvm-project",
         commit_title="do the thing",
-        cmake_args=["-DLLVM_ENABLE_ASSERTIONS=ON"],
-        assertions=True,
+        preset="aqb-base",
+        user_presets_json='{"version": 3, "configurePresets": [{"name": "aqb-base"}]}',
         builder_image="aqb-clang-builder:latest",
         builder_image_id="sha256:img",
         created="2026-07-16T13:15:00+00:00",
-        build_config="cmake: -DLLVM_ENABLE_ASSERTIONS=ON",
+        build_config="preset=aqb-base",
     )
 
 
@@ -93,7 +96,7 @@ def _expected_name(spec: ClangBuildSpec) -> str:
     from aqb.volume import build_config_digest, clang_volume_name
 
     digest = build_config_digest(
-        spec.cmake_args, spec.assertions, spec.builder_image_id
+        spec.user_presets_json, spec.preset, spec.builder_image_id
     )
     return clang_volume_name(spec.commit, digest)
 
@@ -185,6 +188,8 @@ class ResolveOrBuildTest(unittest.TestCase):
         joined = " ".join(builds[0])
         self.assertIn(f"{name}:", joined)  # clang volume mounted
         self.assertIn(f"{CCACHE_VOLUME}:", joined)  # ccache mounted
+        self.assertIn("AQB_PRESET=aqb-base", builds[0])  # preset name passed
+        self.assertTrue(any(a.startswith("AQB_USER_PRESETS_JSON=") for a in builds[0]))
         # Volume was absent, so no completeness check ran.
         self.assertFalse(self._check_runs(runner))
 

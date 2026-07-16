@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from typing import Dict, List
 
@@ -17,20 +18,20 @@ COMPLETE_MARKER = f"{CLANG_INSTALL_MOUNT}/.aqb-complete"
 
 
 def build_config_digest(
-    cmake_args: List[str], assertions: bool, builder_image_id: str
+    user_presets_json: str, preset: str, builder_image_id: str
 ) -> str:
-    """Stable digest of everything that changes the built clang binary.
-
-    Order-independent over ``cmake_args``. Deliberately excludes the creation
-    timestamp and the run-level note, which never affect the artifact and so
-    must not force a distinct volume (see AQB-design.rst).
+    """Stable digest of everything that changes the built clang binary: the
+    assembled CMakeUserPresets.json content, the selected preset name, and the
+    builder image. Canonical (sorted-key) JSON, so semantically-equal inputs
+    collide and unrelated inputs do not.
     """
-    normalized = "\n".join(
-        [
-            "cmake=" + "\x1f".join(sorted(cmake_args)),
-            f"assertions={int(assertions)}",
-            f"builder={builder_image_id}",
-        ]
+    normalized = json.dumps(
+        {
+            "presets": json.loads(user_presets_json),
+            "preset": preset,
+            "builder": builder_image_id,
+        },
+        sort_keys=True,
     )
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:DIGEST_LEN]
 
@@ -83,8 +84,8 @@ class ClangBuildSpec:
     commit: str  # full hash
     source: str  # git remote URL or absolute local clone path
     commit_title: str
-    cmake_args: List[str]
-    assertions: bool
+    preset: str  # configure-preset name to build (e.g. "aqb-base")
+    user_presets_json: str  # assembled CMakeUserPresets.json content (canonical)
     builder_image: str  # image ref passed to `run`
     builder_image_id: str  # resolved digest, for the label and the digest input
     created: str  # ISO-8601, provenance only (excluded from the digest)
@@ -104,10 +105,11 @@ def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
     """Container invocation that builds clang from ``spec.commit`` and installs
     it into ``volume``.
 
-    The builder image (provided in Phase 3) is expected to read these env vars:
-    ``AQB_COMMIT``, ``AQB_SOURCE``, ``AQB_CMAKE_ARGS`` (space-joined),
-    ``AQB_ASSERTIONS`` (0/1), ``AQB_INSTALL_DIR`` (the mounted clang volume),
-    ``AQB_CCACHE_DIR`` (the mounted ccache volume).
+    Mount targets are fixed contract constants also hard-coded in build.sh:
+    the clang volume at ``/opt/aqb/clang`` and the ccache volume at ``/ccache``.
+    The builder image is expected to read: ``AQB_COMMIT``, ``AQB_SOURCE``,
+    ``AQB_PRESET`` (configure-preset name), and ``AQB_USER_PRESETS_JSON`` (the
+    assembled CMakeUserPresets.json content, written into ``$SRC/llvm/``).
     """
     return [
         "run",
@@ -121,13 +123,9 @@ def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
         "-e",
         f"AQB_SOURCE={spec.source}",
         "-e",
-        "AQB_CMAKE_ARGS=" + " ".join(spec.cmake_args),
+        f"AQB_PRESET={spec.preset}",
         "-e",
-        f"AQB_ASSERTIONS={int(spec.assertions)}",
-        "-e",
-        f"AQB_INSTALL_DIR={CLANG_INSTALL_MOUNT}",
-        "-e",
-        f"AQB_CCACHE_DIR={CCACHE_MOUNT}",
+        f"AQB_USER_PRESETS_JSON={spec.user_presets_json}",
         spec.builder_image,
     ]
 
@@ -177,7 +175,7 @@ def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> ClangVolum
     the partial volume is removed and ``ClangBuildError`` is raised.
     """
     digest = build_config_digest(
-        spec.cmake_args, spec.assertions, spec.builder_image_id
+        spec.user_presets_json, spec.preset, spec.builder_image_id
     )
     name = clang_volume_name(spec.commit, digest)
 
