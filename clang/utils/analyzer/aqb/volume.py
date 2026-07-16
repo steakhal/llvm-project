@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+import os
+import subprocess
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from aqb.errors import ClangBuildError, RuntimeCommandError
@@ -91,6 +93,7 @@ class ClangBuildSpec:
     builder_image_id: str  # resolved digest, for the label and the digest input
     created: str  # ISO-8601, provenance only (excluded from the digest)
     build_config: str  # human-readable recipe string, for the label
+    extra_mounts: List[str] = field(default_factory=list)  # extra ``-v`` values
 
 
 @dataclass
@@ -105,6 +108,38 @@ class ClangVolume:
 def _is_local_source(source: str) -> bool:
     """True if ``source`` is a local absolute path rather than a git remote URL."""
     return source.startswith("/")
+
+
+def _worktree_common_dir_mount(source: str) -> Optional[str]:
+    """A read-only bind-mount for ``source``'s git *common dir*, if it is a git
+    worktree.
+
+    A worktree's ``.git`` is a file pointing at the main repo's git dir (which
+    holds the shared object store), so bind-mounting only the worktree isn't
+    enough for the builder's ``git clone`` to resolve objects. Returns the
+    ``host:host:ro`` mount for that common dir, or ``None`` for a normal repo
+    (whose ``.git`` sits inside the already-mounted source) or on any error.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", source, "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    common = result.stdout.strip()
+    if not common:
+        return None
+    if not os.path.isabs(common):
+        common = os.path.abspath(os.path.join(source, common))
+    # A normal repo's common dir is ``<source>/.git`` (already covered by the
+    # source mount); only a worktree points outside the source tree.
+    if common == os.path.join(source, ".git") or common.startswith(source + os.sep):
+        return None
+    return f"{common}:{common}:ro"
 
 
 def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
@@ -131,6 +166,8 @@ def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
     ]
     if _is_local_source(spec.source):
         args += ["-v", f"{spec.source}:{spec.source}:ro"]
+    for mount in spec.extra_mounts:
+        args += ["-v", mount]
     args += [
         "-e",
         f"AQB_COMMIT={spec.commit}",
@@ -251,6 +288,11 @@ def build_clang_volume(
     """
     user_presets_json = assemble_user_presets(user_overlay_json)
     builder_image_id = runtime.image_id(builder_image)
+    extra_mounts: List[str] = []
+    if _is_local_source(source):
+        worktree_mount = _worktree_common_dir_mount(source)
+        if worktree_mount:
+            extra_mounts.append(worktree_mount)
     spec = ClangBuildSpec(
         commit=commit,
         source=source,
@@ -261,5 +303,6 @@ def build_clang_volume(
         builder_image_id=builder_image_id,
         created=created,
         build_config=f"preset={preset}",
+        extra_mounts=extra_mounts,
     )
     return resolve_or_build_clang(runtime, spec)

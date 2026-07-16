@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
+import tempfile
 import unittest
 from typing import Callable, List
 
@@ -305,6 +309,23 @@ class ResolveOrBuildTest(unittest.TestCase):
         with self.assertRaises(RuntimeCommandError):
             resolve_or_build_clang(Runtime("docker", runner), spec)
 
+    def test_extra_mounts_are_bind_mounted(self):
+        # e.g. a git worktree's common dir, computed by build_clang_volume.
+        import dataclasses
+
+        spec = dataclasses.replace(_spec(), extra_mounts=["/main/.git:/main/.git:ro"])
+        name = _expected_name(spec)
+
+        def handler(argv):
+            if argv[1:3] == ["volume", "inspect"]:
+                return ProcResult(1 if argv[3] == name else 0, "", "")
+            return ProcResult(0, "", "")
+
+        runner = ScriptedRunner(handler)
+        resolve_or_build_clang(Runtime("docker", runner), spec)
+        build = self._build_runs(runner)[0]
+        self.assertIn("/main/.git:/main/.git:ro", build)
+
 
 class BuildClangVolumeTest(unittest.TestCase):
     def test_assembles_presets_resolves_image_and_builds(self):
@@ -337,3 +358,51 @@ class BuildClangVolumeTest(unittest.TestCase):
                 if a.startswith("AQB_USER_PRESETS_JSON=")
             )
         )
+
+
+class WorktreeCommonDirMountTest(unittest.TestCase):
+    """Real-git tests for detecting a worktree's common dir (gated on git)."""
+
+    def _git(self, *args):
+        subprocess.run(
+            ["git", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "GIT_AUTHOR_NAME": "x",
+                "GIT_AUTHOR_EMAIL": "x@y",
+                "GIT_COMMITTER_NAME": "x",
+                "GIT_COMMITTER_EMAIL": "x@y",
+            },
+        )
+
+    @unittest.skipUnless(shutil.which("git"), "git required")
+    def test_worktree_mounts_common_dir(self):
+        from aqb.volume import _worktree_common_dir_mount
+
+        with tempfile.TemporaryDirectory() as root:
+            main = os.path.join(root, "main")
+            wt = os.path.join(root, "wt")
+            self._git("init", "-q", main)
+            self._git("-C", main, "commit", "--allow-empty", "-qm", "init")
+            self._git("-C", main, "worktree", "add", "--detach", "-q", wt, "HEAD")
+
+            mount = _worktree_common_dir_mount(wt)
+            self.assertIsNotNone(mount)
+            # git's own reported common dir must be the mount's host path.
+            common = subprocess.run(
+                ["git", "-C", wt, "rev-parse", "--git-common-dir"],
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertEqual(mount, f"{common}:{common}:ro")
+
+    @unittest.skipUnless(shutil.which("git"), "git required")
+    def test_normal_repo_has_no_extra_mount(self):
+        from aqb.volume import _worktree_common_dir_mount
+
+        with tempfile.TemporaryDirectory() as root:
+            self._git("init", "-q", root)
+            self.assertIsNone(_worktree_common_dir_mount(root))
