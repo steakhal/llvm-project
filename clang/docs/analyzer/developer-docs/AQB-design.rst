@@ -371,6 +371,10 @@ presentation:
    * - ``promote``
      - Promote a stored run to the committed baseline (the auditable
        regenerate/update lifecycle).
+   * - ``build-clang``
+     - Build (or resolve) a Clang Volume for ``--commit`` using the builder image
+       and a CMake preset (``--preset`` / ``--preset-file``), printing the volume
+       name. A utility verb; ``run`` builds volumes implicitly.
 
 Example Invocations
 -------------------
@@ -447,8 +451,9 @@ build tree). It is content-addressed and immutable once built, so many runs shar
 one copy instead of each run copying 1--3 GB.
 
 **Identity.** A Clang Volume is keyed on the **commit hash** *and* a **digest of
-the build config** (cmake flags, assertions, builder image), so two builds of the
-same commit with different flags coexist and recreation is exact:
+the build configuration** --- the canonical JSON of the assembled CMake presets
+(see below), the selected preset name, and the builder image --- so two builds of
+the same commit with different configurations coexist and recreation is exact:
 
 ::
 
@@ -457,8 +462,8 @@ same commit with different flags coexist and recreation is exact:
            aqb.commit=<full 40-char hash>
            aqb.commit_title=<subject line>
            aqb.source=<git remote URL or absolute local path>
-           aqb.build_config=<normalized cmake recipe>   # digested into the name
-           aqb.builder_image=<image digest>
+           aqb.build_config=preset=<name>               # digested via the preset JSON
+           aqb.builder_image=<image content id>
            aqb.created=<ISO-8601 timestamp>             # NOT part of the digest
 
 Labels are set at creation (they are immutable afterward) and carry everything
@@ -473,28 +478,41 @@ not change the clang artifact, so making it part of the volume identity would
 force a needless rebuild for two runs that differ only in their note. Notes live
 on runs (see `The metadata.json File`_), not on volumes.
 
-Labels are set at creation (they are immutable afterward) and carry everything
-needed to rebuild the volume identically.
-
-**AQB owns the build recipe.** AQB has a default clang build recipe --- fetch the
-commit from ``aqb.source`` (a git remote *or* an absolute local clone path, so
-unpushed commits work), ``checkout <commit>``, cmake configure with the build
-config, build clang, and ``cmake --install`` into the volume --- overridable via
-flags and recorded in the volume label. Owning the recipe is what makes automatic
-recreation possible.
+**AQB owns the build recipe, expressed as CMake presets.** The build
+configuration is a **CMake preset**: a built-in ``aqb-base`` preset (Release,
+``clang``, assertions, ccache) plus an optional **user overlay** --- a
+``CMakeUserPresets.json`` that may ``inherits: aqb-base`` (or LLVM's own tracked
+``llvm-*`` presets). AQB assembles ``aqb-base`` + the overlay into one canonical
+(sorted-key) ``CMakeUserPresets.json``; that canonical JSON is the digest input.
+The builder fetches the commit from ``aqb.source`` (a git remote *or* an absolute
+local clone path, so unpushed commits work), ``checkout <commit>``, writes the
+assembled ``CMakeUserPresets.json`` into the checked-out ``llvm/`` directory
+(alongside LLVM's tracked ``CMakePresets.json``, which it never clobbers), and
+runs ``cmake --preset <name>`` --- forcing the build directory (``-B``) and
+install prefix (``-D CMAKE_INSTALL_PREFIX``) on the command line, which override
+any preset values. Owning the recipe is what makes automatic recreation possible.
+There are no raw ``-D`` flags in the AQB interface; all configuration is a preset.
 
 **Resolve-or-build workflow.** When a ``run`` needs a clang for a
-``(commit, build config)``:
+``(commit, build configuration)``:
 
 #. Compute the volume name ``aqb-clang-<shortcommit>-<configdigest>``.
 #. ``<runtime> volume inspect`` it.
 
-   - **Present:** mount it read-only into the analyze container at a fixed path
-     (e.g. ``/opt/aqb/clang``) and invoke ``/opt/aqb/clang/bin/clang``.
-   - **Absent:** create the volume with its labels, run the builder container
-     (pinned image) to build and install clang into it --- with the shared cache
-     volume (below) mounted --- then proceed. On build failure the partial volume
-     is removed.
+   - **Present and complete:** reuse it. The build writes a completion marker
+     (``/opt/aqb/clang/.aqb-complete``) into the install tree as its *final* step;
+     completeness is verified by running the builder image with ``test -e`` on the
+     marker.
+   - **Present but incomplete:** the residue of an interrupted build (killed
+     before the marker was written). Discard the volume and rebuild. (If the
+     completeness check cannot even run --- e.g. the builder image was pruned ---
+     AQB raises rather than deleting a possibly-good volume.)
+   - **Absent:** create the volume with its labels, ensure the shared cache
+     volume, and run the builder container to build and install clang into it. On
+     build failure the partial volume is removed.
+
+The mount contract is fixed on both sides (Python and the builder script): the
+Clang Volume mounts at ``/opt/aqb/clang`` and the cache volume at ``/ccache``.
 
 The Shared Cache Volume
 -----------------------
@@ -539,8 +557,10 @@ abstraction interface. AQB simply substitutes the program name in each
 3. default ``docker``.
 
 ``podman`` is the primary alternative; any other docker-CLI-compatible runtime
-(e.g. ``nerdctl``) works by naming it. The resolved image digest is recorded in
-``metadata.json``.
+(e.g. ``nerdctl``) works by naming it. The recorded image digest is the runtime's
+**content id** (``<runtime> image inspect --format {{.Id}}``), which is present
+for both locally-built and pulled images; AQB does not rely on registry
+``RepoDigests``.
 
 Storage Backend
 ===============
