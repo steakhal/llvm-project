@@ -1,372 +1,363 @@
-# AQB Phase 3b — Clang Builder Image + Volume Hardening Implementation Plan
+# AQB Phase 3b — Clang Builder Image + Volume Hardening (Preset-Based)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Make AQB able to actually build a Clang Volume: a real builder image + build script honoring the `AQB_*` env contract, the volume-layer hardening the reviews flagged (build-completion marker, `(name, digest, built)` result, lossless cmake args, documented image digest), and an `aqb build-clang` CLI verb to trigger it.
+**Goal:** Make AQB build a Clang Volume for real, with the build configuration expressed as **CMake presets** (no raw `-D` flags): a built-in `aqb-base` preset, optional user preset overlays that can inherit it, a real builder image, and an `aqb build-clang` CLI verb.
 
-**Architecture:** Hardening changes to `aqb/volume.py` and a new `build-clang` verb in `aqb/cli.py` — both unit-tested with the existing fake `Runtime` runner (no daemon). A new `aqb/builder/` directory holds the builder image (`Dockerfile` + `build.sh`); the script is validated daemon-free via `bash -n` and a real build is left to a documented, manually-run smoke. Design source of truth: `clang/docs/analyzer/developer-docs/AQB-design.rst` (*Clang Build Artifacts*, *Runtime*).
+**Status note:** The first hardening task of this phase is already committed — `ClangVolume(name, config_digest, built)`, the `.aqb-complete` completion marker, and `_clang_volume_status` (three-state: complete / incomplete / raise-and-keep-on-runtime-error) in `aqb/volume.py`. Those are **preset-agnostic and retained.** This plan reworks the *build-configuration* layer from raw cmake flags to presets and adds the builder image + CLI.
 
-**Tech Stack:** Python ≥3.8 (stdlib: `json`, `dataclasses`, `datetime`, `subprocess` in tests; `unittest`/`unittest.mock`), `bash` for the builder script, formatted with `python3 -m black`.
+**Empirically-verified cmake facts this design relies on** (tested with `xcrun cmake` 4.0.3; also in memory `aqb-cmake-presets.md`):
+- `CMakePresets.json` must live in the source root (the `llvm/` dir for LLVM); `sourceDir` is not a valid configure-preset field.
+- `cmake --preset X -B <dir>` overrides the preset's `binaryDir` (no error); `-D` overrides preset cache vars. AQB uses this to force `-B /tmp/build -D CMAKE_INSTALL_PREFIX=/opt/aqb/clang`.
+- `CMakeUserPresets.json` (gitignored) coexists with LLVM's tracked `llvm/CMakePresets.json` (v6); a v3 user file works alongside it, and user presets may inherit `aqb-base` or LLVM's own `llvm-*` presets.
 
----
+**Architecture:** AQB assembles a `CMakeUserPresets.json` (aqb-base + the user's presets) in Python (canonical JSON, also the digest input), passes it via env, and the builder writes it into `$SRC/llvm/` and runs `cmake --preset`. Mount contract is hard-coded on both sides: clang volume → `/opt/aqb/clang`, ccache → `/ccache`.
 
-## Conventions (apply to every task)
-
-- **Package location:** `clang/utils/analyzer/aqb/`. Repo root `/Users/benics/git/upstream-llvm-ssaf`.
-- **Run all test/black commands from `clang/utils/analyzer/`.** Whole suite: `python3 -m unittest discover -s aqb/tests -t . -v`.
-- **`black` is `python3 -m black`** (25.11.0). Run `python3 -m black aqb/` before each commit; confirm `python3 -m black --check aqb/` clean. (black only formats `*.py`; it ignores `builder/Dockerfile` and `builder/build.sh`.)
-- **Python 3.8 compat:** `from __future__ import annotations`; `typing.*`, never PEP 604.
-- **Commit to `bb/aqb-design`.** Run git from repo root or with `git -C <root>`; never `cd` in a compound git command. Stage only each task's named files.
-- **No daemon in tests.** All runtime interactions go through the injected fake runner; the builder script is validated with `bash -n` (syntax only), never executed against a daemon in the suite.
-
-## File Structure (Phase 3b)
-
-- Modify `clang/utils/analyzer/aqb/volume.py` — `ClangVolume` result, `COMPLETE_MARKER` + `_volume_complete`, reworked `resolve_or_build_clang`, `AQB_CMAKE_ARGS_JSON`, `build_clang_volume`.
-- Modify `clang/utils/analyzer/aqb/tests/test_volume.py` — reworked `ResolveOrBuildTest`, cmake-args-JSON test, `BuildClangVolumeTest`.
-- Modify `clang/utils/analyzer/aqb/cli.py` — `build-clang` verb + `cmd_build_clang`.
-- Modify `clang/utils/analyzer/aqb/tests/test_cli.py` — `build-clang` CLI tests.
-- Create `clang/utils/analyzer/aqb/builder/Dockerfile`, `clang/utils/analyzer/aqb/builder/build.sh`.
-- Create `clang/utils/analyzer/aqb/tests/test_builder.py`.
-- Modify `clang/docs/analyzer/developer-docs/AQB-design.rst` — document the marker, lossless cmake args, `.Id` digest, and the `build-clang` verb.
+**Tech Stack:** Python ≥3.8 (stdlib `json`/`dataclasses`/`hashlib`/`datetime`; `unittest`/`unittest.mock`), `bash` builder script, `python3 -m black`.
 
 ---
 
-## Task 1: `ClangVolume` result + build-completion marker
+## Conventions (every task)
 
-Reworks `resolve_or_build_clang` to return a structured result and to treat an existing-but-incomplete volume (interrupted build) as rebuild. The completeness check runs the builder image with `test -e <marker>`.
+- Package `clang/utils/analyzer/aqb/`; repo root `/Users/benics/git/upstream-llvm-ssaf`.
+- Run test/black from `clang/utils/analyzer/`. Suite: `python3 -m unittest discover -s aqb/tests -t . -v`. `black` = `python3 -m black`; confirm `--check` clean.
+- Python 3.8 compat: `from __future__ import annotations`; `typing.*`, no PEP 604.
+- Commit to `bb/aqb-design`; git from repo root or `git -C <root>`; no `cd` in compound git commands. Stage only each task's files.
+- No daemon in tests: fake `Runtime` runner; `build.sh` validated via `bash -n` only.
 
-**Files:**
-- Modify: `clang/utils/analyzer/aqb/volume.py`
-- Test: `clang/utils/analyzer/aqb/tests/test_volume.py`
+## File Structure (this phase, remaining work)
 
-- [ ] **Step 1: Rewrite `ResolveOrBuildTest` (the failing test)**
+- Create `clang/utils/analyzer/aqb/presets.py` — `AQB_BASE_PRESET`, `AQB_PRESET_VERSION`, `assemble_user_presets()`.
+- Modify `clang/utils/analyzer/aqb/volume.py` — `ClangBuildSpec` (preset fields), canonical `build_config_digest`, `_builder_run_argv`, `resolve_or_build_clang` digest call, `build_clang_volume`.
+- Modify `clang/utils/analyzer/aqb/tests/test_volume.py` — reworked `_spec`, digest tests, `ResolveOrBuildTest`, `BuildClangVolumeTest`.
+- Modify `clang/utils/analyzer/aqb/cli.py` + `tests/test_cli.py` — `build-clang` verb.
+- Create `clang/utils/analyzer/aqb/builder/Dockerfile`, `build.sh`; `tests/test_builder.py`.
+- Modify `clang/docs/analyzer/developer-docs/AQB-design.rst`.
 
-In `clang/utils/analyzer/aqb/tests/test_volume.py`, replace the ENTIRE `class ResolveOrBuildTest(unittest.TestCase):` block (currently the last class in the file, lines 122–173) with:
+---
+
+## Task 2: Preset model (`aqb-base` + assembly)
+
+**Files:** Create `clang/utils/analyzer/aqb/presets.py`; Test `clang/utils/analyzer/aqb/tests/test_presets.py`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `clang/utils/analyzer/aqb/tests/test_presets.py`:
 
 ```python
-class ResolveOrBuildTest(unittest.TestCase):
-    @staticmethod
-    def _build_runs(runner):
-        # A builder *build* run (not the `test -e` completeness check).
-        return [c for c in runner.calls if c[1:2] == ["run"] and "test" not in c]
+from __future__ import annotations
 
-    @staticmethod
-    def _check_runs(runner):
-        # The `test -e <marker>` completeness-check run.
-        return [c for c in runner.calls if c[1:2] == ["run"] and "test" in c]
+import json
+import unittest
 
-    def test_reuses_existing_complete_volume(self):
-        spec = _spec()
-        name = _expected_name(spec)
-        # volume inspect -> present; completeness `run ... test` -> rc 0 (complete).
-        runner = ScriptedRunner(lambda argv: ProcResult(0, "", ""))
-        result = resolve_or_build_clang(Runtime("docker", runner), spec)
-        self.assertEqual(result.name, name)
-        self.assertFalse(result.built)
-        self.assertFalse([c for c in runner.calls if c[1:3] == ["volume", "create"]])
-        self.assertFalse(self._build_runs(runner))  # no build
-        self.assertTrue(self._check_runs(runner))  # completeness was checked
+from aqb.presets import AQB_BASE_PRESET_NAME, assemble_user_presets
 
-    def test_rebuilds_incomplete_volume(self):
-        spec = _spec()
-        name = _expected_name(spec)
 
-        def handler(argv):
-            if argv[1:3] == ["volume", "inspect"]:
-                return ProcResult(0, "", "")  # clang + ccache present
-            if argv[1:2] == ["run"] and "test" in argv:
-                return ProcResult(1, "", "")  # marker absent -> incomplete
-            return ProcResult(0, "", "")  # create / rm / build succeed
+class AssembleUserPresetsTest(unittest.TestCase):
+    def test_base_only_when_no_overlay(self):
+        doc = json.loads(assemble_user_presets(None))
+        names = [p["name"] for p in doc["configurePresets"]]
+        self.assertEqual(names, [AQB_BASE_PRESET_NAME])
+        base = doc["configurePresets"][0]
+        self.assertEqual(base["cacheVariables"]["CMAKE_BUILD_TYPE"], "Release")
+        self.assertEqual(base["cacheVariables"]["LLVM_ENABLE_PROJECTS"], "clang")
 
-        runner = ScriptedRunner(handler)
-        result = resolve_or_build_clang(Runtime("docker", runner), spec)
-        self.assertEqual(result.name, name)
-        self.assertTrue(result.built)
-        # Incomplete volume was discarded, then rebuilt.
-        self.assertTrue(
-            [c for c in runner.calls if c[1:3] == ["volume", "rm"] and name in c]
+    def test_overlay_presets_appended_after_base(self):
+        overlay = json.dumps(
+            {
+                "version": 6,
+                "configurePresets": [
+                    {"name": "mine", "inherits": "aqb-base",
+                     "cacheVariables": {"LLVM_ENABLE_ASSERTIONS": "OFF"}}
+                ],
+            }
         )
-        self.assertEqual(len(self._build_runs(runner)), 1)
+        doc = json.loads(assemble_user_presets(overlay))
+        names = [p["name"] for p in doc["configurePresets"]]
+        self.assertEqual(names, ["aqb-base", "mine"])
+        # Assembled file's version is at least the overlay's.
+        self.assertGreaterEqual(doc["version"], 6)
 
-    def test_builds_when_absent(self):
-        spec = _spec()
-        name = _expected_name(spec)
+    def test_output_is_canonical_and_stable(self):
+        a = assemble_user_presets(None)
+        b = assemble_user_presets(None)
+        self.assertEqual(a, b)
+        # sorted keys -> deterministic bytes for the digest.
+        self.assertEqual(a, json.dumps(json.loads(a), sort_keys=True, indent=2))
+```
 
-        def handler(argv):
-            if argv[1:3] == ["volume", "inspect"]:
-                return ProcResult(1 if argv[3] == name else 0, "", "")
-            return ProcResult(0, "", "")
+- [ ] **Step 2: Run — expect FAIL** (`No module named 'aqb.presets'`).
+`python3 -m unittest aqb.tests.test_presets -v`
 
-        runner = ScriptedRunner(handler)
-        result = resolve_or_build_clang(Runtime("docker", runner), spec)
-        self.assertEqual(result.name, name)
-        self.assertTrue(result.built)
-        create = [c for c in runner.calls if c[1:3] == ["volume", "create"]]
-        self.assertTrue(
-            any(name in c and "aqb.commit=" + spec.commit in c for c in create)
-        )
-        builds = self._build_runs(runner)
-        self.assertEqual(len(builds), 1)
+- [ ] **Step 3: Implement** — create `clang/utils/analyzer/aqb/presets.py`:
+
+```python
+from __future__ import annotations
+
+import json
+from typing import Optional
+
+AQB_PRESET_VERSION = 3
+AQB_BASE_PRESET_NAME = "aqb-base"
+
+# Self-contained so it works at any pinned commit (does not depend on LLVM's own
+# presets existing). AQB always overrides binaryDir (-B) and CMAKE_INSTALL_PREFIX
+# (-D) on the command line, but they are set here too as sane defaults.
+AQB_BASE_PRESET = {
+    "name": AQB_BASE_PRESET_NAME,
+    "displayName": "AQB base clang build",
+    "generator": "Ninja",
+    "binaryDir": "/tmp/build",
+    "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "LLVM_ENABLE_PROJECTS": "clang",
+        "LLVM_ENABLE_ASSERTIONS": "ON",
+        "LLVM_CCACHE_BUILD": "ON",
+        "CMAKE_INSTALL_PREFIX": "/opt/aqb/clang",
+    },
+}
+
+
+def assemble_user_presets(user_overlay_json: Optional[str]) -> str:
+    """Return the ``CMakeUserPresets.json`` content = ``aqb-base`` + the user's
+    presets, as canonical JSON (sorted keys) so identical inputs yield identical
+    bytes (this is the volume-digest input).
+
+    The user's configure presets are appended after ``aqb-base`` and may
+    ``inherits: aqb-base``. LLVM's own tracked ``CMakePresets.json`` is left
+    untouched, so a user preset may also inherit ``llvm-*`` presets.
+    """
+    version = AQB_PRESET_VERSION
+    configure_presets = [dict(AQB_BASE_PRESET)]
+    if user_overlay_json:
+        overlay = json.loads(user_overlay_json)
+        version = max(version, int(overlay.get("version", version)))
+        configure_presets.extend(overlay.get("configurePresets", []))
+    doc = {"version": version, "configurePresets": configure_presets}
+    return json.dumps(doc, sort_keys=True, indent=2)
+```
+
+- [ ] **Step 4: Run — expect PASS (3).** `python3 -m unittest aqb.tests.test_presets -v`
+
+- [ ] **Step 5: Format + commit.**
+```bash
+python3 -m black aqb/
+git -C /Users/benics/git/upstream-llvm-ssaf add clang/utils/analyzer/aqb/presets.py clang/utils/analyzer/aqb/tests/test_presets.py
+git -C /Users/benics/git/upstream-llvm-ssaf commit -m "feat(aqb): built-in aqb-base preset + user-preset assembly"
+```
+
+---
+
+## Task 3: Rework `volume.py` to presets
+
+Replaces `ClangBuildSpec`'s `cmake_args`/`assertions` with a preset name + assembled presets JSON; makes the digest canonical over the presets; and passes presets to the builder (dropping the hard-coded install/ccache dir env vars — those become build.sh contract constants).
+
+**Files:** Modify `clang/utils/analyzer/aqb/volume.py`; `clang/utils/analyzer/aqb/tests/test_volume.py`.
+
+- [ ] **Step 1: Rewrite the failing tests.** In `test_volume.py`:
+
+(a) Replace the `DigestTest` class with:
+
+```python
+class DigestTest(unittest.TestCase):
+    _PRESETS = '{"version": 3, "configurePresets": [{"name": "aqb-base"}]}'
+
+    def test_digest_is_stable(self):
+        a = build_config_digest(self._PRESETS, "aqb-base", "sha256:img")
+        b = build_config_digest(self._PRESETS, "aqb-base", "sha256:img")
+        self.assertEqual(a, b)
+
+    def test_digest_changes_with_preset_name(self):
+        a = build_config_digest(self._PRESETS, "aqb-base", "sha256:img")
+        b = build_config_digest(self._PRESETS, "other", "sha256:img")
+        self.assertNotEqual(a, b)
+
+    def test_digest_changes_with_presets_content(self):
+        other = '{"version": 3, "configurePresets": [{"name": "aqb-base", "x": 1}]}'
+        a = build_config_digest(self._PRESETS, "aqb-base", "sha256:img")
+        b = build_config_digest(other, "aqb-base", "sha256:img")
+        self.assertNotEqual(a, b)
+
+    def test_digest_changes_with_builder_image(self):
+        a = build_config_digest(self._PRESETS, "aqb-base", "sha256:one")
+        b = build_config_digest(self._PRESETS, "aqb-base", "sha256:two")
+        self.assertNotEqual(a, b)
+```
+
+(b) Replace the `_spec()` helper with:
+
+```python
+def _spec() -> ClangBuildSpec:
+    return ClangBuildSpec(
+        commit="349146dabe4b07651d02fb",
+        source="/work/llvm-project",
+        commit_title="do the thing",
+        preset="aqb-base",
+        user_presets_json='{"version": 3, "configurePresets": [{"name": "aqb-base"}]}',
+        builder_image="aqb-clang-builder:latest",
+        builder_image_id="sha256:img",
+        created="2026-07-16T13:15:00+00:00",
+        build_config="preset=aqb-base",
+    )
+```
+
+(c) Replace the `_expected_name()` helper with:
+
+```python
+def _expected_name(spec: ClangBuildSpec) -> str:
+    from aqb.volume import build_config_digest, clang_volume_name
+
+    digest = build_config_digest(
+        spec.user_presets_json, spec.preset, spec.builder_image_id
+    )
+    return clang_volume_name(spec.commit, digest)
+```
+
+(d) In `ResolveOrBuildTest.test_builds_when_absent`, replace the two mount assertions:
+
+```python
         joined = " ".join(builds[0])
         self.assertIn(f"{name}:", joined)  # clang volume mounted
         self.assertIn(f"{CCACHE_VOLUME}:", joined)  # ccache mounted
-        # Volume was absent, so no completeness check ran.
-        self.assertFalse(self._check_runs(runner))
-
-    def test_build_failure_removes_volume_and_raises(self):
-        spec = _spec()
-        name = _expected_name(spec)
-
-        def handler(argv):
-            if argv[1:3] == ["volume", "inspect"]:
-                return ProcResult(1 if argv[3] == name else 0, "", "")
-            if argv[1:2] == ["run"] and "test" not in argv:
-                return ProcResult(2, "", "compile error")
-            return ProcResult(0, "", "")
-
-        runner = ScriptedRunner(handler)
-        with self.assertRaises(ClangBuildError):
-            resolve_or_build_clang(Runtime("docker", runner), spec)
-        removed = [c for c in runner.calls if c[1:3] == ["volume", "rm"]]
-        self.assertTrue(any(name in c for c in removed))
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `python3 -m unittest aqb.tests.test_volume -v`
-Expected: FAIL — `resolve_or_build_clang` still returns a `str`, so `result.name` raises `AttributeError` (and `test_reuses_existing_complete_volume` expects a completeness `run` that doesn't happen yet).
-
-- [ ] **Step 3: Rework `volume.py`**
-
-In `clang/utils/analyzer/aqb/volume.py`:
-
-(a) Add the marker constant next to the existing constants (after `CCACHE_MOUNT = "/ccache"` on line 15):
+with (add the preset assertions):
 
 ```python
-COMPLETE_MARKER = f"{CLANG_INSTALL_MOUNT}/.aqb-complete"
+        joined = " ".join(builds[0])
+        self.assertIn(f"{name}:", joined)  # clang volume mounted
+        self.assertIn(f"{CCACHE_VOLUME}:", joined)  # ccache mounted
+        self.assertIn("AQB_PRESET=aqb-base", builds[0])  # preset name passed
+        self.assertTrue(
+            any(a.startswith("AQB_USER_PRESETS_JSON=") for a in builds[0])
+        )
 ```
 
-(b) Add a `ClangVolume` result dataclass immediately after the `ClangBuildSpec` dataclass (after line 90):
+Leave the rest of `ResolveOrBuildTest` (reuse/incomplete/failure/keeps-volume-on-check-error) and `NameAndLabelTest`/`CacheVolumeTest`/`ScriptedRunner` unchanged. **Delete** the `test_cmake_args_passed_as_lossless_json` method if present (it was never added — the lossless-transport task was dropped in favor of presets; if it exists, remove it).
+
+- [ ] **Step 2: Run — expect FAIL** (`ClangBuildSpec` has no `preset`/`user_presets_json`; `build_config_digest` signature mismatch). `python3 -m unittest aqb.tests.test_volume -v`
+
+- [ ] **Step 3: Rework `volume.py`.**
+
+(a) Ensure `import json` is present at the top (add it alphabetically after `import hashlib` if missing).
+
+(b) Replace the `build_config_digest` function with:
+
+```python
+def build_config_digest(
+    user_presets_json: str, preset: str, builder_image_id: str
+) -> str:
+    """Stable digest of everything that changes the built clang binary: the
+    assembled CMakeUserPresets.json content, the selected preset name, and the
+    builder image. Canonical (sorted-key) JSON, so semantically-equal inputs
+    collide and unrelated inputs do not.
+    """
+    normalized = json.dumps(
+        {
+            "presets": json.loads(user_presets_json),
+            "preset": preset,
+            "builder": builder_image_id,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:DIGEST_LEN]
+```
+
+(c) Replace the `ClangBuildSpec` dataclass with:
 
 ```python
 @dataclass
-class ClangVolume:
-    """The result of resolving (or building) a Clang Volume."""
+class ClangBuildSpec:
+    """Everything needed to name, label, and build a Clang Volume."""
 
-    name: str
-    config_digest: str
-    built: bool  # True if this call built it; False if an existing volume was reused
+    commit: str  # full hash
+    source: str  # git remote URL or absolute local clone path
+    commit_title: str
+    preset: str  # configure-preset name to build (e.g. "aqb-base")
+    user_presets_json: str  # assembled CMakeUserPresets.json content (canonical)
+    builder_image: str  # image ref passed to `run`
+    builder_image_id: str  # resolved digest, for the label and the digest input
+    created: str  # ISO-8601, provenance only (excluded from the digest)
+    build_config: str  # human-readable recipe string, for the label
 ```
 
-(c) Add the completeness helper immediately before `resolve_or_build_clang`:
+(d) Replace the `_builder_run_argv` function with (drops `AQB_INSTALL_DIR`/`AQB_CCACHE_DIR`/`AQB_CMAKE_ARGS` — those are build.sh contract constants now — and passes the preset + assembled presets):
 
 ```python
-def _clang_volume_status(runtime: Runtime, volume: str, builder_image: str) -> str:
-    """Classify an existing Clang Volume as ``"complete"`` or ``"incomplete"``.
+def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
+    """Container invocation that builds clang from ``spec.commit`` and installs
+    it into ``volume``.
 
-    A successful build writes ``COMPLETE_MARKER`` into the install tree as its
-    final step; the check runs the builder image with ``test -e`` (reading a
-    file inside a volume requires a container). ``test`` exits 0 when the marker
-    is present and 1 when it is absent. Any other exit code means the check
-    itself could not run (e.g. the builder image was pruned, or the daemon is
-    unreachable); in that case we must NOT treat the volume as incomplete and
-    destroy it, so ``RuntimeCommandError`` is raised instead — a good volume is
-    never deleted because of an unrelated runtime problem.
+    Mount targets are fixed contract constants also hard-coded in build.sh:
+    the clang volume at ``/opt/aqb/clang`` and the ccache volume at ``/ccache``.
+    The builder image is expected to read: ``AQB_COMMIT``, ``AQB_SOURCE``,
+    ``AQB_PRESET`` (configure-preset name), and ``AQB_USER_PRESETS_JSON`` (the
+    assembled CMakeUserPresets.json content, written into ``$SRC/llvm/``).
     """
-    check = runtime.run(
-        [
-            "run",
-            "--rm",
-            "-v",
-            f"{volume}:{CLANG_INSTALL_MOUNT}",
-            builder_image,
-            "test",
-            "-e",
-            COMPLETE_MARKER,
-        ]
-    )
-    if check.returncode == 0:
-        return "complete"
-    if check.returncode == 1:
-        return "incomplete"
-    raise RuntimeCommandError(
-        f"cannot verify Clang Volume {volume}: completeness check exited "
-        f"{check.returncode} (is builder image {builder_image} available?): "
-        f"{check.stderr.strip()}"
-    )
+    return [
+        "run",
+        "--rm",
+        "-v",
+        f"{volume}:{CLANG_INSTALL_MOUNT}",
+        "-v",
+        f"{CCACHE_VOLUME}:{CCACHE_MOUNT}",
+        "-e",
+        f"AQB_COMMIT={spec.commit}",
+        "-e",
+        f"AQB_SOURCE={spec.source}",
+        "-e",
+        f"AQB_PRESET={spec.preset}",
+        "-e",
+        f"AQB_USER_PRESETS_JSON={spec.user_presets_json}",
+        spec.builder_image,
+    ]
 ```
 
-(d) Replace the entire `resolve_or_build_clang` function (lines 125–159) with:
+(e) In `resolve_or_build_clang`, replace the digest call:
 
 ```python
-def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> ClangVolume:
-    """Resolve the Clang Volume for ``spec``, building it if necessary.
-
-    If the volume exists *and* is complete, it is reused (``built=False``). A
-    volume that exists but is incomplete (an interrupted build) is discarded and
-    rebuilt. Otherwise the volume is created with its immutable labels, the
-    ccache volume is ensured, and the builder container is run; on build failure
-    the partial volume is removed and ``ClangBuildError`` is raised.
-    """
     digest = build_config_digest(
         spec.cmake_args, spec.assertions, spec.builder_image_id
     )
-    name = clang_volume_name(spec.commit, digest)
-
-    if runtime.volume_exists(name):
-        if _clang_volume_status(runtime, name, spec.builder_image) == "complete":
-            return ClangVolume(name=name, config_digest=digest, built=False)
-        # Residue of an interrupted build: discard and rebuild.
-        runtime.remove_volume(name)
-
-    runtime.create_volume(
-        name,
-        clang_volume_labels(
-            commit=spec.commit,
-            commit_title=spec.commit_title,
-            source=spec.source,
-            build_config=spec.build_config,
-            builder_image_id=spec.builder_image_id,
-            created=spec.created,
-        ),
-    )
-    ensure_cache_volume(runtime)
-    result = runtime.run(_builder_run_argv(name, spec))
-    if result.returncode != 0:
-        runtime.remove_volume(name)
-        raise ClangBuildError(
-            f"building clang for {spec.commit} failed "
-            f"(exit {result.returncode}): {result.stderr.strip()}"
-        )
-    return ClangVolume(name=name, config_digest=digest, built=True)
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `python3 -m unittest aqb.tests.test_volume -v`
-Expected: PASS — the 6 digest/name/label tests, 2 cache tests, and the 4 reworked `ResolveOrBuildTest` cases (reuse-complete, rebuild-incomplete, builds-absent, failure).
-
-- [ ] **Step 5: Format + commit**
-
-```bash
-python3 -m black aqb/
-git -C /Users/benics/git/upstream-llvm-ssaf add clang/utils/analyzer/aqb/volume.py clang/utils/analyzer/aqb/tests/test_volume.py
-git -C /Users/benics/git/upstream-llvm-ssaf commit -m "feat(aqb): ClangVolume result + build-completion marker"
-```
-
----
-
-## Task 2: Lossless cmake-arg transport
-
-Change the builder env var from space-joined `AQB_CMAKE_ARGS` to `AQB_CMAKE_ARGS_JSON` (a JSON list), which the build script parses without word-splitting on spaces.
-
-**Files:**
-- Modify: `clang/utils/analyzer/aqb/volume.py`
-- Test: `clang/utils/analyzer/aqb/tests/test_volume.py`
-
-- [ ] **Step 1: Add the failing test**
-
-Append this method to the `ResolveOrBuildTest` class in `clang/utils/analyzer/aqb/tests/test_volume.py`:
-
-```python
-    def test_cmake_args_passed_as_lossless_json(self):
-        import json
-
-        spec = ClangBuildSpec(
-            commit="deadbeefcafe0000",
-            source="/work/llvm-project",
-            commit_title="t",
-            cmake_args=["-DCMAKE_CXX_FLAGS=-O2 -g"],  # contains a space
-            assertions=True,
-            builder_image="aqb-clang-builder:latest",
-            builder_image_id="sha256:img",
-            created="2026-07-16T13:15:00+00:00",
-            build_config="c",
-        )
-        name = _expected_name(spec)
-
-        def handler(argv):
-            if argv[1:3] == ["volume", "inspect"]:
-                return ProcResult(1 if argv[3] == name else 0, "", "")
-            return ProcResult(0, "", "")
-
-        runner = ScriptedRunner(handler)
-        resolve_or_build_clang(Runtime("docker", runner), spec)
-        build = [c for c in runner.calls if c[1:2] == ["run"] and "test" not in c][0]
-        expected = "AQB_CMAKE_ARGS_JSON=" + json.dumps(["-DCMAKE_CXX_FLAGS=-O2 -g"])
-        # The multi-word arg travels as ONE argv element (no space-splitting).
-        self.assertIn(expected, build)
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `python3 -m unittest aqb.tests.test_volume -v`
-Expected: FAIL — the build argv currently contains `AQB_CMAKE_ARGS=...`, not `AQB_CMAKE_ARGS_JSON=...`.
-
-- [ ] **Step 3: Update `_builder_run_argv`**
-
-In `clang/utils/analyzer/aqb/volume.py`, add `import json` to the imports at the top (alongside `import hashlib` — keep alphabetical: `import hashlib`, `import json`). Then in `_builder_run_argv`, replace this pair of lines:
-
-```python
-        "-e",
-        "AQB_CMAKE_ARGS=" + " ".join(spec.cmake_args),
 ```
 
 with:
 
 ```python
-        "-e",
-        "AQB_CMAKE_ARGS_JSON=" + json.dumps(spec.cmake_args),
+    digest = build_config_digest(
+        spec.user_presets_json, spec.preset, spec.builder_image_id
+    )
 ```
 
-And update the `_builder_run_argv` docstring line that reads:
+Leave `ClangVolume`, `COMPLETE_MARKER`, `_clang_volume_status`, the rest of `resolve_or_build_clang`, `clang_volume_name`, `clang_volume_labels`, `ensure_cache_volume`, and the constants unchanged.
 
-```python
-    ``AQB_COMMIT``, ``AQB_SOURCE``, ``AQB_CMAKE_ARGS`` (space-joined),
-```
+- [ ] **Step 4: Run — expect PASS.** `python3 -m unittest aqb.tests.test_volume -v`, then full suite `python3 -m unittest discover -s aqb/tests -t . -v`.
 
-to:
-
-```python
-    ``AQB_COMMIT``, ``AQB_SOURCE``, ``AQB_CMAKE_ARGS_JSON`` (a JSON list, parsed
-    losslessly by the builder),
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `python3 -m unittest aqb.tests.test_volume -v`
-Expected: PASS (all volume tests, including the new lossless-json case).
-
-- [ ] **Step 5: Format + commit**
-
+- [ ] **Step 5: Format + commit.**
 ```bash
 python3 -m black aqb/
 git -C /Users/benics/git/upstream-llvm-ssaf add clang/utils/analyzer/aqb/volume.py clang/utils/analyzer/aqb/tests/test_volume.py
-git -C /Users/benics/git/upstream-llvm-ssaf commit -m "feat(aqb): pass cmake args to builder as lossless JSON"
+git -C /Users/benics/git/upstream-llvm-ssaf commit -m "feat(aqb): represent clang build config as CMake presets"
 ```
 
 ---
 
-## Task 3: `build_clang_volume` orchestration
+## Task 4: `build_clang_volume` orchestration + `build-clang` CLI
 
-A helper that resolves the builder image's content digest (`{{.Id}}`), assembles a `ClangBuildSpec`, and delegates to `resolve_or_build_clang` — the seam the CLI (and later Phase 3c) call.
+**Files:** Modify `clang/utils/analyzer/aqb/volume.py`, `clang/utils/analyzer/aqb/cli.py`; Tests `tests/test_volume.py`, `tests/test_cli.py`.
 
-**Files:**
-- Modify: `clang/utils/analyzer/aqb/volume.py`
-- Test: `clang/utils/analyzer/aqb/tests/test_volume.py`
+- [ ] **Step 1: Write the failing tests.**
 
-- [ ] **Step 1: Write the failing test**
-
-Add `build_clang_volume` to the `from aqb.volume import (...)` block at the top of `clang/utils/analyzer/aqb/tests/test_volume.py` (insert it alphabetically in the import list). Then append this test class to the file:
+(a) Append to `test_volume.py` (add `build_clang_volume` to the `from aqb.volume import (...)` block):
 
 ```python
 class BuildClangVolumeTest(unittest.TestCase):
-    def test_resolves_image_id_and_builds(self):
+    def test_assembles_presets_resolves_image_and_builds(self):
         def handler(argv):
             if argv[1:3] == ["image", "inspect"]:
                 return ProcResult(0, "sha256:BUILDERID\n", "")
             if argv[1:3] == ["volume", "inspect"]:
-                return ProcResult(1, "", "")  # clang + ccache absent -> build path
+                return ProcResult(1, "", "")  # absent -> build
             return ProcResult(0, "", "")
 
         runner = ScriptedRunner(handler)
@@ -375,129 +366,49 @@ class BuildClangVolumeTest(unittest.TestCase):
             commit="349146dabe4b07651d02fb",
             source="/work/llvm-project",
             commit_title="t",
-            cmake_args=["-DX=1"],
-            assertions=True,
+            preset="aqb-base",
+            user_overlay_json=None,
             builder_image="aqb-clang-builder:latest",
             created="2026-07-16T13:15:00+00:00",
         )
         self.assertTrue(vol.name.startswith("aqb-clang-349146dabe4b-"))
         self.assertTrue(vol.built)
-        # The builder image's .Id was resolved and folded into the labels.
+        self.assertTrue([c for c in runner.calls if c[1:3] == ["image", "inspect"]])
+        # The assembled presets (aqb-base) reached the builder.
+        build = [c for c in runner.calls if c[1:2] == ["run"] and "test" not in c][0]
         self.assertTrue(
-            [c for c in runner.calls if c[1:3] == ["image", "inspect"]]
-        )
-        create = [c for c in runner.calls if c[1:3] == ["volume", "create"]]
-        self.assertTrue(
-            any("aqb.builder_image=sha256:BUILDERID" in c for c in create)
+            any('"aqb-base"' in a for a in build if a.startswith("AQB_USER_PRESETS_JSON="))
         )
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `python3 -m unittest aqb.tests.test_volume -v`
-Expected: FAIL — `ImportError: cannot import name 'build_clang_volume'`.
-
-- [ ] **Step 3: Implement**
-
-Append to `clang/utils/analyzer/aqb/volume.py`:
-
-```python
-def _describe_build_config(cmake_args: List[str], assertions: bool) -> str:
-    """A short human-readable recipe string for the ``aqb.build_config`` label."""
-    parts = list(cmake_args)
-    parts.append("assertions=on" if assertions else "assertions=off")
-    return "cmake: " + " ".join(parts)
-
-
-def build_clang_volume(
-    runtime: Runtime,
-    *,
-    commit: str,
-    source: str,
-    commit_title: str,
-    cmake_args: List[str],
-    assertions: bool,
-    builder_image: str,
-    created: str,
-) -> ClangVolume:
-    """Resolve (or build) the Clang Volume for ``commit`` using ``builder_image``.
-
-    Resolves the builder image's content digest (``{{.Id}}``) — which is part of
-    the volume's identity — assembles a ``ClangBuildSpec``, and delegates to
-    ``resolve_or_build_clang``.
-    """
-    builder_image_id = runtime.image_id(builder_image)
-    spec = ClangBuildSpec(
-        commit=commit,
-        source=source,
-        commit_title=commit_title,
-        cmake_args=cmake_args,
-        assertions=assertions,
-        builder_image=builder_image,
-        builder_image_id=builder_image_id,
-        created=created,
-        build_config=_describe_build_config(cmake_args, assertions),
-    )
-    return resolve_or_build_clang(runtime, spec)
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `python3 -m unittest aqb.tests.test_volume -v`
-Expected: PASS (adds `BuildClangVolumeTest`).
-
-- [ ] **Step 5: Format + commit**
-
-```bash
-python3 -m black aqb/
-git -C /Users/benics/git/upstream-llvm-ssaf add clang/utils/analyzer/aqb/volume.py clang/utils/analyzer/aqb/tests/test_volume.py
-git -C /Users/benics/git/upstream-llvm-ssaf commit -m "feat(aqb): build_clang_volume orchestration (resolve image id + spec)"
-```
-
----
-
-## Task 4: `aqb build-clang` CLI verb
-
-**Files:**
-- Modify: `clang/utils/analyzer/aqb/cli.py`
-- Test: `clang/utils/analyzer/aqb/tests/test_cli.py`
-
-- [ ] **Step 1: Write the failing tests**
-
-In `clang/utils/analyzer/aqb/tests/test_cli.py`, add `from unittest import mock` to the imports at the top (alongside the existing `import contextlib`, `import io`, `import tempfile`, `import unittest`). Then append this test class:
+(b) Append to `test_cli.py` (ensure `from unittest import mock` is imported):
 
 ```python
 class BuildClangCliTest(unittest.TestCase):
-    def test_build_clang_invokes_orchestration_and_prints_name(self):
+    def test_invokes_orchestration_with_preset(self):
         from aqb.volume import ClangVolume
 
         captured = {}
 
         def fake_build(runtime, **kwargs):
             captured.update(kwargs)
-            return ClangVolume(name="aqb-clang-abc-def", config_digest="def", built=True)
+            return ClangVolume(name="aqb-clang-x-y", config_digest="y", built=True)
 
         out = io.StringIO()
         with mock.patch("aqb.cli.build_clang_volume", fake_build), (
             contextlib.redirect_stdout(out)
         ):
             code = main(
-                [
-                    "build-clang",
-                    "--commit", "abc123",
-                    "--source", "/src",
-                    "--cmake-arg", "-DX=1",
-                    "--cmake-arg", "-DY=2",
-                ]
+                ["build-clang", "--commit", "abc", "--source", "/s", "--preset", "mine"]
             )
         self.assertEqual(code, 0)
-        self.assertIn("aqb-clang-abc-def", out.getvalue())
-        self.assertEqual(captured["commit"], "abc123")
-        self.assertEqual(captured["source"], "/src")
-        self.assertEqual(captured["cmake_args"], ["-DX=1", "-DY=2"])
-        self.assertTrue(captured["assertions"])
+        self.assertIn("aqb-clang-x-y", out.getvalue())
+        self.assertEqual(captured["commit"], "abc")
+        self.assertEqual(captured["preset"], "mine")
+        self.assertIsNone(captured["user_overlay_json"])
 
-    def test_build_clang_no_assertions_flag(self):
+    def test_reads_preset_file(self):
+        import tempfile
         from aqb.volume import ClangVolume
 
         captured = {}
@@ -506,15 +417,18 @@ class BuildClangCliTest(unittest.TestCase):
             captured.update(kwargs)
             return ClangVolume(name="v", config_digest="d", built=False)
 
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            handle.write('{"version": 6, "configurePresets": []}')
+            preset_path = handle.name
         with mock.patch("aqb.cli.build_clang_volume", fake_build):
             code = main(
-                ["build-clang", "--commit", "c", "--source", "/s", "--no-assertions"]
+                ["build-clang", "--commit", "c", "--source", "/s",
+                 "--preset", "mine", "--preset-file", preset_path]
             )
         self.assertEqual(code, 0)
-        self.assertFalse(captured["assertions"])
-        self.assertEqual(captured["cmake_args"], [])
+        self.assertIn("configurePresets", captured["user_overlay_json"])
 
-    def test_build_clang_reports_build_error(self):
+    def test_reports_build_error(self):
         from aqb.errors import ClangBuildError
 
         def fake_build(runtime, **kwargs):
@@ -529,14 +443,47 @@ class BuildClangCliTest(unittest.TestCase):
         self.assertIn("boom", err.getvalue())
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run — expect FAIL** (no `build_clang_volume`; no `build-clang` verb).
 
-Run: `python3 -m unittest aqb.tests.test_cli -v`
-Expected: FAIL — `build-clang` is not a registered command (argparse `SystemExit`).
+- [ ] **Step 3: Implement.**
 
-- [ ] **Step 3: Implement in `cli.py`**
+(a) Append to `clang/utils/analyzer/aqb/volume.py` (add `from typing import Optional` to the typing import, and `from aqb.presets import assemble_user_presets`):
 
-In `clang/utils/analyzer/aqb/cli.py`, add these imports below the existing `from aqb.store import RunStore` line:
+```python
+def build_clang_volume(
+    runtime: Runtime,
+    *,
+    commit: str,
+    source: str,
+    commit_title: str,
+    preset: str,
+    user_overlay_json: Optional[str],
+    builder_image: str,
+    created: str,
+) -> ClangVolume:
+    """Resolve (or build) the Clang Volume for ``commit`` using ``builder_image``.
+
+    Assembles ``aqb-base`` + the user's preset overlay into a canonical
+    CMakeUserPresets.json, resolves the builder image's content digest
+    (``{{.Id}}``), and delegates to ``resolve_or_build_clang``.
+    """
+    user_presets_json = assemble_user_presets(user_overlay_json)
+    builder_image_id = runtime.image_id(builder_image)
+    spec = ClangBuildSpec(
+        commit=commit,
+        source=source,
+        commit_title=commit_title,
+        preset=preset,
+        user_presets_json=user_presets_json,
+        builder_image=builder_image,
+        builder_image_id=builder_image_id,
+        created=created,
+        build_config=f"preset={preset}",
+    )
+    return resolve_or_build_clang(runtime, spec)
+```
+
+(b) In `clang/utils/analyzer/aqb/cli.py`, add imports below `from aqb.store import RunStore`:
 
 ```python
 import datetime
@@ -546,7 +493,7 @@ from aqb.runtime import Runtime, resolve_runtime
 from aqb.volume import build_clang_volume
 ```
 
-Register the verb inside `build_parser()`, immediately after the `list` subparser is wired (after the `list_parser.set_defaults(func=cmd_list)` line):
+Register the verb in `build_parser()` after the `list` subparser:
 
 ```python
     build = sub.add_parser(
@@ -554,44 +501,39 @@ Register the verb inside `build_parser()`, immediately after the `list` subparse
     )
     build.add_argument("--commit", required=True, help="analyzer commit to build")
     build.add_argument(
-        "--source",
-        required=True,
+        "--source", required=True,
         help="git remote URL or absolute local clone path",
     )
     build.add_argument(
         "--commit-title", default="", help="commit subject line (provenance)"
     )
     build.add_argument(
-        "--builder-image",
-        default="aqb-clang-builder:latest",
+        "--preset", default="aqb-base",
+        help="configure-preset name to build (default: aqb-base)",
+    )
+    build.add_argument(
+        "--preset-file", default=None,
+        help="path to a CMakeUserPresets.json overlay (may inherit aqb-base)",
+    )
+    build.add_argument(
+        "--builder-image", default="aqb-clang-builder:latest",
         help="builder image ref",
     )
     build.add_argument(
-        "--cmake-arg",
-        action="append",
-        default=None,
-        dest="cmake_args",
-        metavar="ARG",
-        help="extra cmake flag, repeatable",
-    )
-    build.add_argument(
-        "--no-assertions",
-        dest="assertions",
-        action="store_false",
-        help="build without LLVM assertions",
-    )
-    build.add_argument(
-        "--runtime",
-        default=None,
+        "--runtime", default=None,
         help="container runtime (default: $AQB_RUNTIME or docker)",
     )
-    build.set_defaults(func=cmd_build_clang, assertions=True)
+    build.set_defaults(func=cmd_build_clang)
 ```
 
-Add the handler (next to the other `cmd_*` functions):
+Add the handler:
 
 ```python
 def cmd_build_clang(args: argparse.Namespace) -> int:
+    overlay = None
+    if args.preset_file:
+        with open(args.preset_file) as handle:
+            overlay = handle.read()
     runtime = Runtime(resolve_runtime(args.runtime))
     created = datetime.datetime.now(datetime.timezone.utc).isoformat()
     try:
@@ -600,8 +542,8 @@ def cmd_build_clang(args: argparse.Namespace) -> int:
             commit=args.commit,
             source=args.source,
             commit_title=args.commit_title,
-            cmake_args=args.cmake_args or [],
-            assertions=args.assertions,
+            preset=args.preset,
+            user_overlay_json=overlay,
             builder_image=args.builder_image,
             created=created,
         )
@@ -616,33 +558,22 @@ def cmd_build_clang(args: argparse.Namespace) -> int:
     return 0
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 4: Run — expect PASS.** `python3 -m unittest aqb.tests.test_volume aqb.tests.test_cli -v`, then full suite.
 
-Run: `python3 -m unittest aqb.tests.test_cli -v`
-Expected: PASS (the 3 existing CLI tests + 3 new `BuildClangCliTest` cases).
-
-- [ ] **Step 5: Format + commit**
-
+- [ ] **Step 5: Format + commit.**
 ```bash
 python3 -m black aqb/
-git -C /Users/benics/git/upstream-llvm-ssaf add clang/utils/analyzer/aqb/cli.py clang/utils/analyzer/aqb/tests/test_cli.py
-git -C /Users/benics/git/upstream-llvm-ssaf commit -m "feat(aqb): 'build-clang' CLI verb"
+git -C /Users/benics/git/upstream-llvm-ssaf add clang/utils/analyzer/aqb/volume.py clang/utils/analyzer/aqb/cli.py clang/utils/analyzer/aqb/tests/test_volume.py clang/utils/analyzer/aqb/tests/test_cli.py
+git -C /Users/benics/git/upstream-llvm-ssaf commit -m "feat(aqb): build_clang_volume + 'build-clang' CLI verb (preset-based)"
 ```
 
 ---
 
-## Task 5: Builder image (Dockerfile + build.sh)
+## Task 5: Builder image (preset-based)
 
-The image that actually compiles clang, honoring the `AQB_*` contract and writing the completion marker last. Validated daemon-free with `bash -n`; a real build is a documented manual smoke.
+**Files:** Create `clang/utils/analyzer/aqb/builder/Dockerfile`, `clang/utils/analyzer/aqb/builder/build.sh`; Test `clang/utils/analyzer/aqb/tests/test_builder.py`.
 
-**Files:**
-- Create: `clang/utils/analyzer/aqb/builder/Dockerfile`
-- Create: `clang/utils/analyzer/aqb/builder/build.sh`
-- Test: `clang/utils/analyzer/aqb/tests/test_builder.py`
-
-- [ ] **Step 1: Write the failing test**
-
-Create `clang/utils/analyzer/aqb/tests/test_builder.py`:
+- [ ] **Step 1: Write the failing test.** Create `clang/utils/analyzer/aqb/tests/test_builder.py`:
 
 ```python
 from __future__ import annotations
@@ -658,19 +589,23 @@ BUILDER_DIR = os.path.join(
 
 class BuilderImageTest(unittest.TestCase):
     def test_build_script_has_valid_bash_syntax(self):
-        script = os.path.join(BUILDER_DIR, "build.sh")
         result = subprocess.run(
-            ["bash", "-n", script], capture_output=True, text=True
+            ["bash", "-n", os.path.join(BUILDER_DIR, "build.sh")],
+            capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_build_script_writes_marker_and_parses_json_args(self):
+    def test_build_script_contract(self):
         with open(os.path.join(BUILDER_DIR, "build.sh")) as handle:
             body = handle.read()
-        # Completion marker must match volume.COMPLETE_MARKER's filename.
+        # Hard-coded mount contract (must match volume.py constants).
+        self.assertIn("/opt/aqb/clang", body)
+        self.assertIn("/ccache", body)
+        # Preset-driven, writes the assembled user presets into llvm/, marks done.
+        self.assertIn("CMakeUserPresets.json", body)
+        self.assertIn("AQB_USER_PRESETS_JSON", body)
+        self.assertIn("cmake --preset", body)
         self.assertIn(".aqb-complete", body)
-        # cmake args are consumed from the JSON env var, not the space-joined one.
-        self.assertIn("AQB_CMAKE_ARGS_JSON", body)
 
     def test_dockerfile_wires_the_build_script(self):
         with open(os.path.join(BUILDER_DIR, "Dockerfile")) as handle:
@@ -679,67 +614,59 @@ class BuilderImageTest(unittest.TestCase):
         self.assertIn("ENTRYPOINT", body)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run — expect FAIL** (`FileNotFoundError`, builder dir absent).
 
-Run: `python3 -m unittest aqb.tests.test_builder -v`
-Expected: FAIL — `FileNotFoundError` for `builder/build.sh` (the builder dir doesn't exist yet).
-
-- [ ] **Step 3: Create the builder image files**
+- [ ] **Step 3: Create the files.**
 
 Create `clang/utils/analyzer/aqb/builder/build.sh`:
 
 ```bash
 #!/usr/bin/env bash
 # AQB Clang Volume builder. Reads the AQB_* env contract (see aqb/volume.py):
-# builds clang from AQB_COMMIT (fetched from AQB_SOURCE) and installs it into
-# AQB_INSTALL_DIR, using AQB_CCACHE_DIR to speed up rebuilds. Writes a completion
-# marker as the final step so an interrupted build is not mistaken for a valid
-# cached volume.
+# builds clang from AQB_COMMIT (fetched from AQB_SOURCE) using the CMake preset
+# AQB_PRESET, and installs it into the mounted clang volume. AQB_USER_PRESETS_JSON
+# is the assembled CMakeUserPresets.json (aqb-base + any user overlay). The mount
+# paths are fixed contract constants shared with volume.py. A completion marker
+# is written last so an interrupted build is never mistaken for a valid cache.
 set -euo pipefail
 
 : "${AQB_COMMIT:?AQB_COMMIT is required}"
 : "${AQB_SOURCE:?AQB_SOURCE is required}"
-: "${AQB_INSTALL_DIR:?AQB_INSTALL_DIR is required}"
-: "${AQB_CCACHE_DIR:?AQB_CCACHE_DIR is required}"
-AQB_ASSERTIONS="${AQB_ASSERTIONS:-1}"
-AQB_CMAKE_ARGS_JSON="${AQB_CMAKE_ARGS_JSON:-[]}"
+: "${AQB_PRESET:?AQB_PRESET is required}"
+: "${AQB_USER_PRESETS_JSON:?AQB_USER_PRESETS_JSON is required}"
 
-export CCACHE_DIR="$AQB_CCACHE_DIR"
-
-# Parse the JSON array of extra cmake args losslessly (handles embedded spaces).
-mapfile -d '' -t EXTRA_CMAKE_ARGS < <(
-    python3 -c 'import json, os, sys; sys.stdout.write("\0".join(json.loads(os.environ["AQB_CMAKE_ARGS_JSON"])))'
-)
+# Contract constants (must match volume.py CLANG_INSTALL_MOUNT / CCACHE_MOUNT).
+INSTALL_DIR=/opt/aqb/clang
+export CCACHE_DIR=/ccache
 
 SRC=/tmp/llvm-project
 git clone "$AQB_SOURCE" "$SRC"
 git -C "$SRC" checkout --detach "$AQB_COMMIT"
 
-ASSERTIONS=OFF
-if [ "$AQB_ASSERTIONS" = "1" ]; then
-    ASSERTIONS=ON
-fi
+# LLVM's top-level CMakeLists.txt (and its tracked CMakePresets.json) live in
+# llvm/. Drop the assembled user presets alongside them; a fresh clone has no
+# CMakeUserPresets.json, so this never clobbers LLVM's tracked file.
+printf '%s' "$AQB_USER_PRESETS_JSON" > "$SRC/llvm/CMakeUserPresets.json"
 
-cmake -G Ninja -S "$SRC/llvm" -B /tmp/build \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DLLVM_ENABLE_PROJECTS=clang \
-    -DLLVM_ENABLE_ASSERTIONS="$ASSERTIONS" \
-    -DLLVM_CCACHE_BUILD=ON \
-    -DCMAKE_INSTALL_PREFIX="$AQB_INSTALL_DIR" \
-    "${EXTRA_CMAKE_ARGS[@]}"
-
+cd "$SRC/llvm"
+# Force AQB's build dir and install prefix regardless of preset content
+# (command-line -B / -D override preset values).
+cmake --preset "$AQB_PRESET" -B /tmp/build \
+    -D CMAKE_INSTALL_PREFIX="$INSTALL_DIR" \
+    -D LLVM_CCACHE_BUILD=ON
 ninja -C /tmp/build install-clang install-clang-resource-headers
 
 # Mark the install tree complete only after a fully successful install.
-touch "$AQB_INSTALL_DIR/.aqb-complete"
+touch "$INSTALL_DIR/.aqb-complete"
 ```
 
 Create `clang/utils/analyzer/aqb/builder/Dockerfile`:
 
 ```dockerfile
 # Builder image for AQB Clang Volumes. Given the AQB_* env contract (see
-# aqb/volume.py), it fetches a commit, builds clang, and installs it into the
-# mounted clang volume (AQB_INSTALL_DIR), caching objects in AQB_CCACHE_DIR.
+# aqb/volume.py), it fetches a commit, builds clang via a CMake preset, and
+# installs it into the mounted clang volume (/opt/aqb/clang), caching objects in
+# /ccache.
 #
 # Build once:  docker build -t aqb-clang-builder:latest clang/utils/analyzer/aqb/builder
 FROM ubuntu:22.04
@@ -755,94 +682,52 @@ RUN chmod +x /usr/local/bin/aqb-build-clang
 ENTRYPOINT ["/usr/local/bin/aqb-build-clang"]
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 4: Run — expect PASS (3).** `python3 -m unittest aqb.tests.test_builder -v`. `bash -n` must be clean; fix script syntax if not (don't weaken the test).
 
-Run: `python3 -m unittest aqb.tests.test_builder -v`
-Expected: PASS (3 tests). `bash -n` must report clean syntax; if it errors, fix the script syntax (do not weaken the test).
-
-- [ ] **Step 5: Format + commit**
-
+- [ ] **Step 5: Format + commit.**
 ```bash
 python3 -m black aqb/
 git -C /Users/benics/git/upstream-llvm-ssaf add clang/utils/analyzer/aqb/builder/Dockerfile clang/utils/analyzer/aqb/builder/build.sh clang/utils/analyzer/aqb/tests/test_builder.py
-git -C /Users/benics/git/upstream-llvm-ssaf commit -m "feat(aqb): clang builder image (Dockerfile + build script)"
+git -C /Users/benics/git/upstream-llvm-ssaf commit -m "feat(aqb): preset-based clang builder image"
 ```
 
 ---
 
 ## Task 6: Green check + design-doc updates
 
-- [ ] **Step 1: Run the whole suite**
+- [ ] **Step 1: Full suite + formatting + CLI smoke.**
+`python3 -m unittest discover -s aqb/tests -t . -v` (all pass); `python3 -m black --check aqb/` (clean); `python3 -m aqb build-clang --help` (usage lists `--commit`/`--source`/`--preset`/`--preset-file`/`--builder-image`/`--runtime`, exit 0).
 
-Run: `python3 -m unittest discover -s aqb/tests -t . -v`
-Expected: PASS — all prior tests plus the reworked volume tests, the CLI build-clang tests, and the builder tests.
-
-- [ ] **Step 2: Confirm formatting + CLI**
-
-Run: `python3 -m black --check aqb/` (expect clean) and `python3 -m aqb build-clang --help` (expect usage listing `--commit`/`--source`/`--cmake-arg`/`--no-assertions`/`--runtime`, exit 0).
-
-- [ ] **Step 3: Update the design doc**
-
-In `clang/docs/analyzer/developer-docs/AQB-design.rst`, make these edits so the design matches what was built:
-
-- In the **Resolve-or-build workflow** list (under *Clang Build Artifacts*), add a bullet after the "Absent: create the volume …" bullet:
-
-  ```
-   - **Exists but incomplete:** a successful build writes a completion marker
-     (``.aqb-complete``) into the install tree as its final step. A volume that
-     exists but lacks the marker is the residue of an interrupted build; it is
-     discarded and rebuilt rather than reused.
-  ```
-
-- In the **AQB owns the build recipe** paragraph, change the phrase describing how cmake args reach the builder so it states they are passed as a JSON list (``AQB_CMAKE_ARGS_JSON``) and parsed losslessly (no space-splitting).
-
-- In the **Runtime** section, add a sentence: "The recorded image digest is the runtime's content id (``<runtime> image inspect --format {{.Id}}``), which is present for both locally-built and pulled images; AQB does not rely on registry ``RepoDigests``."
-
-- In the **CLI Surface** verb table, add a row:
-
-  ```
-   * - ``build-clang``
-     - Build (or resolve) a Clang Volume for ``--commit`` using the builder
-       image, printing the volume name. A utility verb; ``run`` builds volumes
-       implicitly.
-  ```
-
-Then commit:
+- [ ] **Step 2: Update `clang/docs/analyzer/developer-docs/AQB-design.rst`:**
+- *Clang Build Artifacts / AQB owns the build recipe*: state the build config is a **CMake preset** — a built-in `aqb-base` plus an optional user overlay (`CMakeUserPresets.json`, may inherit `aqb-base` or LLVM's `llvm-*` presets), assembled into canonical JSON that is the digest input; the builder runs `cmake --preset` with AQB forcing `-B` and `-D CMAKE_INSTALL_PREFIX`.
+- *Resolve-or-build workflow*: keep the completion-marker bullet; note the mount contract paths (`/opt/aqb/clang`, `/ccache`) are hard-coded on both sides.
+- *Runtime*: keep the `.Id` image-digest note.
+- *CLI Surface*: add the `build-clang` verb row.
 
 ```bash
 git -C /Users/benics/git/upstream-llvm-ssaf add clang/docs/analyzer/developer-docs/AQB-design.rst
-git -C /Users/benics/git/upstream-llvm-ssaf commit -m "docs(aqb): document completion marker, JSON cmake args, image digest, build-clang"
+git -C /Users/benics/git/upstream-llvm-ssaf commit -m "docs(aqb): document preset-based clang builds and build-clang verb"
 ```
 
-- [ ] **Step 4: Commit any formatting fixes (only if `black --check` reported changes)**
-
-```bash
-python3 -m black aqb/
-git -C /Users/benics/git/upstream-llvm-ssaf add clang/utils/analyzer/aqb
-git -C /Users/benics/git/upstream-llvm-ssaf commit -m "style(aqb): black formatting"
-```
+- [ ] **Step 3: Commit any formatting fixes (only if needed).**
 
 ---
 
-## How to actually build a clang volume (after this phase)
+## How to build a clang volume (after this phase)
 
 ```bash
-# One-time: build the builder image.
-docker build -t aqb-clang-builder:latest clang/utils/analyzer/aqb/builder
-
-# Build a clang volume for a commit (from a local clone or a git URL):
+docker build -t aqb-clang-builder:latest clang/utils/analyzer/aqb/builder   # once
 cd clang/utils/analyzer
-python3 -m aqb build-clang --commit <sha> --source /path/to/llvm-project
-# prints the volume name (e.g. aqb-clang-<short>-<digest>); "built" or "cached" on stderr
-# use --runtime=podman / AQB_RUNTIME=podman to switch runtimes
+python3 -m aqb build-clang --commit <sha> --source /path/to/llvm-project      # default aqb-base
+python3 -m aqb build-clang --commit <sha> --source /path/to/llvm-project \
+    --preset my-analyzer --preset-file ./my-presets.json                      # user overlay
+# --runtime=podman / AQB_RUNTIME=podman to switch runtimes
 ```
-
----
 
 ## Self-Review
 
-**Spec coverage / Phase-2 backlog closed:** build-completion marker so interrupted builds aren't cache-valid → Task 1; `resolve_or_build_clang` returns `(name, config_digest, built)` → Task 1; lossless cmake-arg transport → Task 2; `.Id` image-digest decision documented → Tasks 3/6; builder image honoring the `AQB_*` contract → Task 5; a user-facing way to build a volume (`aqb build-clang`) → Task 4. Design doc kept current → Task 6.
+**Spec coverage:** built-in `aqb-base` + user-overlay assembly (canonical) → Task 2; preset-based `ClangBuildSpec` + canonical digest + preset env transport + hard-coded mount contract → Task 3; orchestration + `build-clang` CLI (`--preset`/`--preset-file`) → Task 4; real preset-driven builder image with completion marker → Task 5; docs → Task 6. The completion-marker + `ClangVolume` + three-state `_clang_volume_status` hardening is already committed and retained. Raw `-D` flags are intentionally absent (user decision: presets only).
 
-**Placeholder scan:** No "TBD"/vague steps — every task ships full test + implementation code, including the complete builder `Dockerfile`/`build.sh`. The one thing not executed in-suite (a real clang build) is explicitly a documented manual smoke, with a daemon-free `bash -n` + content check standing in.
+**Placeholder scan:** every task ships full test + code, including the complete `Dockerfile`/`build.sh`; the only un-run-in-suite part (a real clang build) is a documented manual smoke behind a daemon, with `bash -n` + content checks standing in.
 
-**Type consistency:** `ClangVolume(name, config_digest, built)` defined in Task 1 and consumed by `build_clang_volume` (Task 3), `cmd_build_clang` (Task 4), and tests. `_volume_complete(runtime, volume, builder_image)`, `COMPLETE_MARKER`, and the reworked `resolve_or_build_clang -> ClangVolume` are consistent across Tasks 1–3. `build_clang_volume(runtime, *, commit, source, commit_title, cmake_args, assertions, builder_image, created)` keyword signature matches `cmd_build_clang`'s call and the Task 3/4 tests. `AQB_CMAKE_ARGS_JSON` is produced in `_builder_run_argv` (Task 2) and consumed in `build.sh` (Task 5). The `.aqb-complete` marker filename matches between `COMPLETE_MARKER` (Task 1) and `build.sh`'s `touch` (Task 5).
+**Type consistency:** `assemble_user_presets(user_overlay_json)->str` (Task 2) is consumed by `build_clang_volume` (Task 4). `ClangBuildSpec(commit, source, commit_title, preset, user_presets_json, builder_image, builder_image_id, created, build_config)` (Task 3) is built by `build_clang_volume` and consumed by `_builder_run_argv`/`resolve_or_build_clang`. `build_config_digest(user_presets_json, preset, builder_image_id)` signature matches its callers and `_expected_name`. `build_clang_volume(runtime, *, commit, source, commit_title, preset, user_overlay_json, builder_image, created)` matches `cmd_build_clang`'s call and both CLI/volume tests. `AQB_PRESET` + `AQB_USER_PRESETS_JSON` produced by `_builder_run_argv` (Task 3) are consumed by `build.sh` (Task 5); the `/opt/aqb/clang` + `/ccache` + `.aqb-complete` constants match `volume.py`'s `CLANG_INSTALL_MOUNT`/`CCACHE_MOUNT`/`COMPLETE_MARKER`.
