@@ -245,6 +245,47 @@ class ResolveOrBuildTest(unittest.TestCase):
         # bare "test" command is NOT appended after the image.
         self.assertIn("/opt/aqb/clang/.aqb-complete", check)
 
+    def test_local_source_is_bind_mounted_readonly(self):
+        # A local --source path must be bind-mounted into the builder container
+        # (read-only, same path) so `git clone "$AQB_SOURCE"` can reach it.
+        spec = _spec()  # source == "/work/llvm-project" (a local absolute path)
+        name = _expected_name(spec)
+
+        def handler(argv):
+            if argv[1:3] == ["volume", "inspect"]:
+                return ProcResult(1 if argv[3] == name else 0, "", "")
+            return ProcResult(0, "", "")
+
+        runner = ScriptedRunner(handler)
+        resolve_or_build_clang(Runtime("docker", runner), spec)
+        build = self._build_runs(runner)[0]
+        self.assertIn("/work/llvm-project:/work/llvm-project:ro", build)
+
+    def test_url_source_is_not_bind_mounted(self):
+        spec = ClangBuildSpec(
+            commit="deadbeefcafe0000",
+            source="https://github.com/x/y.git",
+            commit_title="t",
+            preset="aqb-base",
+            user_presets_json='{"version": 3, "configurePresets": [{"name": "aqb-base"}]}',
+            builder_image="aqb-clang-builder:latest",
+            builder_image_id="sha256:img",
+            created="2026-07-16T13:15:00+00:00",
+            build_config="preset=aqb-base",
+        )
+        name = _expected_name(spec)
+
+        def handler(argv):
+            if argv[1:3] == ["volume", "inspect"]:
+                return ProcResult(1 if argv[3] == name else 0, "", "")
+            return ProcResult(0, "", "")
+
+        runner = ScriptedRunner(handler)
+        resolve_or_build_clang(Runtime("docker", runner), spec)
+        build = self._build_runs(runner)[0]
+        # No read-only source bind-mount for a remote URL.
+        self.assertFalse(any(":ro" in arg for arg in build))
+
 
 class BuildClangVolumeTest(unittest.TestCase):
     def test_assembles_presets_resolves_image_and_builds(self):

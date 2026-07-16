@@ -102,23 +102,36 @@ class ClangVolume:
     built: bool  # True if this call built it; False if an existing volume was reused
 
 
+def _is_local_source(source: str) -> bool:
+    """True if ``source`` is a local absolute path rather than a git remote URL."""
+    return source.startswith("/")
+
+
 def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
     """Container invocation that builds clang from ``spec.commit`` and installs
     it into ``volume``.
 
     Mount targets are fixed contract constants also hard-coded in build.sh:
     the clang volume at ``/opt/aqb/clang`` and the ccache volume at ``/ccache``.
-    The builder image is expected to read: ``AQB_COMMIT``, ``AQB_SOURCE``,
-    ``AQB_PRESET`` (configure-preset name), and ``AQB_USER_PRESETS_JSON`` (the
-    assembled CMakeUserPresets.json content, written into ``$SRC/llvm/``).
+    When the source is a local path it is bind-mounted read-only at the *same*
+    path inside the container, so the builder's ``git clone "$AQB_SOURCE"`` can
+    reach it (a container cannot otherwise see the host filesystem); a remote URL
+    needs no mount. The builder image is expected to read: ``AQB_COMMIT``,
+    ``AQB_SOURCE``, ``AQB_PRESET`` (configure-preset name), and
+    ``AQB_USER_PRESETS_JSON`` (the assembled CMakeUserPresets.json content,
+    written into ``$SRC/llvm/``).
     """
-    return [
+    args = [
         "run",
         "--rm",
         "-v",
         f"{volume}:{CLANG_INSTALL_MOUNT}",
         "-v",
         f"{CCACHE_VOLUME}:{CCACHE_MOUNT}",
+    ]
+    if _is_local_source(spec.source):
+        args += ["-v", f"{spec.source}:{spec.source}:ro"]
+    args += [
         "-e",
         f"AQB_COMMIT={spec.commit}",
         "-e",
@@ -129,6 +142,7 @@ def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
         f"AQB_USER_PRESETS_JSON={spec.user_presets_json}",
         spec.builder_image,
     ]
+    return args
 
 
 def _clang_volume_status(runtime: Runtime, volume: str, builder_image: str) -> str:
