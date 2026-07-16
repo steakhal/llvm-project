@@ -120,17 +120,48 @@ class CacheVolumeTest(unittest.TestCase):
 
 
 class ResolveOrBuildTest(unittest.TestCase):
-    def test_reuses_existing_volume_without_building(self):
+    @staticmethod
+    def _build_runs(runner):
+        # A builder *build* run (not the `test -e` completeness check).
+        return [c for c in runner.calls if c[1:2] == ["run"] and "test" not in c]
+
+    @staticmethod
+    def _check_runs(runner):
+        # The `test -e <marker>` completeness-check run.
+        return [c for c in runner.calls if c[1:2] == ["run"] and "test" in c]
+
+    def test_reuses_existing_complete_volume(self):
         spec = _spec()
         name = _expected_name(spec)
-        runner = ScriptedRunner(
-            lambda argv: ProcResult(0, "", "")  # every inspect succeeds -> present
-        )
+        # volume inspect -> present; completeness `run ... test` -> rc 0 (complete).
+        runner = ScriptedRunner(lambda argv: ProcResult(0, "", ""))
         result = resolve_or_build_clang(Runtime("docker", runner), spec)
-        self.assertEqual(result, name)
-        # No create and no builder run when the clang volume already exists.
+        self.assertEqual(result.name, name)
+        self.assertFalse(result.built)
         self.assertFalse([c for c in runner.calls if c[1:3] == ["volume", "create"]])
-        self.assertFalse([c for c in runner.calls if c[1:2] == ["run"]])
+        self.assertFalse(self._build_runs(runner))  # no build
+        self.assertTrue(self._check_runs(runner))  # completeness was checked
+
+    def test_rebuilds_incomplete_volume(self):
+        spec = _spec()
+        name = _expected_name(spec)
+
+        def handler(argv):
+            if argv[1:3] == ["volume", "inspect"]:
+                return ProcResult(0, "", "")  # clang + ccache present
+            if argv[1:2] == ["run"] and "test" in argv:
+                return ProcResult(1, "", "")  # marker absent -> incomplete
+            return ProcResult(0, "", "")  # create / rm / build succeed
+
+        runner = ScriptedRunner(handler)
+        result = resolve_or_build_clang(Runtime("docker", runner), spec)
+        self.assertEqual(result.name, name)
+        self.assertTrue(result.built)
+        # Incomplete volume was discarded, then rebuilt.
+        self.assertTrue(
+            [c for c in runner.calls if c[1:3] == ["volume", "rm"] and name in c]
+        )
+        self.assertEqual(len(self._build_runs(runner)), 1)
 
     def test_builds_when_absent(self):
         spec = _spec()
@@ -138,22 +169,24 @@ class ResolveOrBuildTest(unittest.TestCase):
 
         def handler(argv):
             if argv[1:3] == ["volume", "inspect"]:
-                # clang volume absent; ccache present.
                 return ProcResult(1 if argv[3] == name else 0, "", "")
             return ProcResult(0, "", "")
 
         runner = ScriptedRunner(handler)
         result = resolve_or_build_clang(Runtime("docker", runner), spec)
-        self.assertEqual(result, name)
+        self.assertEqual(result.name, name)
+        self.assertTrue(result.built)
         create = [c for c in runner.calls if c[1:3] == ["volume", "create"]]
         self.assertTrue(
             any(name in c and "aqb.commit=" + spec.commit in c for c in create)
         )
-        build = [c for c in runner.calls if c[1:2] == ["run"]]
-        self.assertEqual(len(build), 1)
-        joined = " ".join(build[0])
+        builds = self._build_runs(runner)
+        self.assertEqual(len(builds), 1)
+        joined = " ".join(builds[0])
         self.assertIn(f"{name}:", joined)  # clang volume mounted
         self.assertIn(f"{CCACHE_VOLUME}:", joined)  # ccache mounted
+        # Volume was absent, so no completeness check ran.
+        self.assertFalse(self._check_runs(runner))
 
     def test_build_failure_removes_volume_and_raises(self):
         spec = _spec()
@@ -162,7 +195,7 @@ class ResolveOrBuildTest(unittest.TestCase):
         def handler(argv):
             if argv[1:3] == ["volume", "inspect"]:
                 return ProcResult(1 if argv[3] == name else 0, "", "")
-            if argv[1:2] == ["run"]:
+            if argv[1:2] == ["run"] and "test" not in argv:
                 return ProcResult(2, "", "compile error")
             return ProcResult(0, "", "")
 

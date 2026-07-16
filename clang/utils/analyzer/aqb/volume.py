@@ -13,6 +13,7 @@ SHORT_COMMIT_LEN = 12
 DIGEST_LEN = 12
 CLANG_INSTALL_MOUNT = "/opt/aqb/clang"
 CCACHE_MOUNT = "/ccache"
+COMPLETE_MARKER = f"{CLANG_INSTALL_MOUNT}/.aqb-complete"
 
 
 def build_config_digest(
@@ -90,6 +91,15 @@ class ClangBuildSpec:
     build_config: str  # human-readable recipe string, for the label
 
 
+@dataclass
+class ClangVolume:
+    """The result of resolving (or building) a Clang Volume."""
+
+    name: str
+    config_digest: str
+    built: bool  # True if this call built it; False if an existing volume was reused
+
+
 def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
     """Container invocation that builds clang from ``spec.commit`` and installs
     it into ``volume``.
@@ -122,20 +132,48 @@ def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
     ]
 
 
-def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> str:
-    """Return the Clang Volume name for ``spec``, building it if it is absent.
+def _volume_complete(runtime: Runtime, volume: str, builder_image: str) -> bool:
+    """Return True if ``volume`` holds a *completed* clang install.
 
-    If the volume already exists it is reused as-is. Otherwise the volume is
-    created with its immutable labels, the ccache volume is ensured, and the
-    builder container is run; on build failure the partial volume is removed and
-    ``ClangBuildError`` is raised.
+    A successful build writes ``COMPLETE_MARKER`` into the install tree as its
+    final step, so a volume that exists but lacks the marker is the residue of an
+    interrupted build and must not be reused. The check runs the builder image
+    with ``test -e`` since reading a file inside a volume requires a container.
+    """
+    check = runtime.run(
+        [
+            "run",
+            "--rm",
+            "-v",
+            f"{volume}:{CLANG_INSTALL_MOUNT}",
+            builder_image,
+            "test",
+            "-e",
+            COMPLETE_MARKER,
+        ]
+    )
+    return check.returncode == 0
+
+
+def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> ClangVolume:
+    """Resolve the Clang Volume for ``spec``, building it if necessary.
+
+    If the volume exists *and* is complete, it is reused (``built=False``). A
+    volume that exists but is incomplete (an interrupted build) is discarded and
+    rebuilt. Otherwise the volume is created with its immutable labels, the
+    ccache volume is ensured, and the builder container is run; on build failure
+    the partial volume is removed and ``ClangBuildError`` is raised.
     """
     digest = build_config_digest(
         spec.cmake_args, spec.assertions, spec.builder_image_id
     )
     name = clang_volume_name(spec.commit, digest)
+
     if runtime.volume_exists(name):
-        return name
+        if _volume_complete(runtime, name, spec.builder_image):
+            return ClangVolume(name=name, config_digest=digest, built=False)
+        # Residue of an interrupted build: discard and rebuild.
+        runtime.remove_volume(name)
 
     runtime.create_volume(
         name,
@@ -156,4 +194,4 @@ def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> str:
             f"building clang for {spec.commit} failed "
             f"(exit {result.returncode}): {result.stderr.strip()}"
         )
-    return name
+    return ClangVolume(name=name, config_digest=digest, built=True)
