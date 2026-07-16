@@ -3,13 +3,10 @@ from __future__ import annotations
 import os
 from typing import List
 
+from aqb.errors import RunNotFoundError
 from aqb.metadata import Metadata
 
 RUN_SUBDIRS = ("reports", "metrics", "logs")
-
-
-class RunNotFoundError(Exception):
-    pass
 
 
 class RunStore:
