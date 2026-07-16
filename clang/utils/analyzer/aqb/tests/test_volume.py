@@ -420,3 +420,50 @@ class WorktreeCommonDirMountTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             self._git("init", "-q", root)
             self.assertIsNone(_worktree_common_dir_mount(root))
+
+
+class ResolveCommitTitleTest(unittest.TestCase):
+    """Real-git tests for resolving a commit's subject (gated on git)."""
+
+    def _git(self, *args):
+        subprocess.run(
+            ["git", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "GIT_AUTHOR_NAME": "x",
+                "GIT_AUTHOR_EMAIL": "x@y",
+                "GIT_COMMITTER_NAME": "x",
+                "GIT_COMMITTER_EMAIL": "x@y",
+            },
+        )
+
+    @unittest.skipUnless(shutil.which("git"), "git required")
+    def test_resolves_subject_from_local_repo(self):
+        from aqb.volume import _resolve_commit_title
+
+        with tempfile.TemporaryDirectory() as repo:
+            self._git("init", "-q", repo)
+            self._git(
+                "-C", repo, "commit", "--allow-empty", "-qm", "hello world subject"
+            )
+            sha = subprocess.run(
+                ["git", "-C", repo, "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertEqual(_resolve_commit_title(repo, sha), "hello world subject")
+
+    def test_url_source_yields_empty(self):
+        from aqb.volume import _resolve_commit_title
+
+        self.assertEqual(_resolve_commit_title("https://github.com/x/y.git", "abc"), "")
+
+    def test_bad_commit_yields_empty(self):
+        from aqb.volume import _resolve_commit_title
+
+        with tempfile.TemporaryDirectory() as repo:
+            # not even a git repo -> empty, no raise
+            self.assertEqual(_resolve_commit_title(repo, "deadbeef"), "")

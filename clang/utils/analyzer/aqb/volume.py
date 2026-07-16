@@ -144,6 +144,27 @@ def _worktree_common_dir_mount(source: str) -> Optional[str]:
     return f"{common}:{common}:ro"
 
 
+def _resolve_commit_title(source: str, commit: str) -> str:
+    """Best-effort subject line of ``commit`` read from a local ``source`` repo.
+
+    Empty for a remote-URL source (no local repo to query) or on any error.
+    Used to fill in provenance when ``--commit-title`` was not given explicitly.
+    """
+    if not _is_local_source(source):
+        return ""
+    try:
+        result = subprocess.run(
+            ["git", "-C", source, "log", "-1", "--format=%s", commit],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
 def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
     """Container invocation that builds clang from ``spec.commit`` and installs
     it into ``volume``.
@@ -308,7 +329,7 @@ def build_clang_volume(
     spec = ClangBuildSpec(
         commit=commit,
         source=source,
-        commit_title=commit_title,
+        commit_title=commit_title or _resolve_commit_title(source, commit),
         preset=preset,
         user_presets_json=user_presets_json,
         builder_image=builder_image,
