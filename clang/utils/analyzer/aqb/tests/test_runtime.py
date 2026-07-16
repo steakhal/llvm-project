@@ -87,6 +87,11 @@ class RuntimeTest(unittest.TestCase):
             ["docker", "image", "inspect", "--format", "{{.Id}}", "img"],
         )
 
+    def test_image_id_raises_on_empty(self):
+        runner = RecordingRunner(lambda argv: ProcResult(0, "\n", ""))
+        with self.assertRaises(RuntimeCommandError):
+            Runtime("docker", runner).image_id("img")
+
 
 class CaptureModeTest(unittest.TestCase):
     def test_run_forwards_capture_flag_to_runner(self):

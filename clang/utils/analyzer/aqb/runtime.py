@@ -94,4 +94,12 @@ class Runtime:
         result = self.run(
             ["image", "inspect", "--format", "{{.Id}}", image], check=True
         )
-        return result.stdout.strip()
+        image_id = result.stdout.strip()
+        if not image_id:
+            # Fail loudly rather than let an empty id silently produce a blank
+            # component in the Clang Volume digest/label (a degenerate identity).
+            raise RuntimeCommandError(
+                f"{self.name} image inspect returned no id for {image} "
+                "(is the runtime's --format {{.Id}} supported?)"
+            )
+        return image_id
