@@ -27,6 +27,9 @@ class BuilderImageTest(unittest.TestCase):
         self.assertIn("AQB_USER_PRESETS_JSON", body)
         self.assertIn("cmake --preset", body)
         self.assertIn(".aqb-complete", body)
+        # scan-build is the analyze driver AQB runs later; install-clang alone
+        # doesn't install it.
+        self.assertIn("install-scan-build", body)
 
     def test_dockerfile_wires_the_build_script(self):
         with open(os.path.join(BUILDER_DIR, "Dockerfile")) as handle:

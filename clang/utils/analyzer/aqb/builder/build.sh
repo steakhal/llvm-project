@@ -31,7 +31,14 @@ cd "$SRC/llvm"
 cmake --preset "$AQB_PRESET" -B /tmp/build \
     -D CMAKE_INSTALL_PREFIX="$INSTALL_DIR" \
     -D LLVM_CCACHE_BUILD=ON
-ninja -C /tmp/build install-clang install-clang-resource-headers
+# Install clang, its resource headers, and scan-build (the analyze driver AQB's
+# `run` invokes via PATH=/analyzer/bin). `install-clang` alone does NOT install
+# scan-build, so it must be requested explicitly.
+ninja -C /tmp/build \
+    install-clang \
+    install-clang-resource-headers \
+    install-scan-build \
+    install-scan-build-py
 
 # Mark the install tree complete only after a fully successful install.
 touch "$INSTALL_DIR/.aqb-complete"
