@@ -27,7 +27,7 @@ class CliTest(unittest.TestCase):
     def test_stub_command_reports_not_implemented(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            code = main(["diff"])
+            code = main(["plot"])
         self.assertEqual(code, 2)
         self.assertIn("not yet implemented", err.getvalue())
 
@@ -169,3 +169,70 @@ class RunCliTest(unittest.TestCase):
             code = main(["run", "--commit", "c", "--source", "/s"])
         self.assertEqual(code, 1)
         self.assertIn("kaboom", err.getvalue())
+
+
+class DiffCliTest(unittest.TestCase):
+    _ROW = dict(
+        issue_id="i1",
+        file="a.c",
+        line=1,
+        column=1,
+        checker="core.X",
+        category="Logic",
+        description="d",
+        path_length=1,
+    )
+
+    def _make_run(self, store, run_id, findings_by_project):
+        import json
+        import os
+
+        store.create_run(
+            Metadata(
+                run_id=run_id,
+                kind="functional",
+                created="2026-07-17T00:00:00+00:00",
+                analyzer=AnalyzerProvenance(commit="c"),
+                container=ContainerProvenance(),
+                execution=ExecutionProvenance(),
+            )
+        )
+        path = os.path.join(store.runs_dir, run_id, "reports", "findings.json")
+        with open(path, "w") as f:
+            json.dump(findings_by_project, f)
+
+    def test_diff_reports_added_and_default_passes(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = RunStore(root)
+            row2 = dict(self._ROW, issue_id="i2", line=2)
+            self._make_run(store, "r-base", {"p": [self._ROW]})
+            self._make_run(store, "r-new", {"p": [self._ROW, row2]})
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = main(
+                    ["--home", root, "diff", "--base", "r-base", "--new", "r-new"]
+                )
+            self.assertEqual(code, 0)  # default no-crashes passes
+            self.assertIn("added", out.getvalue().lower())
+
+    def test_diff_expect_same_reports_fails_on_drift(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = RunStore(root)
+            row2 = dict(self._ROW, issue_id="i2", line=2)
+            self._make_run(store, "r-base", {"p": [self._ROW]})
+            self._make_run(store, "r-new", {"p": [self._ROW, row2]})
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = main(
+                    [
+                        "--home",
+                        root,
+                        "diff",
+                        "--base",
+                        "r-base",
+                        "--new",
+                        "r-new",
+                        "--expect",
+                        "same-reports",
+                    ]
+                )
+            self.assertEqual(code, 1)

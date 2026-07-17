@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import os
 import sys
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from aqb.errors import ClangBuildError, RuntimeCommandError
+from aqb.diff import diff_runs, summarize, verdict
+from aqb.errors import ClangBuildError, RunNotFoundError, RuntimeCommandError
+from aqb.normalize import Finding
 from aqb.run import perform_run
 from aqb.runtime import Runtime, resolve_runtime
 from aqb.store import RunStore
 from aqb.volume import build_clang_volume
 
-STUB_COMMANDS = ("diff", "plot", "report", "promote")
+STUB_COMMANDS = ("plot", "report", "promote")
 
 
 def default_home() -> str:
@@ -125,6 +128,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.set_defaults(func=cmd_run)
 
+    diff = sub.add_parser(
+        "diff", help="compare two stored runs' reports and apply an --expect verdict"
+    )
+    diff.add_argument("--base", required=True, help="base run id (or id prefix)")
+    diff.add_argument("--new", required=True, help="new run id (or id prefix)")
+    diff.add_argument(
+        "--expect",
+        choices=["no-crashes", "same-count", "same-reports"],
+        default="no-crashes",
+        help="verdict policy for the exit code (default: no-crashes)",
+    )
+    diff.add_argument(
+        "--format", choices=["text", "json"], default="text", help="output format"
+    )
+    diff.set_defaults(func=cmd_diff)
+
     for name in STUB_COMMANDS:
         stub = sub.add_parser(name, help=f"{name} (not yet implemented)")
         stub.set_defaults(func=cmd_not_implemented, command_name=name)
@@ -206,6 +225,55 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(os.path.basename(run_path))
     print(run_path, file=sys.stderr)
     return 0
+
+
+def _load_findings_json(store: RunStore, run_id: str) -> Dict[str, List[Finding]]:
+    """Load a stored run's ``reports/findings.json`` back into ``Finding`` objects,
+    keyed by project."""
+    path = os.path.join(store.runs_dir, run_id, "reports", "findings.json")
+    with open(path) as handle:
+        raw = json.load(handle)
+    return {project: [Finding(**row) for row in rows] for project, rows in raw.items()}
+
+
+def cmd_diff(args: argparse.Namespace) -> int:
+    store = RunStore(args.home or default_home())
+    try:
+        base_id = store.resolve(args.base)
+        new_id = store.resolve(args.new)
+    except RunNotFoundError as exc:
+        print(f"aqb diff: {exc}", file=sys.stderr)
+        return 1
+
+    deltas = diff_runs(
+        _load_findings_json(store, base_id), _load_findings_json(store, new_id)
+    )
+    summary = summarize(deltas)
+    passed, reason = verdict(summary, args.expect)
+
+    if args.format == "json":
+        print(
+            json.dumps(
+                {
+                    "base": base_id,
+                    "new": new_id,
+                    "summary": summary,
+                    "expect": args.expect,
+                    "passed": passed,
+                    "reason": reason,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(f"diff {base_id} -> {new_id}")
+        print(
+            f"  common={summary['common']} added={summary['added']} "
+            f"removed={summary['removed']} changed={summary['changed']}"
+        )
+        print(f"  expect {args.expect}: {'PASS' if passed else 'FAIL'} ({reason})")
+    return 0 if passed else 1
 
 
 def main(argv: Optional[List[str]] = None) -> int:
