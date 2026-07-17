@@ -4,6 +4,8 @@
 
 **Goal:** `aqb diff --base <run> --new <run>` classifies the report change between two stored runs (added / removed / changed / common) using SATest's two-tier report identity, prints a summary, and applies an `--expect` verdict as the exit code.
 
+**STATUS: COMPLETE (2026-07-17).** All four tasks implemented + committed on `bb/aqb-design` (108 tests green). Verified end-to-end: self-diffing the stored zstd run (`r-20260717-221515-b593`) reports `common=985 added=0 removed=0 changed=0`, `--expect same-reports` → PASS. Deferred as documented: `--baseline` (awaits `promote`), metric-delta diffing, crash-aware `no-crashes`.
+
 **Architecture:** The diff operates on the **stored, self-contained runs** (`reports/findings.json`), not by re-parsing plists — a stored `Finding` already carries every field CmpRuns' `compare_results` needs (location = `file`/`line`/`column`; tier-1 identity = `issue_id`; tier-2 similarity = `checker`/`category`/`description`; `path_length` for deltas). AQB ports that ~30-line two-tier algorithm to operate on `Finding` (the *identity* is still SATest's — `issue_id` comes from `CmpRuns.get_issue_identifier` via `normalize.load_findings`). This keeps runs diffable by reference, exactly as the design intends.
 
 **Tech Stack:** stdlib only; `unittest`; runs loaded via `RunStore`.
