@@ -12,7 +12,7 @@ PROJECTS_MOUNT = "/projects"  # corpus recipes; results land under here
 SCRIPTS_MOUNT = "/scripts"  # SATest.py and siblings
 CCACHE_MOUNT = "/ccache"
 
-EP_CSV_NAME = "entry-point-stats.csv"
+EP_CSV_DIR_NAME = "aqb-entry-point-stats"
 # AQB's analyze driver writes results here (SATest's "reference build" layout),
 # NOT "ScanBuildResults". AQB drives ``ProjectTester(is_reference_build=True)``
 # directly (via analyze_driver.py) so analysis never triggers SATest's own
@@ -21,17 +21,10 @@ SCAN_BUILD_RESULTS_DIR = "RefScanBuildResults"
 # The in-container path to AQB's analyze driver (SCRIPTS_MOUNT is the analyzer
 # dir; the driver lives at aqb/analyze_driver.py beside SATestBuild.py).
 ANALYZE_DRIVER = "aqb/analyze_driver.py"
-
-
-def analyzer_config(ep_csv_path: str, extra: str = "") -> str:
-    """The extra ``-analyzer-config`` string AQB passes to SATest via
-    ``--extra-analyzer-config`` (on top of SATest's own ``serialize-stats=true``):
-    enable the per-entry-point CSV dump, plus any caller-supplied options.
-    """
-    parts: List[str] = [f"dump-entry-point-stats-to-csv={ep_csv_path}"]
-    if extra:
-        parts.append(extra)
-    return ",".join(parts)
+# The analyzer-clang wrapper (also under SCRIPTS_MOUNT). Set as ``CC`` so every
+# per-TU clang analysis process writes a PID-unique entry-point CSV under
+# ``AQB_EP_CSV_DIR`` — avoiding the single-shared-path clobber.
+WRAPPER = "aqb/clang-analyzer-wrapper.sh"
 
 
 def collect_plists(projects_root: str) -> List[str]:
@@ -43,8 +36,10 @@ def collect_plists(projects_root: str) -> List[str]:
 
 
 def collect_entry_point_csvs(root: str) -> List[str]:
-    """All per-entry-point stat CSVs written under ``root`` (recursively)."""
-    return sorted(glob.glob(os.path.join(root, "**", EP_CSV_NAME), recursive=True))
+    """The per-TU entry-point stat CSVs the wrapper wrote (``<pid>.csv``) under
+    ``<root>/aqb-entry-point-stats/``. Merge them with ``merge_entry_point_csvs``.
+    """
+    return sorted(glob.glob(os.path.join(root, EP_CSV_DIR_NAME, "*.csv")))
 
 
 def merge_entry_point_csvs(csv_paths: List[str]) -> List[str]:
@@ -77,23 +72,25 @@ def analyze_run_argv(
     ccache_volume: str,
     image: str,
     projects: List[str],
-    ep_csv_path: str,
     memory: str = "24G",
     cpus: str = "8",
     extra_config: str = "",
 ) -> List[str]:
     """A container ``run`` that analyzes ``projects`` with the Clang Volume's
     clang by reusing SATest's project-recipe machinery. The volume mounts
-    ``:ro`` at ``/analyzer`` (so scan-build and ``--use-analyzer
-    /analyzer/bin/clang`` resolve via ``PATH``), the corpus at ``/projects``
-    (results land there), and the analyzer dir (SATest modules + AQB's driver)
-    at ``/scripts``.
+    ``:ro`` at ``/analyzer``, the corpus at ``/projects`` (results land there),
+    and the analyzer dir (SATest modules + AQB's driver + wrapper) at
+    ``/scripts``.
 
     AQB invokes its own ``analyze_driver.py`` — which drives
     ``ProjectTester(is_reference_build=True).test()`` — rather than ``SATest.py
-    build``: that gives the analyze half (plists + stats into
-    ``RefScanBuildResults``) with no reference-compare/verdict.
-    ``--extra-analyzer-config`` injects the entry-point CSV dump.
+    build``: that gives the analyze half (plists into ``RefScanBuildResults``)
+    with no reference-compare/verdict.
+
+    Entry-point stats: ``CC`` points at ``clang-analyzer-wrapper.sh`` (which
+    SATest uses as ``--use-analyzer``), so every per-TU clang analysis writes a
+    PID-unique CSV under ``AQB_EP_CSV_DIR`` (no single-path clobber). The real
+    clang is ``AQB_REAL_CLANG``. Collect + ``merge_entry_point_csvs`` afterward.
     """
     args = ["run", "--rm", "-w", PROJECTS_MOUNT]
     if memory:
@@ -111,8 +108,15 @@ def analyze_run_argv(
         f"{ccache_volume}:{CCACHE_MOUNT}",
         "-e",
         f"PATH={ANALYZER_MOUNT}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        # CC is the analyzer clang SATest uses (CLANG = os.environ["CC"]); point
+        # it at the wrapper so per-TU CSVs are unique. The wrapper execs the
+        # real clang named by AQB_REAL_CLANG.
         "-e",
-        f"CC={ANALYZER_MOUNT}/bin/clang",
+        f"CC={SCRIPTS_MOUNT}/{WRAPPER}",
+        "-e",
+        f"AQB_REAL_CLANG={ANALYZER_MOUNT}/bin/clang",
+        "-e",
+        f"AQB_EP_CSV_DIR={PROJECTS_MOUNT}/{EP_CSV_DIR_NAME}",
         "-e",
         f"CCACHE_DIR={CCACHE_MOUNT}",
         "--entrypoint",
@@ -122,6 +126,6 @@ def analyze_run_argv(
         "--projects",
         ",".join(projects),
         "--extra-analyzer-config",
-        analyzer_config(ep_csv_path, extra_config),
+        extra_config,
     ]
     return args

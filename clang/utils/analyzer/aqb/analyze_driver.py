@@ -14,9 +14,12 @@ A reference build structurally (a) writes to ``RefScanBuildResults`` and
 dependence on ``build``'s flag wiring.
 
 Usage (from the corpus root, i.e. container ``-w /projects``):
-    python3 /scripts/aqb/analyze_driver.py \
-        --projects zstd,curl \
-        --extra-analyzer-config dump-entry-point-stats-to-csv=/projects/ep.csv
+    python3 /scripts/aqb/analyze_driver.py --projects zstd,curl
+
+Per-entry-point stats are NOT requested here: the analyzer-clang wrapper
+(``CC``, see analyze.py) injects a PID-unique
+``dump-entry-point-stats-to-csv`` per TU so nothing is clobbered.
+``--extra-analyzer-config`` is for any *other* analyzer options.
 
 Exit code is non-zero if any project's analysis raised (build/check failure);
 a reference build itself never "fails a comparison", so a clean analyze is 0.
