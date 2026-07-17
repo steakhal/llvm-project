@@ -297,8 +297,26 @@ def merge_entry_point_csvs(csv_paths: List[str]) -> List[str]:
 
 ## Sub-phase 3c-3 — end-to-end + docs
 
-- [ ] Daemon-gated end-to-end smoke: `aqb build-clang` → `aqb run --projects zstd` → assert a populated run in the store (reports + merged metrics + metadata) with the CSV now covering **all** TUs (not one). Confirm the analyze `:ro` clang mount.
-- [ ] Update `AQB-design.rst`: analyze flow (reference-build driver, per-TU wrapper, merge), the `run` verb, and the resolved mount/env contract.
+**STATUS: COMPLETE — validated end-to-end on the container runtime (2026-07-17).**
+`aqb run --commit 83fd1f0ef0c6 --source … --projects zstd --runtime docker`
+resolved the cached Clang Volume (no rebuild), analyzed zstd, and persisted run
+`r-20260717-221515-b593`: `metadata.json` (analyzer commit/volume/digest,
+container image digest, zstd pinned commit), `reports/findings.json` (985 deduped
+findings), `metrics/entry-point-stats.csv` (623 unique entry-point rows over 41
+files — the clobber-free merge). `AQB-design.rst` updated with the analyze seam.
+
+Known follow-ups (non-blocking, for a later phase):
+
+- `logs/` is not yet populated (`perform_run` doesn't copy the per-project
+  `RefScanBuildResults/Logs/run_static_analyzer.log` into the run's `logs/`).
+- Findings include CMake compiler-probe TUs (e.g. `CMakeCCompilerABI.c`),
+  inherent to cmake recipes; a Normalize-stage filter could drop non-corpus
+  sources. SATest has the same behavior.
+
+- [x] Daemon-gated end-to-end smoke: `aqb build-clang` → `aqb run --projects zstd`
+  → populated run in the store, CSV covering all TUs. **Done.**
+- [x] Update `AQB-design.rst`: analyze flow (reference-build driver, per-TU
+  wrapper, merge), the `run` verb, resolved mount/env contract. **Done.**
 
 ## Self-Review
 
