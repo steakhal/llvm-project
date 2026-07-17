@@ -133,10 +133,172 @@ def analyzer_config(ep_csv_path: str, extra: str = "") -> str:
 
 Draft `analyze_run_argv(clang_volume, projects_dir, ccache_volume, image, ep_csv_path, memory, cpus)` mounting `clang_volume:/analyzer:ro`, `projects_dir:/projects`, `ccache_volume:/ccache`, with `-m/--cpus`, overriding the entrypoint to run SATest's analyze for the selected projects. **Validate against a real container run over one tiny project** (resolves Open Questions #1–#5); refine argv/env to match. Unit-test the final argv shape with a fake runtime.
 
-## Sub-phases 3c-2 / 3c-3 — sequenced stubs
+## Sub-phase 3c-2 — per-TU stats wrapper + `aqb run` orchestration
 
-- **3c-2 (`aqb run`):** `aqb/run.py` orchestration + `run` CLI verb. materialize (3b) → analyze (3c-1) → collect → `normalize.load_findings` + `metrics` (3a) → build `Metadata` (`AnalyzerProvenance` from the `ClangVolume` (needs 3b to return/expose `config_digest`+`volume`; `commit`/`commit_title` from inputs), `ProjectProvenance` from `corpus.select_projects` — map `ProjectInfo.source.value`, resolve per-project `commit_title`) → `RunStore.create_run`, writing `reports/`, `metrics/`, `logs/`. Fold the 3a follow-up: **deterministic dedup** in `load_findings` (sort or min-`path_length`) before persisting, since findings now come from multiple plists. Mount the corpus/output dirs into the container (host-FS-not-visible lesson from 3b). `--projects`/`--size` selection; `--runtime`/`--memory`/`--cpus`.
-- **3c-3:** daemon-gated end-to-end smoke (`build-clang` → `run` over one TINY project → assert a populated run in the store); analyze-container `:ro` clang mount confirmed; update `AQB-design.rst` (analyze flow, `run` verb).
+> 3c-1 is validated on the container runtime (70 plists in `RefScanBuildResults`, no compare). 3c-2 fixes the per-TU CSV clobber (chosen approach: **AQB-side wrapper, no clang change**) and wires the `run` pipeline. The wrapper's container behavior gets a daemon-gated re-validation like 3c-1; its arg logic + the merge/argv/orchestration are pure-unit-testable now.
+
+### The wrapper mechanism (why it works)
+
+SATest sets the analyzer clang to `$CC` (`SATestBuild.py:122-130`: `CLANG = os.environ["CC"]`) and passes it via `scan-build --use-analyzer '{CLANG}'`, with one shared `-analyzer-config '{generate_config()}'` for every TU. Because `EntryPointStat::dumpStatsAsCSV` truncates (`OF_Text`) and runs once per TU, a single shared `dump-entry-point-stats-to-csv` path is clobbered — last TU wins.
+
+**Fix:** point `CC` at `aqb/clang-analyzer-wrapper.sh`. For each *analysis* invocation the wrapper injects a **PID-unique** `dump-entry-point-stats-to-csv=$AQB_EP_CSV_DIR/$$.csv` and execs the real clang (`$AQB_REAL_CLANG=/analyzer/bin/clang`); non-analysis invocations pass through untouched. AQB then merges all `$AQB_EP_CSV_DIR/*.csv` (identical headers, concat rows) into one table. AQB stops putting `dump-entry-point-stats-to-csv` in the shared analyzer-config so the wrapper is the sole source (no duplicate key).
+
+### Task A1: the analyzer-clang wrapper script
+
+**Files:** Create `clang/utils/analyzer/aqb/clang-analyzer-wrapper.sh` (executable); Test `clang/utils/analyzer/aqb/tests/test_wrapper.py`.
+
+- [ ] **Step 1: failing test** — `test_wrapper.py` drives the script with `AQB_REAL_CLANG=/bin/echo` (echo captures the final argv) and asserts:
+  - analysis args (contain `--analyze` or `-analyze`) + `AQB_EP_CSV_DIR` set → output contains `dump-entry-point-stats-to-csv=<dir>/` and a `.csv` suffix;
+  - non-analysis args (e.g. `-c foo.c -o foo.o`) → output is the args verbatim, NO `dump-entry-point-stats-to-csv`;
+  - analysis args but `AQB_EP_CSV_DIR` unset → passthrough (no injection).
+
+```python
+from __future__ import annotations
+
+import os
+import subprocess
+import tempfile
+import unittest
+
+WRAPPER = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "clang-analyzer-wrapper.sh",
+)
+
+
+def _run(args, ep_dir=None):
+    env = dict(os.environ, AQB_REAL_CLANG="/bin/echo")
+    if ep_dir is not None:
+        env["AQB_EP_CSV_DIR"] = ep_dir
+    else:
+        env.pop("AQB_EP_CSV_DIR", None)
+    return subprocess.run(
+        [WRAPPER, *args], env=env, capture_output=True, text=True, check=True
+    ).stdout
+
+
+class WrapperTest(unittest.TestCase):
+    def test_injects_unique_csv_on_analysis(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = _run(["--analyze", "foo.c"], ep_dir=d)
+            self.assertIn("dump-entry-point-stats-to-csv=", out)
+            self.assertIn(d, out)
+            self.assertIn(".csv", out)
+
+    def test_passthrough_on_compile(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = _run(["-c", "foo.c", "-o", "foo.o"], ep_dir=d)
+            self.assertNotIn("dump-entry-point-stats-to-csv", out)
+
+    def test_no_injection_without_ep_dir(self):
+        out = _run(["--analyze", "foo.c"], ep_dir=None)
+        self.assertNotIn("dump-entry-point-stats-to-csv", out)
+```
+
+- [ ] **Step 2: run → fail** (script missing).
+- [ ] **Step 3: implement** — `clang-analyzer-wrapper.sh`:
+
+```bash
+#!/usr/bin/env bash
+# AQB analyzer-clang wrapper. Stands in as $CC / scan-build --use-analyzer so
+# each per-TU clang *analysis* process writes entry-point stats to a UNIQUE
+# (PID-named) CSV under $AQB_EP_CSV_DIR — avoiding the single-shared-path clobber
+# where every TU truncates one file (EntryPointStats.cpp uses OF_Text). Non-
+# analysis invocations (plain compiles) pass through untouched.
+set -euo pipefail
+
+real="${AQB_REAL_CLANG:?AQB_REAL_CLANG is required}"
+
+is_analysis=0
+for arg in "$@"; do
+    if [ "$arg" = "--analyze" ] || [ "$arg" = "-analyze" ]; then
+        is_analysis=1
+        break
+    fi
+done
+
+if [ "$is_analysis" = "1" ] && [ -n "${AQB_EP_CSV_DIR:-}" ]; then
+    mkdir -p "$AQB_EP_CSV_DIR"
+    exec "$real" "$@" \
+        -Xclang -analyzer-config \
+        -Xclang "dump-entry-point-stats-to-csv=$AQB_EP_CSV_DIR/$$.csv"
+fi
+
+exec "$real" "$@"
+```
+
+- [ ] **Step 4: `chmod +x`, run → pass. Step 5: black test + commit** (`feat(aqb): per-TU analyzer wrapper for unique entry-point CSVs`).
+
+> **Daemon-gated re-validation (like 3c-1):** the exact analysis-flag scan-build/ccc-analyzer passes (`--analyze` at driver level vs. `-cc1 -analyze`, and whether `-Xclang -analyzer-config` is accepted in that form) is confirmed by a real container run over zstd before 3c-2 is called done. Refine the flag-detection / injection form to match if needed.
+
+### Task A2: merge the per-TU CSVs
+
+**Files:** Modify `clang/utils/analyzer/aqb/analyze.py`; Modify `test_analyze.py`.
+
+- [ ] **Step 1: failing test** — given two CSV files with the same header and disjoint rows, `merge_entry_point_csvs([p1, p2])` returns one header + all rows (sorted, deduped):
+
+```python
+def test_merge_entry_point_csvs(self):
+    with tempfile.TemporaryDirectory() as d:
+        a = os.path.join(d, "1.csv")
+        b = os.path.join(d, "2.csv")
+        with open(a, "w") as f:
+            f.write("USR,File,DebugName\nu1,f1,d1\n")
+        with open(b, "w") as f:
+            f.write("USR,File,DebugName\nu2,f2,d2\n")
+        merged = merge_entry_point_csvs([a, b])
+        self.assertEqual(merged[0], "USR,File,DebugName")
+        self.assertIn("u1,f1,d1", merged)
+        self.assertIn("u2,f2,d2", merged)
+        self.assertEqual(len(merged), 3)  # header + 2 rows
+```
+
+- [ ] **Step 2: run → fail.** **Step 3: implement** in `analyze.py`:
+
+```python
+def merge_entry_point_csvs(csv_paths: List[str]) -> List[str]:
+    """Merge per-TU entry-point CSVs (identical headers) into one line list:
+    a single header followed by the sorted-unique union of data rows. Empty or
+    header-only files contribute nothing. Raises if headers disagree.
+    """
+    header: str = ""
+    rows: set = set()
+    for path in csv_paths:
+        with open(path) as handle:
+            lines = [ln.rstrip("\n") for ln in handle if ln.strip()]
+        if not lines:
+            continue
+        if not header:
+            header = lines[0]
+        elif lines[0] != header:
+            raise ValueError(f"CSV header mismatch in {path!r}")
+        rows.update(lines[1:])
+    if not header:
+        return []
+    return [header, *sorted(rows)]
+```
+
+- [ ] **Step 4: run → pass. Step 5: black + commit.**
+
+### Task A3: wire the wrapper into `analyze_run_argv`
+
+**Files:** Modify `analyze.py` + `test_analyze.py`.
+
+- [ ] Point `CC` at the wrapper, set `AQB_REAL_CLANG=/analyzer/bin/clang` and `AQB_EP_CSV_DIR=<per-project stats dir under /projects>`, and **drop** `dump-entry-point-stats-to-csv` from the shared `--extra-analyzer-config` (the wrapper injects it). Add constants `EP_CSV_DIR_NAME = "entry-point-stats"` and `WRAPPER = "aqb/clang-analyzer-wrapper.sh"`. `analyze_run_argv` gains `ep_csv_dir` (in-container path) and sets the three env vars; `analyzer_config` no longer takes `ep_csv_path` (only `extra`). Tests assert `-e CC=/scripts/aqb/clang-analyzer-wrapper.sh`, `-e AQB_REAL_CLANG=/analyzer/bin/clang`, `-e AQB_EP_CSV_DIR=<dir>` are present and that the driver's `--extra-analyzer-config` no longer contains `dump-entry-point-stats-to-csv`. Update `analyze_driver.py` only if the flag surface changes (it stays: `--extra-analyzer-config` passthrough).
+- [ ] black + commit.
+
+### Task B: `aqb run` orchestration + CLI verb
+
+**Files:** Create `clang/utils/analyzer/aqb/run.py`; Modify `aqb/cli.py`; Test `aqb/tests/test_run.py`.
+
+- [ ] `run.py` orchestration (fake-runtime unit tests): `resolve_or_build_clang` (3b) → `corpus.select_projects` (3a) → materialize a host corpus dir (writable) + stage the analyzer scripts dir → `runtime.run(analyze_run_argv(...))` → `collect_plists` + `collect_entry_point_csvs`/`merge_entry_point_csvs` → `normalize.load_findings` (fold **deterministic dedup**: stable sort, then min-`path_length` per key) + `metrics.parse_*` → build `Metadata` (`AnalyzerProvenance` from the `ClangVolume` — 3b must expose `config_digest`+`volume`; `commit`/`commit_title` from inputs; `ProjectProvenance` from `ProjectInfo`, mapping `source.value`, per-project `commit_title`) → `RunStore.create_run`, writing `reports/`, `metrics/` (incl. the merged entry-point CSV), `logs/`.
+- [ ] `run` CLI verb: `--commit` (default HEAD), `--source`, `--projects`/`--size`, `--runtime`/`--memory`/`--cpus`. Mounts the host corpus/output dirs into the container (host-FS-not-visible lesson from 3b). Prints the created run id/path.
+- [ ] TDD each seam with a fake `Runtime` and fixture plist/CSV outputs; black + commit per task.
+
+## Sub-phase 3c-3 — end-to-end + docs
+
+- [ ] Daemon-gated end-to-end smoke: `aqb build-clang` → `aqb run --projects zstd` → assert a populated run in the store (reports + merged metrics + metadata) with the CSV now covering **all** TUs (not one). Confirm the analyze `:ro` clang mount.
+- [ ] Update `AQB-design.rst`: analyze flow (reference-build driver, per-TU wrapper, merge), the `run` verb, and the resolved mount/env contract.
 
 ## Self-Review
 
