@@ -406,6 +406,49 @@ Example Invocations
    aqb run --commit 349146da --runtime=podman
    AQB_RUNTIME=podman aqb run --commit 349146da
 
+Analyze Seam: How AQB Reuses SATest (implemented)
+-------------------------------------------------
+
+The Analyze/Materialize/Observe units are implemented by reusing SATest's
+project-recipe machinery inside a container, with two deliberate seams that a
+casual reading of SATest would get wrong (both validated end-to-end on a real
+container runtime over the ``zstd`` corpus):
+
+- **Analyze without SATest's compare.** ``SATest.py build`` runs
+  ``RegressionTester.test_all`` = build *and* compare-against-reference; even
+  its ``-r`` (regenerate) path proved unreliable for analyze-only use. AQB
+  instead drives the lower seam ``SATestAdd`` uses for a new project:
+  ``ProjectTester(TestInfo(is_reference_build=True)).test()`` (via
+  ``aqb/analyze_driver.py``). A *reference build* structurally writes to
+  ``RefScanBuildResults/`` and skips ``run_cmp_results`` --- AQB does its own
+  diffing later (the Compare unit). ``cleanup_reference_results`` strips
+  transient HTML/CSS/JS + the log but keeps every ``.plist``.
+
+- **Per-entry-point stats without clobbering.** ``EntryPointStat::dumpStatsAsCSV``
+  opens its target with ``OF_Text`` (truncate) and runs once per TU, so a single
+  shared ``dump-entry-point-stats-to-csv`` path across many clang processes is
+  overwritten --- only the last TU survives. AQB sets ``CC`` to
+  ``aqb/clang-analyzer-wrapper.sh`` (SATest uses ``CLANG = os.environ["CC"]`` as
+  ``scan-build --use-analyzer``). scan-build's ``ccc-analyzer`` invokes that
+  clang twice per TU --- ``clang -### --analyze`` to expand the frontend command,
+  then ``clang -cc1 ... -analyze ...`` to analyze. The wrapper injects a
+  **PID-unique** ``-analyzer-config dump-entry-point-stats-to-csv=$AQB_EP_CSV_DIR/$$.csv``
+  **only** on the real ``-cc1 ... -analyze`` (cc1-native form; ``-Xclang`` is a
+  driver-only flag rejected under ``-cc1``); every other invocation passes
+  through. AQB then merges the per-TU CSVs (dedup header + sorted-unique rows,
+  entry point keyed by USR).
+
+Resolved container contract (the analyze ``run``): the Clang Volume mounts
+``:ro`` at ``/analyzer``; the materialized corpus (``projects.json`` + selected
+recipe dirs, staged writable) mounts at ``/projects`` (``-w /projects``); the
+analyzer scripts dir (SATest modules + ``aqb/``) mounts ``:ro`` at ``/scripts``;
+the shared ccache volume at ``/ccache``. Env: ``PATH=/analyzer/bin:...``,
+``CC=/scripts/aqb/clang-analyzer-wrapper.sh``,
+``AQB_REAL_CLANG=/analyzer/bin/clang``,
+``AQB_EP_CSV_DIR=/projects/aqb-entry-point-stats``. Results are read back from
+``/projects/<name>/RefScanBuildResults/`` (reports) and
+``/projects/aqb-entry-point-stats/*.csv`` (metrics).
+
 Run Artifacts and Provenance
 ============================
 
