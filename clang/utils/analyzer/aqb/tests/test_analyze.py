@@ -66,7 +66,7 @@ class AnalyzeRunArgvTest(unittest.TestCase):
     def test_invokes_satest_regenerate_with_comma_projects_and_config(self):
         argv = self._argv()
         self.assertIn("build", argv)
-        self.assertIn("--regenerate", argv)
+        self.assertIn("-r", argv)  # regenerate (analyze-only, no compare)
         self.assertEqual(argv[argv.index("--projects") + 1], "curl,redis")
         cfg = argv[argv.index("--extra-analyzer-config") + 1]
         self.assertIn("dump-entry-point-stats-to-csv=/projects/ep.csv", cfg)

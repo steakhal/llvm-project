@@ -93,7 +93,7 @@ def analyze_run_argv(
         image,
         f"{SCRIPTS_MOUNT}/SATest.py",
         "build",
-        "--regenerate",
+        "-r",  # regenerate: analyze and write results without SATest's compare
         "--projects",
         ",".join(projects),
         "--extra-analyzer-config",
