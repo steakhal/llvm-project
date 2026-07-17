@@ -63,10 +63,13 @@ class AnalyzeRunArgvTest(unittest.TestCase):
     def test_mounts_clang_volume_readonly_at_analyzer(self):
         self.assertIn("aqb-clang-x-y:/analyzer:ro", self._argv())
 
-    def test_invokes_satest_regenerate_with_comma_projects_and_config(self):
+    def test_invokes_analyze_driver_with_comma_projects_and_config(self):
         argv = self._argv()
-        self.assertIn("build", argv)
-        self.assertIn("-r", argv)  # regenerate (analyze-only, no compare)
+        # AQB drives its own analyze_driver.py (reference build, no compare),
+        # NOT `SATest.py build`.
+        self.assertTrue(any(a.endswith("analyze_driver.py") for a in argv))
+        self.assertNotIn("build", argv)
+        self.assertNotIn("-r", argv)
         self.assertEqual(argv[argv.index("--projects") + 1], "curl,redis")
         cfg = argv[argv.index("--extra-analyzer-config") + 1]
         self.assertIn("dump-entry-point-stats-to-csv=/projects/ep.csv", cfg)
