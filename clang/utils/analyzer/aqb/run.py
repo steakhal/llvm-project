@@ -1,8 +1,32 @@
 from __future__ import annotations
 
+import dataclasses
+import datetime
+import json
 import os
 import shutil
-from typing import List, Sequence
+from typing import Callable, List, Optional, Sequence
+
+from aqb._satest import ProjectMap
+from aqb.analyze import (
+    SCAN_BUILD_RESULTS_DIR,
+    analyze_run_argv,
+    collect_entry_point_csvs,
+    merge_entry_point_csvs,
+)
+from aqb.corpus import select_projects
+from aqb.metadata import (
+    AnalyzerProvenance,
+    ContainerProvenance,
+    ExecutionProvenance,
+    Metadata,
+    ProjectProvenance,
+)
+from aqb.normalize import Finding, load_findings
+from aqb.runtime import Runtime
+from aqb.runid import new_run_id
+from aqb.store import RunStore
+from aqb.volume import CCACHE_VOLUME, build_clang_volume
 
 
 def materialize_corpus(
@@ -47,3 +71,132 @@ def materialize_corpus(
         shutil.copytree(recipe, os.path.join(dest, name), dirs_exist_ok=True)
         staged.append(name)
     return staged
+
+
+def _project_source(info) -> str:
+    """A human/provenance source string for a project: its git origin when it
+    is a git project, else its download-type name."""
+    origin = getattr(info, "origin", "") or ""
+    return origin if origin else getattr(info.source, "value", str(info.source))
+
+
+def perform_run(
+    *,
+    runtime: Runtime,
+    home: str,
+    commit: str,
+    source: str,
+    projects_src: str,
+    scripts_dir: str,
+    project_names: Sequence[str] = (),
+    sizes: Optional[Sequence] = None,
+    commit_title: str = "",
+    preset: str = "aqb-base",
+    user_overlay_json: Optional[str] = None,
+    builder_image: str = "aqb-clang-builder:latest",
+    memory: str = "24G",
+    cpus: str = "8",
+    extra_config: str = "",
+    kind: str = "functional",
+    now: Optional[datetime.datetime] = None,
+    resolve_clang: Callable[..., "object"] = build_clang_volume,
+    load_findings_fn: Callable[..., List[Finding]] = load_findings,
+) -> str:
+    """Perform one functional run: resolve the Clang Volume, analyze the pinned
+    corpus with it, and persist reports + metrics + provenance as a run.
+
+    Returns the created run directory path. ``resolve_clang`` and
+    ``load_findings_fn`` are injectable so the orchestration is unit-testable
+    without a container daemon or real plist parsing.
+    """
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    created = now.isoformat()
+    run_id = new_run_id(now=now)
+
+    # Which projects (pinned ProjectInfo, from the in-tree map).
+    project_map = ProjectMap.ProjectMap(os.path.join(projects_src, "projects.json"))
+    selected = select_projects(
+        project_map, names=list(project_names) or None, sizes=sizes
+    )
+    names = [p.name for p in selected]
+
+    # Resolve (or build) the analyzer.
+    volume = resolve_clang(
+        runtime,
+        commit=commit,
+        source=source,
+        commit_title=commit_title,
+        preset=preset,
+        user_overlay_json=user_overlay_json,
+        builder_image=builder_image,
+        created=created,
+        memory=memory,
+        cpus=cpus,
+    )
+
+    # Stage a writable corpus and analyze it in one container run.
+    work_dir = os.path.join(home, "work", run_id)
+    materialize_corpus(projects_src, names, work_dir)
+    argv = analyze_run_argv(
+        clang_volume=volume.name,
+        projects_dir=work_dir,
+        scripts_dir=scripts_dir,
+        ccache_volume=CCACHE_VOLUME,
+        image=builder_image,
+        projects=names,
+        memory=memory,
+        cpus=cpus,
+        extra_config=extra_config,
+    )
+    runtime.run(argv, check=True, capture=False)
+
+    # Collect signal: reports (per project) and merged entry-point metrics.
+    reports = {}
+    for name in names:
+        results_dir = os.path.join(work_dir, name, SCAN_BUILD_RESULTS_DIR)
+        project_root = os.path.join(work_dir, name)
+        findings = load_findings_fn(results_dir, project_root=project_root)
+        reports[name] = [dataclasses.asdict(f) for f in findings]
+    merged_csv = merge_entry_point_csvs(collect_entry_point_csvs(work_dir))
+
+    # Provenance.
+    image_digest = ""
+    try:
+        image_digest = runtime.image_id(builder_image)
+    except Exception:
+        pass
+    by_name = {p.name: p for p in selected}
+    metadata = Metadata(
+        run_id=run_id,
+        kind=kind,
+        created=created,
+        analyzer=AnalyzerProvenance(
+            commit=commit,
+            commit_title=commit_title,
+            config_digest=getattr(volume, "config_digest", ""),
+            volume=volume.name,
+        ),
+        container=ContainerProvenance(runtime=runtime.name, image_digest=image_digest),
+        execution=ExecutionProvenance(
+            n=1, analyzer_args=[extra_config] if extra_config else []
+        ),
+        corpus=[
+            ProjectProvenance(
+                name=name,
+                source=_project_source(by_name[name]),
+                commit=getattr(by_name[name], "commit", "") or "",
+            )
+            for name in names
+        ],
+    )
+
+    # Persist.
+    store = RunStore(home)
+    run_path = store.create_run(metadata)
+    with open(os.path.join(run_path, "reports", "findings.json"), "w") as handle:
+        json.dump(reports, handle, indent=2, sort_keys=True)
+    with open(
+        os.path.join(run_path, "metrics", "entry-point-stats.csv"), "w"
+    ) as handle:
+        handle.write("\n".join(merged_csv) + ("\n" if merged_csv else ""))
+    return run_path

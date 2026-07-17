@@ -5,7 +5,9 @@ import os
 import tempfile
 import unittest
 
-from aqb.run import materialize_corpus
+from aqb.run import materialize_corpus, perform_run
+from aqb.runtime import ProcResult, Runtime
+from aqb.volume import ClangVolume
 
 
 class MaterializeCorpusTest(unittest.TestCase):
@@ -59,6 +61,117 @@ class MaterializeCorpusTest(unittest.TestCase):
             self._fake_projects_src(src)
             with self.assertRaises(FileNotFoundError):
                 materialize_corpus(src, ["nope"], dest)
+
+
+class PerformRunTest(unittest.TestCase):
+    def _projects_src(self, root):
+        os.makedirs(root)
+        with open(os.path.join(root, "projects.json"), "w") as f:
+            json.dump(
+                [
+                    {
+                        "name": "zstd",
+                        "mode": 1,
+                        "source": "git",
+                        "origin": "https://example/zstd.git",
+                        "commit": "deadbeef",
+                        "size": "small",
+                    }
+                ],
+                f,
+            )
+        d = os.path.join(root, "zstd")
+        os.makedirs(d)
+        with open(os.path.join(d, "run_static_analyzer.cmd"), "w") as f:
+            f.write("cmake .\n")
+
+    def _fake_runtime(self, work_holder):
+        """A Runtime whose runner fabricates the container's outputs: one
+        per-TU entry-point CSV and one (empty) plist, under the staged corpus."""
+
+        def runner(argv, capture=True):
+            # The corpus host dir is the source of the `<host>:/projects` mount.
+            projects_dir = None
+            for i, a in enumerate(argv):
+                if (
+                    a == "-v"
+                    and i + 1 < len(argv)
+                    and argv[i + 1].endswith(":/projects")
+                ):
+                    projects_dir = argv[i + 1].split(":/projects")[0]
+            assert projects_dir, f"no /projects mount in {argv}"
+            work_holder.append(projects_dir)
+            ep_dir = os.path.join(projects_dir, "aqb-entry-point-stats")
+            os.makedirs(ep_dir, exist_ok=True)
+            with open(os.path.join(ep_dir, "101.csv"), "w") as f:
+                f.write("USR,File,DebugName\nu1,zstd/a.c,fn1\n")
+            plist_dir = os.path.join(projects_dir, "zstd", "RefScanBuildResults", "r1")
+            os.makedirs(plist_dir, exist_ok=True)
+            open(os.path.join(plist_dir, "x.plist"), "w").close()
+            return ProcResult(returncode=0, stdout="", stderr="")
+
+        return Runtime("fake", runner=runner)
+
+    def test_persists_a_functional_run(self):
+        from aqb.normalize import Finding
+
+        fake_finding = Finding(
+            issue_id="id1",
+            file="a.c",
+            line=1,
+            column=2,
+            checker="core.Null",
+            category="Logic error",
+            description="boom",
+            path_length=3,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "projects")
+            self._projects_src(src)
+            home = os.path.join(tmp, "home")
+            work_holder = []
+            runtime = self._fake_runtime(work_holder)
+
+            def fake_resolve_clang(rt, **kwargs):
+                return ClangVolume(
+                    name="aqb-clang-deadbeef-abc123", config_digest="abc123", built=True
+                )
+
+            run_path = perform_run(
+                runtime=runtime,
+                home=home,
+                commit="deadbeef",
+                source="https://example/llvm.git",
+                projects_src=src,
+                scripts_dir="/host/scripts",
+                project_names=["zstd"],
+                resolve_clang=fake_resolve_clang,
+                load_findings_fn=lambda results_dir, project_root="": [fake_finding],
+            )
+
+            # metadata.json exists and carries analyzer/corpus provenance.
+            with open(os.path.join(run_path, "metadata.json")) as f:
+                meta = json.load(f)
+            self.assertEqual(meta["analyzer"]["commit"], "deadbeef")
+            self.assertEqual(meta["analyzer"]["volume"], "aqb-clang-deadbeef-abc123")
+            self.assertEqual(meta["analyzer"]["config_digest"], "abc123")
+            self.assertEqual(meta["kind"], "functional")
+            self.assertEqual([p["name"] for p in meta["corpus"]], ["zstd"])
+
+            # reports: the loaded findings are persisted.
+            with open(os.path.join(run_path, "reports", "findings.json")) as f:
+                reports = json.load(f)
+            self.assertIn("zstd", reports)
+            self.assertEqual(reports["zstd"][0]["issue_id"], "id1")
+
+            # metrics: the merged per-TU CSV is persisted.
+            csv_path = os.path.join(run_path, "metrics", "entry-point-stats.csv")
+            self.assertTrue(os.path.isfile(csv_path))
+            with open(csv_path) as f:
+                lines = [ln for ln in f.read().splitlines() if ln]
+            self.assertEqual(lines[0], "USR,File,DebugName")
+            self.assertIn("u1,zstd/a.c,fn1", lines)
 
 
 if __name__ == "__main__":
