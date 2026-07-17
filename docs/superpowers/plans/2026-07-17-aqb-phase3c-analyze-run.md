@@ -38,11 +38,28 @@ aqb run --commit X --source Y --projects [..]
 
 These are the analyze-seam unknowns; a first sub-phase ground-truth dive + a real daemon run (the user has a container runtime) settles them, exactly as the builder image was validated by real runs:
 
+### RESOLVED (validated on the container runtime over zstd, 2026-07-17)
+
+All five are now settled by a real run; results captured here so 3c-2 is precise.
+
+1. **Analyze-only invocation — RESOLVED (driver, not `build`).** `SATest.py build -r` was supposed to give analyze-only (reference) behavior, but a real run showed it still wrote `ScanBuildResults` and ran SATest's reference-*compare* (the "Mismatch in number of results folders" error). `-r` parses to `regenerate=True` on the host, yet the container run compared anyway — the `build` path is unreliable for AQB's needs. **Fix:** AQB ships `aqb/analyze_driver.py`, which reuses the lower seam `SATestAdd` uses — `ProjectTester(TestInfo(is_reference_build=True)).test()`. That *structurally* writes `RefScanBuildResults` and skips `run_cmp_results`. `--extra-analyzer-config` is a driver flag threaded into `TestInfo.extra_analyzer_config`.
+2. **`scan-build` in the volume — RESOLVED (yes).** `build.sh` now runs `install-scan-build install-scan-build-py`; the driver run analyzed 70 TUs, so `scan-build`/`clang` resolve via `PATH=/analyzer/bin`.
+3. **Analyze container entry — RESOLVED.** `--entrypoint python3 … /scripts/aqb/analyze_driver.py`, analyzer dir mounted `:ro` at `/scripts` (so the driver's sibling imports `SATestBuild`/`ProjectMap` resolve), volume `:ro` at `/analyzer`, corpus at `/projects`, `-w /projects`.
+4. **Output collection paths — RESOLVED.** Results land at `/projects/<name>/RefScanBuildResults/*/*.plist` (70 plists for zstd; html/css/js stripped by `cleanup_reference_results`, `.plist` kept). `collect_plists` already globs `RefScanBuildResults`. The entry-point CSV lands at the `dump-entry-point-stats-to-csv=<path>` path — **but see the clobbering finding below.**
+5. **runtime quirks — RESOLVED.** `-m 24G --cpus 8` (shim maps `--cpus`→`-c`), `:ro` volume, host corpus bind-mounted at `/projects` all worked.
+
+### NEW finding for 3c-2: entry-point CSV is clobbered per-TU
+
+The zstd run produced 70 plists across many source files, but `zstd-ep.csv` held only **one** TU's rows (`programs/fileio.c`, 55 entry points). Root cause (confirmed in source): `EntryPointStat::dumpStatsAsCSV` opens the path with `llvm::sys::fs::OF_Text` (**truncate**, not append) and is called once per TU from `AnalysisConsumer` (`AnalysisConsumer.cpp:673`). scan-build runs one clang process per TU, all pointed at the same fixed `dump-entry-point-stats-to-csv` path, so the last TU's process truncates+overwrites — last writer wins. **3c-2 must resolve how AQB gets per-TU stats without clobbering** (see plan §"CSV aggregation decision").
+
+### Original questions (for history)
+
 1. **`SATest.py build` invocation for analyze-only.** Which subcommand/flags produce plists without SATest's own reference-compare/verdict? (`build` runs `RegressionTester.test_all` = build + compare.) Is there a flag, or should AQB drive `ProjectTester(is_reference_build=True)` (as `SATestAdd` does) to just materialize+analyze? How is `extra_analyzer_config` passed on the CLI (a `--extra-analyzer-config` flag on `SATest.py build`, or only via the Python API)? **Read `SATest.py`'s argparse + `RegressionTester`/`ProjectTester` constructors.**
 2. **Does the Clang Volume contain `scan-build`?** `build.sh` runs `ninja install-clang install-clang-resource-headers` — that installs the clang binary + headers but likely **not** `scan-build` (a separate install target/tool). Options: (a) add `install-scan-build` (or the right target) to `build.sh`'s ninja install so the volume is self-contained; (b) use the analyze **image**'s `scan-build` (from its apt `clang` package, if present) with `--use-analyzer /analyzer/bin/clang`. Decide + verify `scan-build` is actually present on whichever path.
 3. **Analyze container entry.** The AQB builder image's ENTRYPOINT is `aqb-build-clang`. For analyze, override it (e.g. `--entrypoint python3 … /scripts/SATest.py build …`) and mount `SATest.py`/scripts at `/scripts` and the corpus at `/projects`. Confirm the mount+entry that makes `SATest.py build` run against the mounted `/analyzer` clang.
 4. **Output collection paths.** `SATest.py build` writes `/projects/<name>/ScanBuildResults/*/*.plist` + `Logs/`. Confirm AQB can read those back (mount `/projects` from a host dir AQB owns) and where the entry-point CSV lands (AQB sets its path via `dump-entry-point-stats-to-csv`).
 5. **runtime quirks (like 3b).** The analyze `run` will need the same treatment: `-m`/`--cpus` (analysis is also heavy), the shim's `--cpus`→`-c`, `:ro` mount of the volume, and possibly bind-mounting the corpus/output dirs (a container can't see the host FS — same lesson as the source mount). Expect a few real-run iterations.
+
 
 ## Sub-phase 3c-1 — concrete tasks (the parts that are precise now)
 
