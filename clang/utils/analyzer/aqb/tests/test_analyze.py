@@ -10,6 +10,7 @@ from aqb.analyze import (
     analyzer_config,
     collect_entry_point_csvs,
     collect_plists,
+    merge_entry_point_csvs,
 )
 
 
@@ -46,6 +47,20 @@ class CollectTest(unittest.TestCase):
             os.makedirs(os.path.dirname(csv))
             open(csv, "w").close()
             self.assertEqual(collect_entry_point_csvs(root), [csv])
+
+    def test_merge_entry_point_csvs(self):
+        with tempfile.TemporaryDirectory() as d:
+            a = os.path.join(d, "1.csv")
+            b = os.path.join(d, "2.csv")
+            with open(a, "w") as f:
+                f.write("USR,File,DebugName\nu1,f1,d1\n")
+            with open(b, "w") as f:
+                f.write("USR,File,DebugName\nu2,f2,d2\n")
+            merged = merge_entry_point_csvs([a, b])
+            self.assertEqual(merged[0], "USR,File,DebugName")
+            self.assertIn("u1,f1,d1", merged)
+            self.assertIn("u2,f2,d2", merged)
+            self.assertEqual(len(merged), 3)  # header + 2 rows
 
 
 class AnalyzeRunArgvTest(unittest.TestCase):

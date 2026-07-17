@@ -47,6 +47,28 @@ def collect_entry_point_csvs(root: str) -> List[str]:
     return sorted(glob.glob(os.path.join(root, "**", EP_CSV_NAME), recursive=True))
 
 
+def merge_entry_point_csvs(csv_paths: List[str]) -> List[str]:
+    """Merge per-TU entry-point CSVs (identical headers) into one line list:
+    a single header followed by the sorted-unique union of data rows. Empty or
+    header-only files contribute nothing. Raises ValueError if headers disagree.
+    """
+    header = ""
+    rows = set()
+    for path in csv_paths:
+        with open(path) as handle:
+            lines = [ln.rstrip("\n") for ln in handle if ln.strip()]
+        if not lines:
+            continue
+        if not header:
+            header = lines[0]
+        elif lines[0] != header:
+            raise ValueError(f"CSV header mismatch in {path!r}")
+        rows.update(lines[1:])
+    if not header:
+        return []
+    return [header, *sorted(rows)]
+
+
 def analyze_run_argv(
     *,
     clang_volume: str,
