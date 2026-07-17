@@ -23,12 +23,23 @@ def _run(args, ep_dir=None):
 
 
 class WrapperTest(unittest.TestCase):
-    def test_injects_unique_csv_on_analysis(self):
+    def test_injects_cc1_native_config_on_real_analysis(self):
+        # scan-build's real analysis is `clang -cc1 … -analyze …`. Inject there,
+        # cc1-native (no -Xclang), with a PID-unique CSV path.
         with tempfile.TemporaryDirectory() as d:
-            out = _run(["--analyze", "foo.c"], ep_dir=d)
+            out = _run(["-cc1", "-analyze", "foo.c"], ep_dir=d)
+            self.assertIn("-analyzer-config", out)
             self.assertIn("dump-entry-point-stats-to-csv=", out)
             self.assertIn(d, out)
             self.assertIn(".csv", out)
+            self.assertNotIn("-Xclang", out)  # -Xclang is invalid under -cc1
+
+    def test_passthrough_on_driver_analyze_probe(self):
+        # The `-### --analyze` probe (driver mode, no -cc1) must pass through so
+        # scan-build captures a clean frontend command; we only inject on -cc1.
+        with tempfile.TemporaryDirectory() as d:
+            out = _run(["-###", "--analyze", "foo.c"], ep_dir=d)
+            self.assertNotIn("dump-entry-point-stats-to-csv", out)
 
     def test_passthrough_on_compile(self):
         with tempfile.TemporaryDirectory() as d:
@@ -36,7 +47,7 @@ class WrapperTest(unittest.TestCase):
             self.assertNotIn("dump-entry-point-stats-to-csv", out)
 
     def test_no_injection_without_ep_dir(self):
-        out = _run(["--analyze", "foo.c"], ep_dir=None)
+        out = _run(["-cc1", "-analyze", "foo.c"], ep_dir=None)
         self.assertNotIn("dump-entry-point-stats-to-csv", out)
 
 
