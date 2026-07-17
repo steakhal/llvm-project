@@ -27,7 +27,7 @@ class CliTest(unittest.TestCase):
     def test_stub_command_reports_not_implemented(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            code = main(["run"])
+            code = main(["diff"])
         self.assertEqual(code, 2)
         self.assertIn("not yet implemented", err.getvalue())
 
@@ -119,3 +119,53 @@ class BuildClangCliTest(unittest.TestCase):
             code = main(["build-clang", "--commit", "c", "--source", "/s"])
         self.assertEqual(code, 1)
         self.assertIn("boom", err.getvalue())
+
+
+class RunCliTest(unittest.TestCase):
+    def test_invokes_perform_run_and_prints_run_id(self):
+        captured = {}
+
+        def fake_perform_run(**kwargs):
+            captured.update(kwargs)
+            return "/some/home/runs/r-123"
+
+        out = io.StringIO()
+        with mock.patch(
+            "aqb.cli.perform_run", fake_perform_run
+        ), contextlib.redirect_stdout(out):
+            code = main(
+                [
+                    "run",
+                    "--commit",
+                    "abc",
+                    "--source",
+                    "/s",
+                    "--projects",
+                    "zstd,fmt",
+                    "--extra-analyzer-config",
+                    "max-nodes=0",
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertIn("r-123", out.getvalue())
+        self.assertEqual(captured["commit"], "abc")
+        self.assertEqual(list(captured["project_names"]), ["zstd", "fmt"])
+        self.assertEqual(captured["extra_config"], "max-nodes=0")
+        # The in-tree projects dir and analyzer scripts dir are wired.
+        self.assertTrue(captured["projects_src"].endswith("projects"))
+        self.assertEqual(captured["memory"], "24G")
+        self.assertEqual(captured["cpus"], "8")
+
+    def test_reports_run_error(self):
+        from aqb.errors import RuntimeCommandError
+
+        def fake_perform_run(**kwargs):
+            raise RuntimeCommandError("kaboom")
+
+        err = io.StringIO()
+        with mock.patch(
+            "aqb.cli.perform_run", fake_perform_run
+        ), contextlib.redirect_stderr(err):
+            code = main(["run", "--commit", "c", "--source", "/s"])
+        self.assertEqual(code, 1)
+        self.assertIn("kaboom", err.getvalue())
