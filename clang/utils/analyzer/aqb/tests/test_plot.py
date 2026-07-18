@@ -123,5 +123,33 @@ class ScrollSyncTest(unittest.TestCase):
         self.assertIn("scrollLeft", html_out)
 
 
+class LogToggleTest(unittest.TestCase):
+    def test_candles_carry_raw_values_and_chart_carries_geometry(self):
+        series = {"run-A": {"f1.c": Candle(1, 2, 3, 4, 5, 4)}}
+        svg = svg_chart(["f1.c"], series, title="NumSteps")
+        # chart geometry for client-side rescale
+        self.assertIn("data-ph=", svg)
+        self.assertIn("data-ymax=", svg)
+        # each candle carries its five-number summary
+        self.assertIn('class="candle"', svg)
+        self.assertIn('data-md="3"', svg)
+        self.assertIn('data-hi="5"', svg)
+        # elements the script targets exist
+        self.assertIn('class="wick"', svg)
+        self.assertIn('class="box"', svg)
+        self.assertIn('class="median"', svg)
+
+    def test_render_has_per_chart_log_checkbox_and_script(self):
+        runs = {
+            "r": {"run": {"(all)": {"NumSteps": [1, 2]}}, "tu": {}, "entry-point": {}}
+        }
+        html_out = render_html(runs)
+        self.assertIn('class="logtoggle"', html_out)
+        self.assertIn('type="checkbox"', html_out)
+        # the toggle script computes a logarithmic y (self-contained, no src)
+        self.assertIn("Math.log", html_out)
+        self.assertNotIn("<script src", html_out)
+
+
 if __name__ == "__main__":
     unittest.main()

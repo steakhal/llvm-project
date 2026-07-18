@@ -44,8 +44,10 @@ def svg_chart(
 ) -> str:
     """One candlestick chart: x-axis lists ``entities``; at each entity, one
     candle per run (color-coded), overlaid. ``series_by_run`` maps a run name to
-    its ``{entity: Candle}``. Candles are drawn on a shared linear y-scale
-    (0..max)."""
+    its ``{entity: Candle}``. Candles are drawn on a linear y-scale (0..max) by
+    default; each candle carries its raw five-number values (``data-*``) and the
+    chart carries its geometry (``data-ph``/``data-pt``/``data-ymax``) so the
+    inline log-toggle script can recompute y client-side."""
     runs = list(series_by_run.keys())
     all_candles = [c for r in runs for c in series_by_run[r].values() if c is not None]
     ymax = max((c.max for c in all_candles), default=1.0) or 1.0
@@ -59,7 +61,8 @@ def svg_chart(
 
     parts: List[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
-        f'height="{height}" class="chart">',
+        f'height="{height}" class="chart" data-ph="{_PLOT_H}" '
+        f'data-pt="{_PAD_TOP}" data-ymax="{ymax:g}">',
         f'<text x="{_PAD_LEFT}" y="14" class="title">{html.escape(title)}</text>',
         # y-axis min/max ticks
         f'<text x="4" y="{y(ymax):.1f}" class="tick">{ymax:g}</text>',
@@ -76,26 +79,33 @@ def svg_chart(
                 continue
             cx = slot_x + 12 + ri * (_CANDLE_W + 4)
             color = _color(ri)
+            mid = cx + _CANDLE_W / 2
+            # Raw values on the group so the log-toggle script can reposition.
+            parts.append(
+                f'<g class="candle" data-lo="{candle.min:g}" data-q1="{candle.q1:g}" '
+                f'data-md="{candle.median:g}" data-q3="{candle.q3:g}" '
+                f'data-hi="{candle.max:g}">'
+            )
             # wick (min..max)
             parts.append(
-                f'<line x1="{cx + _CANDLE_W / 2:.1f}" y1="{y(candle.max):.1f}" '
-                f'x2="{cx + _CANDLE_W / 2:.1f}" y2="{y(candle.min):.1f}" '
-                f'stroke="{color}"/>'
+                f'<line class="wick" x1="{mid:.1f}" y1="{y(candle.max):.1f}" '
+                f'x2="{mid:.1f}" y2="{y(candle.min):.1f}" stroke="{color}"/>'
             )
             # box (q1..q3)
             box_top = y(candle.q3)
             box_h = max(1.0, y(candle.q1) - y(candle.q3))
             parts.append(
-                f'<rect x="{cx:.1f}" y="{box_top:.1f}" width="{_CANDLE_W}" '
-                f'height="{box_h:.1f}" fill="{color}" fill-opacity="0.35" '
-                f'stroke="{color}"/>'
+                f'<rect class="box" x="{cx:.1f}" y="{box_top:.1f}" '
+                f'width="{_CANDLE_W}" height="{box_h:.1f}" fill="{color}" '
+                f'fill-opacity="0.35" stroke="{color}"/>'
             )
             # median tick
             parts.append(
-                f'<line x1="{cx:.1f}" y1="{y(candle.median):.1f}" '
+                f'<line class="median" x1="{cx:.1f}" y1="{y(candle.median):.1f}" '
                 f'x2="{cx + _CANDLE_W:.1f}" y2="{y(candle.median):.1f}" '
                 f'stroke="{color}" stroke-width="2"/>'
             )
+            parts.append("</g>")
         # x label (truncated), rotated for density
         label = entity if len(entity) <= 28 else "…" + entity[-27:]
         lx = slot_x + slot_w / 2
@@ -131,6 +141,7 @@ summary { cursor: pointer; font-family: monospace; }
 .title { font-size: 12px; font-weight: bold; }
 .tick, .xlabel, .legend { font-size: 10px; fill: #555; }
 .axis { stroke: #ccc; }
+.logtoggle { font-size: 11px; margin-left: 0.5rem; cursor: pointer; color: #555; }
 """
 
 # Inline (self-contained) script: link horizontal scrolling of all charts that
@@ -157,6 +168,44 @@ _SYNC_SCRIPT = """
     });
   }
   ['run', 'tu', 'entry-point'].forEach(link);
+})();
+</script>
+"""
+
+# Inline (self-contained) script: each chart's "log scale" checkbox recomputes
+# its candles' y-coordinates client-side. Python renders the linear scale; the
+# raw five-number values live on each `.candle` (data-lo/q1/md/q3/hi) and the
+# chart geometry on the `<svg>` (data-ph/pt/ymax). Log uses log1p so zeros map to
+# the baseline. Unchecking restores linear.
+_LOG_SCRIPT = """
+<script>
+(function () {
+  function rescale(svg, useLog) {
+    var ph = +svg.dataset.ph, pt = +svg.dataset.pt, ymax = +svg.dataset.ymax || 1;
+    function Y(v) {
+      if (useLog) return pt + ph - (Math.log(v + 1) / Math.log(ymax + 1)) * ph;
+      return pt + ph - (v / ymax) * ph;
+    }
+    svg.querySelectorAll('.candle').forEach(function (g) {
+      var d = g.dataset;
+      var wick = g.querySelector('.wick'),
+          box = g.querySelector('.box'),
+          med = g.querySelector('.median');
+      wick.setAttribute('y1', Y(+d.hi).toFixed(1));
+      wick.setAttribute('y2', Y(+d.lo).toFixed(1));
+      var yt = Y(+d.q3), yb = Y(+d.q1);
+      box.setAttribute('y', yt.toFixed(1));
+      box.setAttribute('height', Math.max(1, yb - yt).toFixed(1));
+      med.setAttribute('y1', Y(+d.md).toFixed(1));
+      med.setAttribute('y2', Y(+d.md).toFixed(1));
+    });
+  }
+  document.querySelectorAll('.logtoggle input').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      var svg = cb.closest('details').querySelector('svg');
+      if (svg) rescale(svg, cb.checked);
+    });
+  });
 })();
 </script>
 """
@@ -225,6 +274,7 @@ def render_html(runs: Dict[str, Aggregated]) -> str:
             chart = svg_chart(ordered, series_by_run, title=metric)
             body.append(
                 f"<details><summary>{html.escape(metric)}</summary>"
+                '<label class="logtoggle"><input type="checkbox"> log scale</label>'
                 f'<div class="chartbox" data-sync="{level}">{chart}</div></details>'
             )
 
@@ -236,5 +286,6 @@ def render_html(runs: Dict[str, Aggregated]) -> str:
         f'<div class="toc">{"".join(toc)}</div>'
         f'{"".join(body)}'
         f"{_SYNC_SCRIPT}"
+        f"{_LOG_SCRIPT}"
         "</body></html>"
     )
