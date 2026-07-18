@@ -3,7 +3,9 @@ from __future__ import annotations
 import html
 from typing import Dict, List
 
-from aqb.benchmark import Aggregated, Candle, candlestick
+import pandas as pd
+
+from aqb.benchmark import Candle
 
 # Distinct, print-safe colors assigned to runs by order.
 _PALETTE = [
@@ -211,66 +213,56 @@ _LOG_SCRIPT = """
 """
 
 
-def _metric_union(runs: Dict[str, Aggregated], level: str) -> List[str]:
-    metrics = set()
-    for agg in runs.values():
-        for entity_metrics in agg.get(level, {}).values():
-            metrics.update(entity_metrics.keys())
-    return sorted(metrics)
-
-
-def _ordered_entities(runs: Dict[str, Aggregated], level: str) -> List[str]:
-    """All entities at ``level`` (union across runs), ordered by the OLDEST
-    run's ``ORDER_METRIC`` (median) descending; entities without that metric in
-    the oldest run sort last, by name. ``runs`` must be ordered oldest-first
-    (dict insertion order), which ``cmd_plot`` guarantees by sorting on
-    ``metadata.created``."""
-    entities = set()
-    for agg in runs.values():
-        entities.update(agg.get(level, {}).keys())
-
-    oldest = next(iter(runs.values()), {})
-    old_level = oldest.get(level, {})
-    medians = {}
-    for entity in entities:
-        candle = candlestick(old_level.get(entity, {}).get(ORDER_METRIC, []))
-        if candle is not None:
-            medians[entity] = candle.median
-
+def _ordered_entities(cf: pd.DataFrame, oldest_run: str) -> List[str]:
+    """Entities in a level's candle frame ``cf``, ordered by ``oldest_run``'s
+    ``ORDER_METRIC`` median descending; entities without that metric in the
+    oldest run sort last, by name. One order per level, reused across every
+    metric chart so the columns line up."""
+    entities = list(cf["entity"].unique())
+    pt = cf[(cf["run"] == oldest_run) & (cf["metric"] == ORDER_METRIC)]
+    medians = dict(zip(pt["entity"], pt["median"]))
     return sorted(
         entities,
-        key=lambda e: (0 if e in medians else 1, -medians.get(e, 0.0), e),
+        key=lambda e: (0 if e in medians else 1, -float(medians.get(e, 0.0)), e),
     )
 
 
-def render_html(runs: Dict[str, Aggregated]) -> str:
+def _series_by_run(
+    sub: pd.DataFrame, run_order: List[str]
+) -> Dict[str, Dict[str, Candle]]:
+    """From one metric's candle rows, build ``{run: {entity: Candle}}`` in
+    ``run_order`` (so candle colors stay stable across charts)."""
+    series: Dict[str, Dict[str, Candle]] = {run: {} for run in run_order}
+    for row in sub.itertuples(index=False):
+        series.setdefault(row.run, {})[row.entity] = Candle(
+            row.min, row.q1, row.median, row.q3, row.max, int(row.n)
+        )
+    return series
+
+
+def render_html(frames: Dict[str, pd.DataFrame], run_order: List[str]) -> str:
     """Render one self-contained HTML bundling candlestick charts for every
     metric at all three granularities (per-run, per-TU, per-entry-point),
-    overlaying every run in ``runs``. No external assets."""
+    overlaying the runs in ``run_order``. ``frames`` maps each level to its
+    candle DataFrame (see ``benchmark.candle_frames``). No external assets."""
     body: List[str] = []
     toc: List[str] = []
+    oldest_run = run_order[0] if run_order else ""
 
     for level, heading in _LEVELS:
         anchor = f"level-{level}"
         toc.append(f'<a href="#{anchor}">{html.escape(heading)}</a>')
         body.append(f'<h2 id="{anchor}">{html.escape(heading)}</h2>')
-        metrics = _metric_union(runs, level)
-        if not metrics:
+        cf = frames.get(level)
+        if cf is None or cf.empty:
             body.append("<p><em>no data</em></p>")
             continue
         # One entity order per level (by the oldest run's ORDER_METRIC), and the
         # SAME full entity list for every metric chart at this level — so slots
         # line up column-for-column and horizontal scrolling can be synced.
-        ordered = _ordered_entities(runs, level)
-        for metric in metrics:
-            series_by_run: Dict[str, Dict[str, Candle]] = {}
-            for run_name, agg in runs.items():
-                level_data = agg.get(level, {})
-                series_by_run[run_name] = {
-                    entity: candlestick(level_data.get(entity, {}).get(metric, []))
-                    for entity in ordered
-                    if metric in level_data.get(entity, {})
-                }
+        ordered = _ordered_entities(cf, oldest_run)
+        for metric in sorted(cf["metric"].unique()):
+            series_by_run = _series_by_run(cf[cf["metric"] == metric], run_order)
             chart = svg_chart(ordered, series_by_run, title=metric)
             body.append(
                 f"<details><summary>{html.escape(metric)}</summary>"
@@ -278,7 +270,7 @@ def render_html(runs: Dict[str, Aggregated]) -> str:
                 f'<div class="chartbox" data-sync="{level}">{chart}</div></details>'
             )
 
-    run_names = ", ".join(html.escape(r) for r in runs)
+    run_names = ", ".join(html.escape(r) for r in run_order)
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         f"<title>AQB benchmark plot</title><style>{_STYLE}</style></head><body>"

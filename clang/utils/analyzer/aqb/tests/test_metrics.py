@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import unittest
 
-from aqb.metrics import dedup_entry_points, parse_entry_point_csv, parse_tu_stats_json
+import pandas as pd
+
+from aqb.metrics import (
+    dedup_entry_points,
+    parse_entry_point_csv,
+    parse_tu_stats_json,
+    to_sample_records,
+)
 
 CSV = (
     "USR,File,DebugName,CFGSize,PathRunningTime,NumSteps\n"
@@ -12,30 +19,45 @@ CSV = (
 
 
 class EntryPointCsvTest(unittest.TestCase):
-    def test_parses_rows_and_stats(self):
-        rows = parse_entry_point_csv(CSV)
-        self.assertEqual([r.usr for r in rows], ["c:@F@fib#i#", "c:@F@main#"])
-        fib = rows[0]
-        self.assertEqual(fib.file, "/src/fib.c")
-        self.assertEqual(fib.debug_name, "fib")
-        self.assertEqual(fib.stats["CFGSize"], 5)
-        self.assertEqual(fib.stats["PathRunningTime"], 12)
-        self.assertEqual(fib.stats["NumSteps"], 120)
+    def test_parses_wide_frame(self):
+        df = parse_entry_point_csv(CSV)
+        self.assertEqual(list(df["USR"]), ["c:@F@fib#i#", "c:@F@main#"])
+        self.assertEqual(list(df.columns)[:3], ["USR", "File", "DebugName"])
+        fib = df.iloc[0]
+        self.assertEqual(fib["File"], "/src/fib.c")
+        self.assertEqual(fib["DebugName"], "fib")
+        self.assertEqual(int(fib["CFGSize"]), 5)
+        self.assertEqual(int(fib["NumSteps"]), 120)
 
-    def test_empty_cells_are_omitted_from_stats(self):
-        rows = parse_entry_point_csv(CSV)
-        main = rows[1]
-        self.assertNotIn("CFGSize", main.stats)
-        self.assertNotIn("PathRunningTime", main.stats)
-        self.assertEqual(main.stats["NumSteps"], 240)
+    def test_empty_cells_are_nan(self):
+        df = parse_entry_point_csv(CSV)
+        main = df.iloc[1]
+        self.assertTrue(pd.isna(main["CFGSize"]))
+        self.assertTrue(pd.isna(main["PathRunningTime"]))
+        self.assertEqual(int(main["NumSteps"]), 240)
 
-    def test_empty_input_yields_no_rows(self):
-        self.assertEqual(parse_entry_point_csv(""), [])
+    def test_empty_input_yields_empty_frame(self):
+        df = parse_entry_point_csv("")
+        self.assertTrue(df.empty)
+        self.assertEqual(list(df.columns), ["USR", "File", "DebugName"])
 
     def test_dedup_keeps_first_per_usr(self):
-        rows = parse_entry_point_csv(CSV)
-        deduped = dedup_entry_points(rows + [rows[0]])
-        self.assertEqual([r.usr for r in deduped], ["c:@F@fib#i#", "c:@F@main#"])
+        df = parse_entry_point_csv(CSV)
+        dup = pd.concat([df, df.iloc[[0]]], ignore_index=True)
+        deduped = dedup_entry_points(dup)
+        self.assertEqual(list(deduped["USR"]), ["c:@F@fib#i#", "c:@F@main#"])
+
+    def test_to_sample_records_omits_nan_and_casts_int(self):
+        recs = to_sample_records(parse_entry_point_csv(CSV))
+        self.assertEqual(recs[0]["usr"], "c:@F@fib#i#")
+        self.assertEqual(recs[0]["file"], "/src/fib.c")
+        self.assertEqual(recs[0]["stats"]["CFGSize"], 5)
+        self.assertEqual(recs[0]["stats"]["NumSteps"], 120)
+        # main's empty cells are omitted; present ones are ints.
+        self.assertNotIn("CFGSize", recs[1]["stats"])
+        self.assertNotIn("PathRunningTime", recs[1]["stats"])
+        self.assertEqual(recs[1]["stats"]["NumSteps"], 240)
+        self.assertIsInstance(recs[1]["stats"]["NumSteps"], int)
 
 
 TU_STATS_JSON = (
@@ -56,8 +78,6 @@ class TuStatsJsonTest(unittest.TestCase):
         self.assertEqual(parse_tu_stats_json("{}"), {})
 
     def test_preserves_float_timer_values(self):
-        # PrintStatisticsJSON appends TimerGroup float values into the same
-        # object; they must not be truncated to int.
         text = (
             "{\n"
             '\t"CoreEngine.NumSteps": 240,\n'
@@ -67,3 +87,7 @@ class TuStatsJsonTest(unittest.TestCase):
         stats = parse_tu_stats_json(text)
         self.assertEqual(stats["CoreEngine.NumSteps"], 240)
         self.assertAlmostEqual(stats["time.analyzer.exprengine.wall"], 0.125)
+
+
+if __name__ == "__main__":
+    unittest.main()

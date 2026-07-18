@@ -7,10 +7,9 @@ import os
 import sys
 from typing import Dict, List, Optional
 
-from aqb.benchmark import aggregate_samples, inner_join_runs
+from aqb.benchmark import candle_frames, frame_from_samples, inner_join_runs
 from aqb.diff import diff_runs, summarize, verdict
 from aqb.errors import ClangBuildError, RunNotFoundError, RuntimeCommandError
-from aqb.metrics import EntryPointMetrics
 from aqb.normalize import Finding
 from aqb.plot import render_html
 from aqb.run import perform_run
@@ -313,8 +312,8 @@ def cmd_diff(args: argparse.Namespace) -> int:
 
 
 def _load_samples(store: RunStore, run_id: str):
-    """Load a benchmark run's ``metrics/samples.json`` into the per-iteration
-    list of ``EntryPointMetrics`` that ``aggregate_samples`` consumes."""
+    """Load a benchmark run's ``metrics/samples.json`` per-iteration records
+    (the list of entry-point dicts that ``frame_from_samples`` consumes)."""
     path = os.path.join(store.runs_dir, run_id, "metrics", "samples.json")
     if not os.path.isfile(path):
         raise RunNotFoundError(
@@ -322,9 +321,7 @@ def _load_samples(store: RunStore, run_id: str):
         )
     with open(path) as handle:
         data = json.load(handle)
-    return [
-        [EntryPointMetrics(**ep) for ep in iteration] for iteration in data["samples"]
-    ]
+    return data["samples"]
 
 
 def cmd_plot(args: argparse.Namespace) -> int:
@@ -341,10 +338,11 @@ def cmd_plot(args: argparse.Namespace) -> int:
         print(f"aqb plot: {exc}", file=sys.stderr)
         return 1
 
-    # Inner-join the runs by (file, USR): drops transient CMake probe artifacts
-    # (TryCompile/compiler-id paths differ every build) and keeps multi-run
-    # comparisons apples-to-apples. Log what was dropped.
-    filtered, dropped = inner_join_runs(samples_by_run)
+    # Tidy long frame -> inner-join by (file, USR) -> per-level candle frames.
+    # The join drops transient CMake probe artifacts (TryCompile/compiler-id
+    # paths differ every build) and keeps multi-run comparisons apples-to-apples.
+    frame = frame_from_samples(samples_by_run)
+    frame, dropped = inner_join_runs(frame)
     if dropped:
         print(
             f"aqb plot: dropped {len(dropped)} entry point(s) "
@@ -354,12 +352,12 @@ def cmd_plot(args: argparse.Namespace) -> int:
         for file, usr in dropped:
             print(f"  {file}\t{usr}", file=sys.stderr)
 
-    runs = {rid: aggregate_samples(filtered[rid]) for rid in samples_by_run}
+    frames = candle_frames(frame)
     with open(args.output, "w") as handle:
-        handle.write(render_html(runs))
+        handle.write(render_html(frames, run_order=list(samples_by_run)))
     out_abs = os.path.abspath(args.output)
     print(out_abs)
-    print(f"wrote {out_abs} ({len(runs)} run(s))", file=sys.stderr)
+    print(f"wrote {out_abs} ({len(samples_by_run)} run(s))", file=sys.stderr)
     return 0
 
 

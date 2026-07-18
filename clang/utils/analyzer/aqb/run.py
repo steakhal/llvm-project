@@ -25,7 +25,7 @@ from aqb.metadata import (
     Metadata,
     ProjectProvenance,
 )
-from aqb.metrics import dedup_entry_points, parse_entry_point_csv
+from aqb.metrics import dedup_entry_points, parse_entry_point_csv, to_sample_records
 from aqb.normalize import Finding, load_findings
 from aqb.runtime import Runtime
 from aqb.runid import new_run_id
@@ -175,8 +175,8 @@ def perform_run(
             _analyze(ep_csv_dir=f"{PROJECTS_MOUNT}/{EP_CSV_DIR_NAME}/iter-{i}")
             iter_dir = os.path.join(work_dir, EP_CSV_DIR_NAME, f"iter-{i}")
             merged = merge_entry_point_csvs(sorted(glob.glob(f"{iter_dir}/*.csv")))
-            eps = dedup_entry_points(parse_entry_point_csv("\n".join(merged)))
-            samples.append([dataclasses.asdict(ep) for ep in eps])
+            df = dedup_entry_points(parse_entry_point_csv("\n".join(merged)))
+            samples.append(to_sample_records(df))
     else:
         _analyze()
         for name in names:

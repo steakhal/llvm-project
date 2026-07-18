@@ -2,84 +2,83 @@ from __future__ import annotations
 
 import unittest
 
-from aqb.benchmark import aggregate_samples, candlestick, inner_join_runs
-from aqb.metrics import EntryPointMetrics
+from aqb.benchmark import candle_frames, frame_from_samples, inner_join_runs
 
 
-class CandlestickTest(unittest.TestCase):
-    def test_five_number_summary(self):
-        c = candlestick([1, 2, 3, 4, 5])
-        self.assertEqual(c.min, 1)
-        self.assertEqual(c.max, 5)
-        self.assertEqual(c.median, 3)
-        self.assertEqual(c.n, 5)
-        self.assertLessEqual(c.q1, c.median)
-        self.assertLessEqual(c.median, c.q3)
-
-    def test_single_sample_collapses(self):
-        c = candlestick([7])
-        self.assertEqual((c.min, c.q1, c.median, c.q3, c.max), (7, 7, 7, 7, 7))
-        self.assertEqual(c.n, 1)
-
-    def test_empty_is_none(self):
-        self.assertIsNone(candlestick([]))
+def _ep(usr, file, **stats):
+    return {"usr": usr, "file": file, "debug_name": usr, "stats": stats}
 
 
-class AggregateTest(unittest.TestCase):
-    def _ep(self, usr, file, **stats):
-        return EntryPointMetrics(usr=usr, file=file, debug_name=usr, stats=stats)
+class FrameFromSamplesTest(unittest.TestCase):
+    def test_long_tidy_shape(self):
+        sbr = {"A": [[_ep("a", "f1.c", NumSteps=10, CFGSize=3)]]}
+        df = frame_from_samples(sbr)
+        self.assertEqual(len(df), 2)  # one row per (metric)
+        row = df[df["metric"] == "NumSteps"].iloc[0]
+        self.assertEqual(row["run"], "A")
+        self.assertEqual(row["iteration"], 0)
+        self.assertEqual(row["usr"], "a")
+        self.assertEqual(row["file"], "f1.c")
+        self.assertEqual(row["value"], 10)
 
+
+class CandleFramesTest(unittest.TestCase):
     def test_three_levels(self):
-        it0 = [self._ep("a", "f1.c", NumSteps=10), self._ep("b", "f2.c", NumSteps=5)]
-        it1 = [self._ep("a", "f1.c", NumSteps=20), self._ep("b", "f2.c", NumSteps=5)]
-        agg = aggregate_samples([it0, it1])
+        # 2 iterations, 2 entry points across 2 files, one run.
+        sbr = {
+            "A": [
+                [_ep("a", "f1.c", NumSteps=10), _ep("b", "f2.c", NumSteps=5)],
+                [_ep("a", "f1.c", NumSteps=20), _ep("b", "f2.c", NumSteps=5)],
+            ]
+        }
+        frames = candle_frames(frame_from_samples(sbr))
 
         # per-run: sum over all EPs per iteration -> [15, 25]
-        self.assertEqual(agg["run"]["(all)"]["NumSteps"], [15, 25])
-        # per-TU: file f1.c -> [10, 20]
-        self.assertEqual(agg["tu"]["f1.c"]["NumSteps"], [10, 20])
+        run = frames["run"]
+        r = run[run["metric"] == "NumSteps"].iloc[0]
+        self.assertEqual((r["min"], r["median"], r["max"], r["n"]), (15, 20, 25, 2))
+
+        # per-TU: f1.c -> [10, 20]
+        tu = frames["tu"]
+        f1 = tu[(tu["entity"] == "f1.c") & (tu["metric"] == "NumSteps")].iloc[0]
+        self.assertEqual((f1["min"], f1["max"]), (10, 20))
+
         # per-entry-point: USR a -> [10, 20]
-        self.assertEqual(agg["entry-point"]["a"]["NumSteps"], [10, 20])
+        ep = frames["entry-point"]
+        a = ep[(ep["entity"] == "a") & (ep["metric"] == "NumSteps")].iloc[0]
+        self.assertEqual((a["min"], a["max"]), (10, 20))
 
 
 class InnerJoinTest(unittest.TestCase):
-    def _ep(self, usr, file):
-        return EntryPointMetrics(
-            usr=usr, file=file, debug_name=usr, stats={"NumSteps": 1}
-        )
-
     def test_keeps_common_drops_the_rest(self):
-        # (real.c, foo) is in both runs; each run also has a probe with a
-        # build-unique path that the other run doesn't share.
-        runs = {
+        sbr = {
             "A": [
-                [self._ep("foo", "real.c"), self._ep("main", "TryCompile-AAA/src.c")]
+                [
+                    _ep("foo", "real.c", NumSteps=1),
+                    _ep("main", "TryCompile-AAA/src.c", NumSteps=1),
+                ]
             ],
             "B": [
-                [self._ep("foo", "real.c"), self._ep("main", "TryCompile-BBB/src.c")]
+                [
+                    _ep("foo", "real.c", NumSteps=1),
+                    _ep("main", "TryCompile-BBB/src.c", NumSteps=1),
+                ]
             ],
         }
-        filtered, dropped = inner_join_runs(runs)
-        # Only the shared (real.c, foo) survives in each run.
-        self.assertEqual(
-            [(ep.file, ep.usr) for ep in filtered["A"][0]], [("real.c", "foo")]
-        )
-        self.assertEqual(
-            [(ep.file, ep.usr) for ep in filtered["B"][0]], [("real.c", "foo")]
-        )
-        # The two probe keys are reported as dropped (sorted).
+        df, dropped = inner_join_runs(frame_from_samples(sbr))
+        self.assertEqual(set(zip(df["file"], df["usr"])), {("real.c", "foo")})
         self.assertEqual(
             dropped,
             [("TryCompile-AAA/src.c", "main"), ("TryCompile-BBB/src.c", "main")],
         )
 
     def test_single_run_drops_nothing(self):
-        runs = {
-            "A": [[self._ep("foo", "real.c"), self._ep("main", "TryCompile-X/s.c")]]
+        sbr = {
+            "A": [[_ep("foo", "real.c", NumSteps=1), _ep("main", "T/s.c", NumSteps=1)]]
         }
-        filtered, dropped = inner_join_runs(runs)
+        df, dropped = inner_join_runs(frame_from_samples(sbr))
         self.assertEqual(dropped, [])
-        self.assertEqual(len(filtered["A"][0]), 2)
+        self.assertEqual(len(set(zip(df["file"], df["usr"]))), 2)
 
 
 if __name__ == "__main__":

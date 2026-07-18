@@ -1,61 +1,53 @@
 from __future__ import annotations
 
-import csv
 import io
 import json
-from dataclasses import dataclass
-from typing import Dict, Iterable, List
+from typing import Dict, List
+
+import pandas as pd
 
 # The fixed leading columns of the per-entry-point CSV (see AQB-design.rst /
 # EntryPointStats.cpp dumpStatsAsCSV).
 EP_CSV_FIXED_COLUMNS = ("USR", "File", "DebugName")
 
 
-@dataclass
-class EntryPointMetrics:
-    """Per-entry-point statistics for one analyzed function.
-
-    ``stats`` holds only the columns that had a value; unset ``UnsignedEPStat``
-    columns (empty CSV cells) are omitted.
-    """
-
-    usr: str
-    file: str
-    debug_name: str
-    stats: Dict[str, int]
+def parse_entry_point_csv(text: str) -> pd.DataFrame:
+    """Parse ``dump-entry-point-stats-to-csv`` output into a wide DataFrame: one
+    row per entry point, columns ``USR``, ``File``, ``DebugName`` plus one per
+    stat. Empty cells become ``NaN`` (an unset ``UnsignedEPStat``). Empty input
+    yields an empty frame with just the fixed columns."""
+    text = text.strip()
+    if not text:
+        return pd.DataFrame(columns=list(EP_CSV_FIXED_COLUMNS))
+    return pd.read_csv(io.StringIO(text))
 
 
-def parse_entry_point_csv(text: str) -> List[EntryPointMetrics]:
-    """Parse ``dump-entry-point-stats-to-csv`` output into a list of rows."""
-    rows = list(csv.reader(io.StringIO(text)))
-    if not rows:
-        return []
-    stat_names = rows[0][len(EP_CSV_FIXED_COLUMNS) :]
-    result: List[EntryPointMetrics] = []
-    for row in rows[1:]:
-        if not row:
-            continue
-        usr, file, debug_name = row[0], row[1], row[2]
-        stats: Dict[str, int] = {}
-        for name, cell in zip(stat_names, row[len(EP_CSV_FIXED_COLUMNS) :]):
-            if cell != "":
-                stats[name] = int(cell)
-        result.append(
-            EntryPointMetrics(usr=usr, file=file, debug_name=debug_name, stats=stats)
+def dedup_entry_points(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep one row per ``USR`` (first wins) so a header analyzed through many
+    TUs is not counted multiple times."""
+    if df.empty:
+        return df
+    return df.drop_duplicates(subset="USR", keep="first").reset_index(drop=True)
+
+
+def to_sample_records(df: pd.DataFrame) -> List[dict]:
+    """Serialize an entry-point DataFrame to the ``samples.json`` record shape
+    (``{usr, file, debug_name, stats}``), omitting unset (NaN) stats and coercing
+    present stats to ``int``."""
+    metric_cols = [c for c in df.columns if c not in EP_CSV_FIXED_COLUMNS]
+    records: List[dict] = []
+    for row in df.itertuples(index=False):
+        d = row._asdict()
+        stats = {m: int(d[m]) for m in metric_cols if pd.notna(d[m])}
+        records.append(
+            {
+                "usr": d["USR"],
+                "file": d["File"],
+                "debug_name": d["DebugName"],
+                "stats": stats,
+            }
         )
-    return result
-
-
-def dedup_entry_points(
-    rows: Iterable[EntryPointMetrics],
-) -> List[EntryPointMetrics]:
-    """Keep one row per USR (first wins) so a header analyzed through many TUs
-    is not counted multiple times."""
-    seen: Dict[str, EntryPointMetrics] = {}
-    for row in rows:
-        if row.usr not in seen:
-            seen[row.usr] = row
-    return list(seen.values())
+    return records
 
 
 def parse_tu_stats_json(text: str) -> Dict[str, float]:

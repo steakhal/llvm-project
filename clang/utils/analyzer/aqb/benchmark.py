@@ -1,101 +1,98 @@
 from __future__ import annotations
 
-import statistics
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from collections import namedtuple
+from typing import Dict, List, Tuple
 
-from aqb.metrics import EntryPointMetrics
+import pandas as pd
 
 RUN_ENTITY = "(all)"
+LEVELS = ("run", "tu", "entry-point")
+
+# The tidy long-form columns AQB manipulates benchmark data in.
+SAMPLE_COLUMNS = ["run", "iteration", "usr", "file", "debug_name", "metric", "value"]
+
+# Lightweight value carrier handed to the SVG renderer (data manipulation is all
+# pandas; this is just the drawing interface).
+Candle = namedtuple("Candle", "min q1 median q3 max n")
 
 
-@dataclass
-class Candle:
-    min: float
-    q1: float
-    median: float
-    q3: float
-    max: float
-    n: int
+def frame_from_samples(samples_by_run: Dict[str, List[List[dict]]]) -> pd.DataFrame:
+    """Build one tidy long DataFrame from stored ``samples.json`` records across
+    runs: a row per ``(run, iteration, usr, file, debug_name, metric, value)``.
+    Preserves ``samples_by_run`` order in the ``run`` column's categories."""
+    records = []
+    for run, iterations in samples_by_run.items():
+        for i, iteration in enumerate(iterations):
+            for ep in iteration:
+                for metric, value in ep["stats"].items():
+                    records.append(
+                        (run, i, ep["usr"], ep["file"], ep["debug_name"], metric, value)
+                    )
+    return pd.DataFrame.from_records(records, columns=SAMPLE_COLUMNS)
 
 
-def candlestick(samples: List[float]) -> Optional[Candle]:
-    """Five-number summary of a sample list; None if empty. A single sample
-    collapses all five numbers to that value (``statistics.quantiles`` needs
-    n>=2)."""
-    if not samples:
-        return None
-    data = sorted(samples)
-    lo, hi, med = data[0], data[-1], statistics.median(data)
-    if len(data) == 1:
-        return Candle(lo, lo, lo, lo, lo, 1)
-    q1, _, q3 = statistics.quantiles(data, n=4, method="inclusive")
-    return Candle(lo, q1, med, q3, hi, len(data))
-
-
-# level -> entity -> metric -> [one value per iteration]
-Aggregated = Dict[str, Dict[str, Dict[str, List[float]]]]
-
-
-def aggregate_samples(iterations: List[List[EntryPointMetrics]]) -> Aggregated:
-    """Aggregate per-iteration entry-point metrics up to per-run, per-TU (by
-    file), and per-entry-point (by USR). Each leaf is one value per iteration
-    (summed over the relevant entry points for run/TU; the USR's own value for
-    entry-point). A metric absent in an iteration simply contributes no sample
-    for that iteration at that level/entity."""
-    agg: Aggregated = {"run": {RUN_ENTITY: {}}, "tu": {}, "entry-point": {}}
-
-    for ep_list in iterations:
-        run_totals: Dict[str, float] = {}
-        tu_totals: Dict[str, Dict[str, float]] = {}
-        for ep in ep_list:
-            for metric, value in ep.stats.items():
-                run_totals[metric] = run_totals.get(metric, 0) + value
-                tu_totals.setdefault(ep.file, {})
-                tu_totals[ep.file][metric] = tu_totals[ep.file].get(metric, 0) + value
-                epd = agg["entry-point"].setdefault(ep.usr, {})
-                epd.setdefault(metric, []).append(value)
-        for metric, total in run_totals.items():
-            agg["run"][RUN_ENTITY].setdefault(metric, []).append(total)
-        for file, metrics in tu_totals.items():
-            fd = agg["tu"].setdefault(file, {})
-            for metric, total in metrics.items():
-                fd.setdefault(metric, []).append(total)
-    return agg
-
-
-# run id -> per-iteration lists of EntryPointMetrics
-RunSamples = Dict[str, List[List[EntryPointMetrics]]]
-
-
-def inner_join_runs(
-    samples_by_run: RunSamples,
-) -> Tuple[RunSamples, List[Tuple[str, str]]]:
-    """Keep only ``(file, USR)`` entry points present in EVERY run (an inner
-    join across runs). Transient build artifacts — CMake ``TryCompile`` probes,
+def inner_join_runs(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[Tuple[str, str]]]:
+    """Keep only ``(file, USR)`` entry points present in EVERY run (an inner join
+    across runs). Transient build artifacts — CMake ``TryCompile`` probes,
     compiler-id/ABI checks — get a fresh random path each build, so they are
-    never shared across runs and fall out of the join. It also keeps multi-run
-    comparisons apples-to-apples: an entry point analyzed in only some runs is
-    dropped.
+    never shared across runs and fall out of the join; it also keeps multi-run
+    comparisons apples-to-apples.
 
-    Returns ``(filtered_by_run, dropped)`` where ``filtered_by_run`` preserves
-    the input order/keys and ``dropped`` is the sorted list of ``(file, USR)``
-    removed from at least one run (so the caller can log them)."""
-    if not samples_by_run:
-        return {}, []
+    Returns ``(filtered_df, dropped)`` where ``dropped`` is the sorted list of
+    ``(file, USR)`` removed from at least one run (so the caller can log them)."""
+    if df.empty:
+        return df, []
 
-    key_sets = []
-    for iterations in samples_by_run.values():
-        keys = {(ep.file, ep.usr) for iteration in iterations for ep in iteration}
-        key_sets.append(keys)
+    n_runs = df["run"].nunique()
+    runs_per_key = df.groupby(["file", "usr"])["run"].nunique()
+    common = set(runs_per_key[runs_per_key == n_runs].index)
+    dropped = sorted(set(runs_per_key.index) - common)
 
-    common = set.intersection(*key_sets)
-    dropped = sorted(set().union(*key_sets) - common)
+    keys = list(zip(df["file"], df["usr"]))
+    mask = pd.Series([k in common for k in keys], index=df.index)
+    return df[mask].reset_index(drop=True), dropped
 
-    filtered: RunSamples = {}
-    for run_id, iterations in samples_by_run.items():
-        filtered[run_id] = [
-            [ep for ep in iteration if (ep.file, ep.usr) in common]
-            for iteration in iterations
+
+def _level_values(df: pd.DataFrame, level: str) -> pd.DataFrame:
+    """Per-``(run, entity, metric, iteration)`` value for a granularity: the
+    USR's own value (entry-point), or the sum over entry points sharing a file
+    (tu) / over all entry points (run)."""
+    if level == "entry-point":
+        return df.rename(columns={"usr": "entity"})[
+            ["run", "entity", "metric", "iteration", "value"]
         ]
-    return filtered, dropped
+    if level == "tu":
+        out = df.groupby(["run", "file", "metric", "iteration"], as_index=False)[
+            "value"
+        ].sum()
+        return out.rename(columns={"file": "entity"})
+    # run
+    out = df.groupby(["run", "metric", "iteration"], as_index=False)["value"].sum()
+    out["entity"] = RUN_ENTITY
+    return out[["run", "entity", "metric", "iteration", "value"]]
+
+
+def candle_frames(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+    """For each granularity, the five-number summary per ``(run, entity, metric)``
+    over its per-iteration values. Columns: ``run, entity, metric, min, q1,
+    median, q3, max, n``. Uses pandas quantiles (linear interpolation == the
+    inclusive method), so a single sample collapses the box to a point."""
+    empty = pd.DataFrame(
+        columns=["run", "entity", "metric", "min", "q1", "median", "q3", "max", "n"]
+    )
+    frames: Dict[str, pd.DataFrame] = {}
+    for level in LEVELS:
+        values = _level_values(df, level)
+        if values.empty:
+            frames[level] = empty.copy()
+            continue
+        grouped = values.groupby(["run", "entity", "metric"])["value"]
+        frames[level] = grouped.agg(
+            min="min",
+            q1=lambda s: s.quantile(0.25),
+            median="median",
+            q3=lambda s: s.quantile(0.75),
+            max="max",
+            n="count",
+        ).reset_index()
+    return frames
