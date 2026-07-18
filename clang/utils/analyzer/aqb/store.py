@@ -45,9 +45,13 @@ class RunStore:
         )
 
     def resolve(self, prefix: str) -> str:
+        # Accept a run path (e.g. what `aqb run` prints to stderr) or a bare id/
+        # prefix: run ids never contain a path separator, so reducing to the
+        # final path component is always safe and lets users paste either.
+        prefix = os.path.basename(prefix.rstrip("/")) or prefix
         matches = [r for r in self.list_runs() if r.startswith(prefix)]
         if len(matches) == 1:
             return matches[0]
         if not matches:
-            raise RunNotFoundError(prefix)
+            raise RunNotFoundError(f"no run matching {prefix!r} (see 'aqb list')")
         raise RunNotFoundError(f"ambiguous run id prefix: {prefix} -> {matches}")

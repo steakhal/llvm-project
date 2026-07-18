@@ -255,8 +255,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     except (ClangBuildError, RuntimeCommandError) as exc:
         print(f"aqb run: {exc}", file=sys.stderr)
         return 1
-    print(os.path.basename(run_path))
-    print(run_path, file=sys.stderr)
+    run_id = os.path.basename(run_path)
+    print(run_id)
+    print(f"stored at {run_path}", file=sys.stderr)
+    if kind == "benchmark":
+        print(f"plot with: aqb plot {run_id}", file=sys.stderr)
     return 0
 
 
@@ -336,7 +339,9 @@ def cmd_plot(args: argparse.Namespace) -> int:
         return 1
     with open(args.output, "w") as handle:
         handle.write(render_html(runs))
-    print(args.output)
+    out_abs = os.path.abspath(args.output)
+    print(out_abs)
+    print(f"wrote {out_abs} ({len(runs)} run(s))", file=sys.stderr)
     return 0
 
 

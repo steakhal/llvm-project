@@ -46,6 +46,14 @@ class RunStoreTest(unittest.TestCase):
             store.create_run(_meta("r-20260716-aaaa"))
             self.assertEqual(store.resolve("r-2026"), "r-20260716-aaaa")
 
+    def test_resolve_accepts_a_run_path(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = RunStore(root)
+            store.create_run(_meta("r-20260716-aaaa"))
+            full = os.path.join(store.runs_dir, "r-20260716-aaaa")
+            self.assertEqual(store.resolve(full), "r-20260716-aaaa")
+            self.assertEqual(store.resolve(full + "/"), "r-20260716-aaaa")
+
     def test_resolve_missing_raises(self):
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaises(RunNotFoundError):

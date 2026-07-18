@@ -321,6 +321,19 @@ class PlotCliTest(unittest.TestCase):
             self.assertIn("<svg", html_out)
             self.assertIn("NumSteps", html_out)
 
+    def test_plot_accepts_a_run_path(self):
+        import os
+
+        with tempfile.TemporaryDirectory() as root:
+            store = RunStore(root)
+            self._make_benchmark_run(store, "b-1")
+            run_path = os.path.join(store.runs_dir, "b-1")  # full path, not the id
+            out_path = os.path.join(root, "plot.html")
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = main(["--home", root, "plot", run_path, "-o", out_path])
+            self.assertEqual(code, 0)
+            self.assertTrue(os.path.isfile(out_path))
+
     def test_plot_errors_on_non_benchmark_run(self):
         with tempfile.TemporaryDirectory() as root:
             store = RunStore(root)
