@@ -23,6 +23,11 @@ _LEVELS = [
     ("entry-point", "Per-entry-point"),
 ]
 
+# Entities in the per-TU / per-entry-point charts are ordered by this metric
+# (from the oldest run) so the busiest files/functions lead and the x-axis order
+# is stable across every metric's chart.
+ORDER_METRIC = "PathRunningTime"
+
 _PLOT_H = 200
 _PAD_LEFT = 44
 _PAD_TOP = 24
@@ -137,13 +142,34 @@ def _metric_union(runs: Dict[str, Aggregated], level: str) -> List[str]:
     return sorted(metrics)
 
 
-def _entity_union(runs: Dict[str, Aggregated], level: str, metric: str) -> List[str]:
+def _entity_has(
+    runs: Dict[str, Aggregated], level: str, entity: str, metric: str
+) -> bool:
+    return any(metric in agg.get(level, {}).get(entity, {}) for agg in runs.values())
+
+
+def _ordered_entities(runs: Dict[str, Aggregated], level: str) -> List[str]:
+    """All entities at ``level`` (union across runs), ordered by the OLDEST
+    run's ``ORDER_METRIC`` (median) descending; entities without that metric in
+    the oldest run sort last, by name. ``runs`` must be ordered oldest-first
+    (dict insertion order), which ``cmd_plot`` guarantees by sorting on
+    ``metadata.created``."""
     entities = set()
     for agg in runs.values():
-        for entity, entity_metrics in agg.get(level, {}).items():
-            if metric in entity_metrics:
-                entities.add(entity)
-    return sorted(entities)
+        entities.update(agg.get(level, {}).keys())
+
+    oldest = next(iter(runs.values()), {})
+    old_level = oldest.get(level, {})
+    medians = {}
+    for entity in entities:
+        candle = candlestick(old_level.get(entity, {}).get(ORDER_METRIC, []))
+        if candle is not None:
+            medians[entity] = candle.median
+
+    return sorted(
+        entities,
+        key=lambda e: (0 if e in medians else 1, -medians.get(e, 0.0), e),
+    )
 
 
 def render_html(runs: Dict[str, Aggregated]) -> str:
@@ -161,8 +187,11 @@ def render_html(runs: Dict[str, Aggregated]) -> str:
         if not metrics:
             body.append("<p><em>no data</em></p>")
             continue
+        # One entity order per level (by the oldest run's ORDER_METRIC), reused
+        # across every metric chart so the x-axis stays stable.
+        ordered = _ordered_entities(runs, level)
         for metric in metrics:
-            entities = _entity_union(runs, level, metric)
+            entities = [e for e in ordered if _entity_has(runs, level, e, metric)]
             series_by_run: Dict[str, Dict[str, Candle]] = {}
             for run_name, agg in runs.items():
                 level_data = agg.get(level, {})

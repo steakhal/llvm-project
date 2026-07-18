@@ -331,8 +331,11 @@ def cmd_plot(args: argparse.Namespace) -> int:
     store = RunStore(args.home or default_home())
     runs = {}
     try:
-        for raw in args.runs:
-            run_id = store.resolve(raw)
+        resolved = [store.resolve(raw) for raw in args.runs]
+        # Order runs oldest-first by metadata.created so overlaid candles read
+        # left-to-right chronologically and the oldest run drives entity order.
+        resolved.sort(key=lambda rid: store.get(rid).created)
+        for run_id in resolved:
             runs[run_id] = aggregate_samples(_load_samples(store, run_id))
     except RunNotFoundError as exc:
         print(f"aqb plot: {exc}", file=sys.stderr)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from aqb.benchmark import Candle
-from aqb.plot import render_html, svg_chart
+from aqb.plot import _ordered_entities, render_html, svg_chart
 
 
 class SvgChartTest(unittest.TestCase):
@@ -52,6 +52,42 @@ class RenderHtmlTest(unittest.TestCase):
         }
         html_out = render_html(runs)
         self.assertIn("Runs: A, B", html_out)
+
+
+class OrderingTest(unittest.TestCase):
+    def _runs(self):
+        # "old" is the first (oldest) run; its PathRunningTime drives ordering.
+        return {
+            "old": {
+                "run": {},
+                "tu": {
+                    "lo.c": {"PathRunningTime": [5], "NumSteps": [1]},
+                    "hi.c": {"PathRunningTime": [100], "NumSteps": [1]},
+                    "none.c": {"NumSteps": [7]},  # no PathRunningTime -> last
+                },
+                "entry-point": {},
+            },
+            "new": {
+                "run": {},
+                "tu": {
+                    "lo.c": {"PathRunningTime": [9]},
+                    "hi.c": {"PathRunningTime": [90]},
+                },
+                "entry-point": {},
+            },
+        }
+
+    def test_entities_ordered_by_oldest_path_running_time_desc(self):
+        # Busiest (hi.c) first; the entity lacking PathRunningTime sorts last.
+        self.assertEqual(
+            _ordered_entities(self._runs(), "tu"), ["hi.c", "lo.c", "none.c"]
+        )
+
+    def test_ordering_is_shared_across_metric_charts(self):
+        # Even the NumSteps chart lays entities in PathRunningTime order:
+        # hi.c must appear before lo.c in the rendered SVG.
+        html_out = render_html(self._runs())
+        self.assertLess(html_out.index("hi.c"), html_out.index("lo.c"))
 
 
 if __name__ == "__main__":

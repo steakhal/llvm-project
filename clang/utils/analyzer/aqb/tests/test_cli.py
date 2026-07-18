@@ -265,7 +265,7 @@ class DiffCliTest(unittest.TestCase):
 
 
 class PlotCliTest(unittest.TestCase):
-    def _make_benchmark_run(self, store, run_id):
+    def _make_benchmark_run(self, store, run_id, created="2026-07-18T00:00:00+00:00"):
         import json
         import os
 
@@ -273,7 +273,7 @@ class PlotCliTest(unittest.TestCase):
             Metadata(
                 run_id=run_id,
                 kind="benchmark",
-                created="2026-07-18T00:00:00+00:00",
+                created=created,
                 analyzer=AnalyzerProvenance(commit="c"),
                 container=ContainerProvenance(),
                 execution=ExecutionProvenance(n=2),
@@ -333,6 +333,26 @@ class PlotCliTest(unittest.TestCase):
                 code = main(["--home", root, "plot", run_path, "-o", out_path])
             self.assertEqual(code, 0)
             self.assertTrue(os.path.isfile(out_path))
+
+    def test_plot_orders_runs_by_created(self):
+        import os
+
+        with tempfile.TemporaryDirectory() as root:
+            store = RunStore(root)
+            self._make_benchmark_run(
+                store, "b-new", created="2026-07-18T09:00:00+00:00"
+            )
+            self._make_benchmark_run(
+                store, "b-old", created="2026-07-18T01:00:00+00:00"
+            )
+            out_path = os.path.join(root, "plot.html")
+            with contextlib.redirect_stdout(io.StringIO()):
+                # Pass newest first on the CLI; output must still be oldest-first.
+                code = main(["--home", root, "plot", "b-new", "b-old", "-o", out_path])
+            self.assertEqual(code, 0)
+            with open(out_path) as f:
+                html_out = f.read()
+            self.assertIn("Runs: b-old, b-new", html_out)
 
     def test_plot_errors_on_non_benchmark_run(self):
         with tempfile.TemporaryDirectory() as root:
