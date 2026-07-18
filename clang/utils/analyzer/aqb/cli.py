@@ -7,15 +7,18 @@ import os
 import sys
 from typing import Dict, List, Optional
 
+from aqb.benchmark import aggregate_samples
 from aqb.diff import diff_runs, summarize, verdict
 from aqb.errors import ClangBuildError, RunNotFoundError, RuntimeCommandError
+from aqb.metrics import EntryPointMetrics
 from aqb.normalize import Finding
+from aqb.plot import render_html
 from aqb.run import perform_run
 from aqb.runtime import Runtime, resolve_runtime
 from aqb.store import RunStore
 from aqb.volume import build_clang_volume
 
-STUB_COMMANDS = ("plot", "report", "promote")
+STUB_COMMANDS = ("report", "promote")
 
 
 def default_home() -> str:
@@ -156,6 +159,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     diff.set_defaults(func=cmd_diff)
 
+    plot = sub.add_parser(
+        "plot",
+        help="render candlestick diagrams (all metrics, all granularities) for "
+        "one or more benchmark runs into a single self-contained HTML",
+    )
+    plot.add_argument("runs", nargs="+", help="benchmark run ids (or id prefixes)")
+    plot.add_argument(
+        "-o", "--output", default="aqb-plot.html", help="output HTML path"
+    )
+    plot.set_defaults(func=cmd_plot)
+
     for name in STUB_COMMANDS:
         stub = sub.add_parser(name, help=f"{name} (not yet implemented)")
         stub.set_defaults(func=cmd_not_implemented, command_name=name)
@@ -293,6 +307,37 @@ def cmd_diff(args: argparse.Namespace) -> int:
         )
         print(f"  expect {args.expect}: {'PASS' if passed else 'FAIL'} ({reason})")
     return 0 if passed else 1
+
+
+def _load_samples(store: RunStore, run_id: str):
+    """Load a benchmark run's ``metrics/samples.json`` into the per-iteration
+    list of ``EntryPointMetrics`` that ``aggregate_samples`` consumes."""
+    path = os.path.join(store.runs_dir, run_id, "metrics", "samples.json")
+    if not os.path.isfile(path):
+        raise RunNotFoundError(
+            f"{run_id} has no metrics/samples.json (not a benchmark run?)"
+        )
+    with open(path) as handle:
+        data = json.load(handle)
+    return [
+        [EntryPointMetrics(**ep) for ep in iteration] for iteration in data["samples"]
+    ]
+
+
+def cmd_plot(args: argparse.Namespace) -> int:
+    store = RunStore(args.home or default_home())
+    runs = {}
+    try:
+        for raw in args.runs:
+            run_id = store.resolve(raw)
+            runs[run_id] = aggregate_samples(_load_samples(store, run_id))
+    except RunNotFoundError as exc:
+        print(f"aqb plot: {exc}", file=sys.stderr)
+        return 1
+    with open(args.output, "w") as handle:
+        handle.write(render_html(runs))
+    print(args.output)
+    return 0
 
 
 def main(argv: Optional[List[str]] = None) -> int:

@@ -27,7 +27,7 @@ class CliTest(unittest.TestCase):
     def test_stub_command_reports_not_implemented(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            code = main(["plot"])
+            code = main(["report"])
         self.assertEqual(code, 2)
         self.assertIn("not yet implemented", err.getvalue())
 
@@ -262,3 +262,80 @@ class DiffCliTest(unittest.TestCase):
                     ]
                 )
             self.assertEqual(code, 1)
+
+
+class PlotCliTest(unittest.TestCase):
+    def _make_benchmark_run(self, store, run_id):
+        import json
+        import os
+
+        store.create_run(
+            Metadata(
+                run_id=run_id,
+                kind="benchmark",
+                created="2026-07-18T00:00:00+00:00",
+                analyzer=AnalyzerProvenance(commit="c"),
+                container=ContainerProvenance(),
+                execution=ExecutionProvenance(n=2),
+            )
+        )
+        samples = {
+            "iterations": 2,
+            "metrics": ["NumSteps"],
+            "samples": [
+                [
+                    {
+                        "usr": "u1",
+                        "file": "a.c",
+                        "debug_name": "fn",
+                        "stats": {"NumSteps": 10},
+                    }
+                ],
+                [
+                    {
+                        "usr": "u1",
+                        "file": "a.c",
+                        "debug_name": "fn",
+                        "stats": {"NumSteps": 12},
+                    }
+                ],
+            ],
+        }
+        path = os.path.join(store.runs_dir, run_id, "metrics", "samples.json")
+        with open(path, "w") as f:
+            json.dump(samples, f)
+
+    def test_plot_writes_html_with_svg(self):
+        import os
+
+        with tempfile.TemporaryDirectory() as root:
+            store = RunStore(root)
+            self._make_benchmark_run(store, "b-1")
+            out_path = os.path.join(root, "plot.html")
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = main(["--home", root, "plot", "b-1", "-o", out_path])
+            self.assertEqual(code, 0)
+            self.assertTrue(os.path.isfile(out_path))
+            with open(out_path) as f:
+                html_out = f.read()
+            self.assertIn("<svg", html_out)
+            self.assertIn("NumSteps", html_out)
+
+    def test_plot_errors_on_non_benchmark_run(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = RunStore(root)
+            store.create_run(
+                Metadata(
+                    run_id="f-1",
+                    kind="functional",
+                    created="2026-07-18T00:00:00+00:00",
+                    analyzer=AnalyzerProvenance(commit="c"),
+                    container=ContainerProvenance(),
+                    execution=ExecutionProvenance(),
+                )
+            )
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code = main(["--home", root, "plot", "f-1"])
+            self.assertEqual(code, 1)
+            self.assertIn("samples.json", err.getvalue())
