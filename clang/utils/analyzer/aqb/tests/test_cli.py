@@ -305,6 +305,66 @@ class PlotCliTest(unittest.TestCase):
         with open(path, "w") as f:
             json.dump(samples, f)
 
+    def _make_run_with_eps(self, store, run_id, created, eps):
+        """eps: list of (usr, file) for a single-iteration benchmark run."""
+        import json
+        import os
+
+        store.create_run(
+            Metadata(
+                run_id=run_id,
+                kind="benchmark",
+                created=created,
+                analyzer=AnalyzerProvenance(commit="c"),
+                container=ContainerProvenance(),
+                execution=ExecutionProvenance(n=1),
+            )
+        )
+        rows = [
+            {"usr": usr, "file": file, "debug_name": usr, "stats": {"NumSteps": 1}}
+            for usr, file in eps
+        ]
+        samples = {"iterations": 1, "metrics": ["NumSteps"], "samples": [rows]}
+        path = os.path.join(store.runs_dir, run_id, "metrics", "samples.json")
+        with open(path, "w") as f:
+            json.dump(samples, f)
+
+    def test_plot_inner_joins_and_logs_dropped(self):
+        import os
+
+        with tempfile.TemporaryDirectory() as root:
+            store = RunStore(root)
+            # Shared (real.c, foo) in both; each has a build-unique probe path.
+            self._make_run_with_eps(
+                store,
+                "b-old",
+                "2026-07-18T01:00:00+00:00",
+                [("foo", "real.c"), ("main", "TryCompile-AAA/src.c")],
+            )
+            self._make_run_with_eps(
+                store,
+                "b-new",
+                "2026-07-18T09:00:00+00:00",
+                [("foo", "real.c"), ("main", "TryCompile-BBB/src.c")],
+            )
+            out_path = os.path.join(root, "plot.html")
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                err
+            ):
+                code = main(["--home", root, "plot", "b-old", "b-new", "-o", out_path])
+            self.assertEqual(code, 0)
+            # Dropped probe paths are logged...
+            stderr = err.getvalue()
+            self.assertIn("dropped", stderr)
+            self.assertIn("TryCompile-AAA/src.c", stderr)
+            self.assertIn("TryCompile-BBB/src.c", stderr)
+            # ...and excluded from the chart, while the shared entry stays.
+            with open(out_path) as f:
+                html_out = f.read()
+            self.assertNotIn("TryCompile", html_out)
+            self.assertIn("real.c", html_out)
+
     def test_plot_writes_html_with_svg(self):
         import os
 

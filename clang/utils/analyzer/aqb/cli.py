@@ -7,7 +7,7 @@ import os
 import sys
 from typing import Dict, List, Optional
 
-from aqb.benchmark import aggregate_samples
+from aqb.benchmark import aggregate_samples, inner_join_runs
 from aqb.diff import diff_runs, summarize, verdict
 from aqb.errors import ClangBuildError, RunNotFoundError, RuntimeCommandError
 from aqb.metrics import EntryPointMetrics
@@ -329,17 +329,32 @@ def _load_samples(store: RunStore, run_id: str):
 
 def cmd_plot(args: argparse.Namespace) -> int:
     store = RunStore(args.home or default_home())
-    runs = {}
+    samples_by_run = {}
     try:
         resolved = [store.resolve(raw) for raw in args.runs]
         # Order runs oldest-first by metadata.created so overlaid candles read
         # left-to-right chronologically and the oldest run drives entity order.
         resolved.sort(key=lambda rid: store.get(rid).created)
         for run_id in resolved:
-            runs[run_id] = aggregate_samples(_load_samples(store, run_id))
+            samples_by_run[run_id] = _load_samples(store, run_id)
     except RunNotFoundError as exc:
         print(f"aqb plot: {exc}", file=sys.stderr)
         return 1
+
+    # Inner-join the runs by (file, USR): drops transient CMake probe artifacts
+    # (TryCompile/compiler-id paths differ every build) and keeps multi-run
+    # comparisons apples-to-apples. Log what was dropped.
+    filtered, dropped = inner_join_runs(samples_by_run)
+    if dropped:
+        print(
+            f"aqb plot: dropped {len(dropped)} entry point(s) "
+            f"not common to all runs:",
+            file=sys.stderr,
+        )
+        for file, usr in dropped:
+            print(f"  {file}\t{usr}", file=sys.stderr)
+
+    runs = {rid: aggregate_samples(filtered[rid]) for rid in samples_by_run}
     with open(args.output, "w") as handle:
         handle.write(render_html(runs))
     out_abs = os.path.abspath(args.output)

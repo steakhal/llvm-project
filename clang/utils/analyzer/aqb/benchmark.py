@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from aqb.metrics import EntryPointMetrics
 
@@ -62,3 +62,40 @@ def aggregate_samples(iterations: List[List[EntryPointMetrics]]) -> Aggregated:
             for metric, total in metrics.items():
                 fd.setdefault(metric, []).append(total)
     return agg
+
+
+# run id -> per-iteration lists of EntryPointMetrics
+RunSamples = Dict[str, List[List[EntryPointMetrics]]]
+
+
+def inner_join_runs(
+    samples_by_run: RunSamples,
+) -> Tuple[RunSamples, List[Tuple[str, str]]]:
+    """Keep only ``(file, USR)`` entry points present in EVERY run (an inner
+    join across runs). Transient build artifacts — CMake ``TryCompile`` probes,
+    compiler-id/ABI checks — get a fresh random path each build, so they are
+    never shared across runs and fall out of the join. It also keeps multi-run
+    comparisons apples-to-apples: an entry point analyzed in only some runs is
+    dropped.
+
+    Returns ``(filtered_by_run, dropped)`` where ``filtered_by_run`` preserves
+    the input order/keys and ``dropped`` is the sorted list of ``(file, USR)``
+    removed from at least one run (so the caller can log them)."""
+    if not samples_by_run:
+        return {}, []
+
+    key_sets = []
+    for iterations in samples_by_run.values():
+        keys = {(ep.file, ep.usr) for iteration in iterations for ep in iteration}
+        key_sets.append(keys)
+
+    common = set.intersection(*key_sets)
+    dropped = sorted(set().union(*key_sets) - common)
+
+    filtered: RunSamples = {}
+    for run_id, iterations in samples_by_run.items():
+        filtered[run_id] = [
+            [ep for ep in iteration if (ep.file, ep.usr) in common]
+            for iteration in iterations
+        ]
+    return filtered, dropped
