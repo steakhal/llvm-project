@@ -79,7 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="container runtime (default: $AQB_RUNTIME or docker)",
     )
     build.add_argument(
-        "--memory", default="24G", help="builder container memory limit (default: 24G)"
+        "--memory", default="20G", help="builder container memory limit (default: 20G)"
     )
     build.add_argument(
         "--cpus", default="8", help="builder container CPU limit (default: 8)"
@@ -124,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="container runtime (default: $AQB_RUNTIME or docker)",
     )
     run.add_argument(
-        "--memory", default="24G", help="analyze container memory limit (default: 24G)"
+        "--memory", default="20G", help="analyze container memory limit (default: 20G)"
     )
     run.add_argument(
         "--cpus", default="8", help="analyze container CPU limit (default: 8)"

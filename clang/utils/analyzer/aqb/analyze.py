@@ -72,7 +72,7 @@ def analyze_run_argv(
     ccache_volume: str,
     image: str,
     projects: List[str],
-    memory: str = "24G",
+    memory: str = "20G",
     cpus: str = "8",
     extra_config: str = "",
     ep_csv_dir: str = "",

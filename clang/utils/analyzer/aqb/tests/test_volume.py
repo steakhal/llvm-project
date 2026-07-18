@@ -362,7 +362,7 @@ class BuildClangVolumeTest(unittest.TestCase):
         )
         # Default resource limits are passed to the build (docker-standard flags).
         self.assertIn("-m", build)
-        self.assertEqual(build[build.index("-m") + 1], "24G")
+        self.assertEqual(build[build.index("-m") + 1], "20G")
         self.assertIn("--cpus", build)
         self.assertEqual(build[build.index("--cpus") + 1], "8")
         # The build streams (not captured) so its progress is visible live.

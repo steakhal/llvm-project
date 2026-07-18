@@ -98,7 +98,7 @@ def perform_run(
     preset: str = "aqb-base",
     user_overlay_json: Optional[str] = None,
     builder_image: str = "aqb-clang-builder:latest",
-    memory: str = "24G",
+    memory: str = "20G",
     cpus: str = "8",
     extra_config: str = "",
     kind: str = "functional",

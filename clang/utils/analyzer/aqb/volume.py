@@ -94,7 +94,7 @@ class ClangBuildSpec:
     created: str  # ISO-8601, provenance only (excluded from the digest)
     build_config: str  # human-readable recipe string, for the label
     extra_mounts: List[str] = field(default_factory=list)  # extra ``-v`` values
-    builder_memory: str = ""  # ``-m`` limit for the build (e.g. "24G"); "" = none
+    builder_memory: str = ""  # ``-m`` limit for the build (e.g. "20G"); "" = none
     builder_cpus: str = ""  # ``--cpus`` limit for the build (e.g. "8"); "" = none
 
 
@@ -309,7 +309,7 @@ def build_clang_volume(
     user_overlay_json: Optional[str],
     builder_image: str,
     created: str,
-    memory: str = "24G",
+    memory: str = "20G",
     cpus: str = "8",
 ) -> ClangVolume:
     """Resolve (or build) the Clang Volume for ``commit`` using ``builder_image``.

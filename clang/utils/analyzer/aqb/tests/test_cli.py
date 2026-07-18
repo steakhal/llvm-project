@@ -73,7 +73,7 @@ class BuildClangCliTest(unittest.TestCase):
         self.assertEqual(captured["preset"], "mine")
         self.assertIsNone(captured["user_overlay_json"])
         # Default resource limits are forwarded.
-        self.assertEqual(captured["memory"], "24G")
+        self.assertEqual(captured["memory"], "20G")
         self.assertEqual(captured["cpus"], "8")
 
     def test_reads_preset_file(self):
@@ -153,7 +153,7 @@ class RunCliTest(unittest.TestCase):
         self.assertEqual(captured["extra_config"], "max-nodes=0")
         # The in-tree projects dir and analyzer scripts dir are wired.
         self.assertTrue(captured["projects_src"].endswith("projects"))
-        self.assertEqual(captured["memory"], "24G")
+        self.assertEqual(captured["memory"], "20G")
         self.assertEqual(captured["cpus"], "8")
 
     def test_reports_run_error(self):

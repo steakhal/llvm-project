@@ -96,7 +96,7 @@ class AnalyzeRunArgvTest(unittest.TestCase):
 
     def test_resource_limits_and_workdir(self):
         argv = self._argv()
-        self.assertEqual(argv[argv.index("-m") + 1], "24G")
+        self.assertEqual(argv[argv.index("-m") + 1], "20G")
         self.assertEqual(argv[argv.index("--cpus") + 1], "8")
         self.assertEqual(argv[argv.index("-w") + 1], "/projects")
 
