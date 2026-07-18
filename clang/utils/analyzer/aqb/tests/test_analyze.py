@@ -86,6 +86,10 @@ class AnalyzeRunArgvTest(unittest.TestCase):
         self.assertIn("AQB_REAL_CLANG=/analyzer/bin/clang", argv)
         self.assertIn(f"AQB_EP_CSV_DIR=/projects/{EP_CSV_DIR_NAME}", argv)
 
+    def test_custom_ep_csv_dir_overrides_default(self):
+        argv = self._argv(ep_csv_dir="/projects/aqb-entry-point-stats/iter-3")
+        self.assertIn("AQB_EP_CSV_DIR=/projects/aqb-entry-point-stats/iter-3", argv)
+
     def test_extra_config_passed_through(self):
         argv = self._argv(extra_config="max-nodes=0")
         self.assertEqual(argv[argv.index("--extra-analyzer-config") + 1], "max-nodes=0")

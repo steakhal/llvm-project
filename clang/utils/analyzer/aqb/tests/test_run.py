@@ -174,5 +174,93 @@ class PerformRunTest(unittest.TestCase):
             self.assertIn("u1,zstd/a.c,fn1", lines)
 
 
+class BenchmarkRunTest(unittest.TestCase):
+    def _projects_src(self, root):
+        os.makedirs(root)
+        with open(os.path.join(root, "projects.json"), "w") as f:
+            json.dump(
+                [
+                    {
+                        "name": "zstd",
+                        "mode": 1,
+                        "source": "git",
+                        "origin": "o",
+                        "commit": "c",
+                    }
+                ],
+                f,
+            )
+        d = os.path.join(root, "zstd")
+        os.makedirs(d)
+        with open(os.path.join(d, "run_static_analyzer.cmd"), "w") as f:
+            f.write("cmake .\n")
+
+    def _bench_runtime(self):
+        """A Runtime whose runner writes a per-iteration CSV into whatever
+        iter-<i> dir the argv's AQB_EP_CSV_DIR points at, with a NumSteps value
+        that varies by iteration."""
+        counter = {"i": 0}
+
+        def runner(argv, capture=True):
+            ep_dir = None
+            for a in argv:
+                if a.startswith("AQB_EP_CSV_DIR="):
+                    ep_dir = a.split("=", 1)[1]
+            # Map the in-container /projects prefix back to the host work dir.
+            projects_dir = None
+            for i, a in enumerate(argv):
+                if a == "-v" and argv[i + 1].endswith(":/projects"):
+                    projects_dir = argv[i + 1].split(":/projects")[0]
+            host_ep = ep_dir.replace("/projects", projects_dir, 1)
+            os.makedirs(host_ep, exist_ok=True)
+            steps = 10 + counter["i"] * 5  # 10, 15, 20, ...
+            counter["i"] += 1
+            with open(os.path.join(host_ep, "1.csv"), "w") as f:
+                f.write("USR,File,DebugName,NumSteps\nu1,zstd/a.c,fn1,%d\n" % steps)
+            return ProcResult(returncode=0, stdout="", stderr="")
+
+        return Runtime("fake", runner=runner)
+
+    def test_benchmark_stores_per_iteration_samples_and_no_reports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "projects")
+            self._projects_src(src)
+            home = os.path.join(tmp, "home")
+
+            def fake_resolve_clang(rt, **kwargs):
+                return ClangVolume(name="v", config_digest="d", built=False)
+
+            run_path = perform_run(
+                runtime=self._bench_runtime(),
+                home=home,
+                commit="c",
+                source="/s",
+                projects_src=src,
+                scripts_dir="/host/scripts",
+                project_names=["zstd"],
+                kind="benchmark",
+                iterations=3,
+                resolve_clang=fake_resolve_clang,
+            )
+
+            # No reports for a benchmark run.
+            self.assertFalse(
+                os.path.exists(os.path.join(run_path, "reports", "findings.json"))
+            )
+            with open(os.path.join(run_path, "metrics", "samples.json")) as f:
+                data = json.load(f)
+            self.assertEqual(data["iterations"], 3)
+            self.assertEqual(data["metrics"], ["NumSteps"])
+            self.assertEqual(len(data["samples"]), 3)
+            # Each iteration captured the single entry point with its NumSteps.
+            steps = [it[0]["stats"]["NumSteps"] for it in data["samples"]]
+            self.assertEqual(steps, [10, 15, 20])
+            # Metadata records the iteration count and benchmark kind.
+            with open(os.path.join(run_path, "metadata.json")) as f:
+                meta = json.load(f)
+            self.assertEqual(meta["kind"], "benchmark")
+            self.assertEqual(meta["execution"]["n"], 3)
+
+
 if __name__ == "__main__":
     unittest.main()

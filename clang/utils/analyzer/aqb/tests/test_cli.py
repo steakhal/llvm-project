@@ -170,6 +170,32 @@ class RunCliTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("kaboom", err.getvalue())
 
+    def test_bench_passes_benchmark_kind_and_iterations(self):
+        captured = {}
+
+        def fake_perform_run(**kwargs):
+            captured.update(kwargs)
+            return "/h/runs/b-1"
+
+        out = io.StringIO()
+        with mock.patch(
+            "aqb.cli.perform_run", fake_perform_run
+        ), contextlib.redirect_stdout(out):
+            code = main(
+                ["run", "--commit", "c", "--source", "/s", "--bench", "-n", "3"]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(captured["kind"], "benchmark")
+        self.assertEqual(captured["iterations"], 3)
+
+    def test_bench_requires_at_least_two_iterations(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main(
+                ["run", "--commit", "c", "--source", "/s", "--bench", "-n", "1"]
+            )
+        self.assertEqual(code, 2)
+
 
 class DiffCliTest(unittest.TestCase):
     _ROW = dict(

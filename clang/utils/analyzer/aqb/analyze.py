@@ -75,6 +75,7 @@ def analyze_run_argv(
     memory: str = "24G",
     cpus: str = "8",
     extra_config: str = "",
+    ep_csv_dir: str = "",
 ) -> List[str]:
     """A container ``run`` that analyzes ``projects`` with the Clang Volume's
     clang by reusing SATest's project-recipe machinery. The volume mounts
@@ -91,7 +92,10 @@ def analyze_run_argv(
     SATest uses as ``--use-analyzer``), so every per-TU clang analysis writes a
     PID-unique CSV under ``AQB_EP_CSV_DIR`` (no single-path clobber). The real
     clang is ``AQB_REAL_CLANG``. Collect + ``merge_entry_point_csvs`` afterward.
+    ``ep_csv_dir`` overrides the in-container CSV dir (e.g. a per-iteration
+    ``.../iter-<i>`` dir for benchmarks); empty means the default.
     """
+    ep_dir = ep_csv_dir or f"{PROJECTS_MOUNT}/{EP_CSV_DIR_NAME}"
     args = ["run", "--rm", "-w", PROJECTS_MOUNT]
     if memory:
         args += ["-m", memory]
@@ -116,7 +120,7 @@ def analyze_run_argv(
         "-e",
         f"AQB_REAL_CLANG={ANALYZER_MOUNT}/bin/clang",
         "-e",
-        f"AQB_EP_CSV_DIR={PROJECTS_MOUNT}/{EP_CSV_DIR_NAME}",
+        f"AQB_EP_CSV_DIR={ep_dir}",
         "-e",
         f"CCACHE_DIR={CCACHE_MOUNT}",
         "--entrypoint",

@@ -126,6 +126,18 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--cpus", default="8", help="analyze container CPU limit (default: 8)"
     )
+    run.add_argument(
+        "--bench",
+        action="store_true",
+        help="benchmark run: N analyze iterations, metric distributions, no reports",
+    )
+    run.add_argument(
+        "-n",
+        "--iterations",
+        type=int,
+        default=1,
+        help="benchmark iteration count (requires --bench; must be >= 2)",
+    )
     run.set_defaults(func=cmd_run)
 
     diff = sub.add_parser(
@@ -199,6 +211,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.preset_file:
         with open(args.preset_file) as handle:
             overlay = handle.read()
+    if args.bench and args.iterations < 2:
+        print("aqb run: --bench requires -n/--iterations >= 2", file=sys.stderr)
+        return 2
+    kind = "benchmark" if args.bench else "functional"
+    iterations = args.iterations if args.bench else 1
     runtime = Runtime(resolve_runtime(args.runtime))
     analyzer_dir = _analyzer_dir()
     names = [n for n in args.projects.split(",") if n]
@@ -218,6 +235,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             memory=args.memory,
             cpus=args.cpus,
             extra_config=args.extra_analyzer_config,
+            kind=kind,
+            iterations=iterations,
         )
     except (ClangBuildError, RuntimeCommandError) as exc:
         print(f"aqb run: {exc}", file=sys.stderr)
