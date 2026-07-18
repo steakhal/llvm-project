@@ -4,6 +4,8 @@
 
 **Goal:** `aqb run --bench -n N` produces a **benchmark run** (N analyze iterations; per-entry-point metric samples stored; reports ignored), and `aqb plot <run> [<run> …]` renders **one self-contained HTML** with candlestick diagrams for **every metric at all three granularities** (per-run, per-TU, per-entry-point), overlaying the given runs. No plot flags beyond the run list + `-o`.
 
+**STATUS: code-complete (2026-07-18).** All four tasks implemented + committed on `bb/aqb-design` (122 tests green). Plot pipeline validated locally at real scale: 449 entry points × 3 iterations × 2 runs → a 10 MB self-contained HTML with 102 charts (≈34 metrics × 3 granularities), overlaying both runs, collapsible + TOC. Remaining: a real multi-iteration benchmark run on the daemon (`aqb run --bench -n N` on the container runtime).
+
 **Architecture:** A benchmark run stores raw per-iteration, per-entry-point samples (`metrics/samples.json`). `plot` loads one or more runs, aggregates *up* from the entry-point samples to all three levels (entry-point → group by file = per-TU → sum over all = per-run) for every metric, computes candlestick five-numbers with stdlib `statistics.quantiles`, and renders inline SVG into a single dependency-free HTML (no matplotlib/pandas/seaborn — none are available; design mandates a self-contained backend).
 
 **Determinism note:** the analyzer's *count* metrics (`NumSteps`, `NumBlocks`, …) are deterministic across identical iterations, so their within-run candlestick collapses to a flat line (still meaningful when overlaying *different* runs/configs). The *timing* columns (`PathRunningTime`, `SyntaxRunningTime`, `TimeSpentSolvingZ3Queries`, …) are the ones that spread across N iterations. We render all of them either way.
