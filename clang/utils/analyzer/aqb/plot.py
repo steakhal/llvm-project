@@ -133,6 +133,34 @@ summary { cursor: pointer; font-family: monospace; }
 .axis { stroke: #ccc; }
 """
 
+# Inline (self-contained) script: link horizontal scrolling of all charts that
+# share a data-sync group (one per level), so scrolling any per-TU chart scrolls
+# every per-TU chart in lockstep and their columns stay aligned (same for
+# per-entry-point and per-run). Charts within a level share an identical x-axis,
+# so equal scrollLeft lines the columns up.
+_SYNC_SCRIPT = """
+<script>
+(function () {
+  function link(group) {
+    var boxes = Array.prototype.slice.call(
+      document.querySelectorAll('.chartbox[data-sync="' + group + '"]'));
+    var syncing = false;
+    boxes.forEach(function (box) {
+      box.addEventListener('scroll', function () {
+        if (syncing) return;
+        syncing = true;
+        boxes.forEach(function (other) {
+          if (other !== box) other.scrollLeft = box.scrollLeft;
+        });
+        syncing = false;
+      });
+    });
+  }
+  ['run', 'tu', 'entry-point'].forEach(link);
+})();
+</script>
+"""
+
 
 def _metric_union(runs: Dict[str, Aggregated], level: str) -> List[str]:
     metrics = set()
@@ -140,12 +168,6 @@ def _metric_union(runs: Dict[str, Aggregated], level: str) -> List[str]:
         for entity_metrics in agg.get(level, {}).values():
             metrics.update(entity_metrics.keys())
     return sorted(metrics)
-
-
-def _entity_has(
-    runs: Dict[str, Aggregated], level: str, entity: str, metric: str
-) -> bool:
-    return any(metric in agg.get(level, {}).get(entity, {}) for agg in runs.values())
 
 
 def _ordered_entities(runs: Dict[str, Aggregated], level: str) -> List[str]:
@@ -187,23 +209,23 @@ def render_html(runs: Dict[str, Aggregated]) -> str:
         if not metrics:
             body.append("<p><em>no data</em></p>")
             continue
-        # One entity order per level (by the oldest run's ORDER_METRIC), reused
-        # across every metric chart so the x-axis stays stable.
+        # One entity order per level (by the oldest run's ORDER_METRIC), and the
+        # SAME full entity list for every metric chart at this level — so slots
+        # line up column-for-column and horizontal scrolling can be synced.
         ordered = _ordered_entities(runs, level)
         for metric in metrics:
-            entities = [e for e in ordered if _entity_has(runs, level, e, metric)]
             series_by_run: Dict[str, Dict[str, Candle]] = {}
             for run_name, agg in runs.items():
                 level_data = agg.get(level, {})
                 series_by_run[run_name] = {
                     entity: candlestick(level_data.get(entity, {}).get(metric, []))
-                    for entity in entities
+                    for entity in ordered
                     if metric in level_data.get(entity, {})
                 }
-            chart = svg_chart(entities, series_by_run, title=metric)
+            chart = svg_chart(ordered, series_by_run, title=metric)
             body.append(
                 f"<details><summary>{html.escape(metric)}</summary>"
-                f'<div class="chartbox">{chart}</div></details>'
+                f'<div class="chartbox" data-sync="{level}">{chart}</div></details>'
             )
 
     run_names = ", ".join(html.escape(r) for r in runs)
@@ -213,5 +235,6 @@ def render_html(runs: Dict[str, Aggregated]) -> str:
         f"<h1>AQB benchmark plot</h1><p>Runs: {run_names}</p>"
         f'<div class="toc">{"".join(toc)}</div>'
         f'{"".join(body)}'
+        f"{_SYNC_SCRIPT}"
         "</body></html>"
     )

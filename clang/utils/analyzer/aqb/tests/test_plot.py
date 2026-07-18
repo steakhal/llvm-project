@@ -90,5 +90,38 @@ class OrderingTest(unittest.TestCase):
         self.assertLess(html_out.index("hi.c"), html_out.index("lo.c"))
 
 
+class ScrollSyncTest(unittest.TestCase):
+    def test_all_charts_at_a_level_share_the_full_axis(self):
+        # metric "M" only on a.c, metric "N" only on b.c; both charts must still
+        # render BOTH entities (empty slots) so columns line up across charts.
+        runs = {
+            "r": {
+                "run": {},
+                "tu": {"a.c": {"M": [1]}, "b.c": {"N": [2]}},
+                "entry-point": {},
+            }
+        }
+        html_out = render_html(runs)
+        # Each of the two TU charts includes both entity labels -> 2 each.
+        self.assertGreaterEqual(html_out.count("a.c"), 2)
+        self.assertGreaterEqual(html_out.count("b.c"), 2)
+
+    def test_sync_groups_and_script_present(self):
+        runs = {
+            "r": {
+                "run": {"(all)": {"NumSteps": [1]}},
+                "tu": {"a.c": {"NumSteps": [1]}},
+                "entry-point": {"u": {"NumSteps": [1]}},
+            }
+        }
+        html_out = render_html(runs)
+        self.assertIn('data-sync="tu"', html_out)
+        self.assertIn('data-sync="entry-point"', html_out)
+        # A self-contained (no src) script that mirrors scrollLeft across a group.
+        self.assertIn("<script>", html_out)
+        self.assertNotIn("<script src", html_out)
+        self.assertIn("scrollLeft", html_out)
+
+
 if __name__ == "__main__":
     unittest.main()
