@@ -116,34 +116,41 @@ class ScrollSyncTest(unittest.TestCase):
 
 
 class HoverTooltipTest(unittest.TestCase):
-    def test_candle_has_data_tip_with_multiline_distribution(self):
+    def test_candle_tooltip_table_ordered_max_to_min_no_n(self):
         series = {"run-A": {"c:@F@zc": Candle(100, 110, 115, 120, 130, 5)}}
         svg = svg_chart(
             ["c:@F@zc"], series, title="NumSteps", labels={"c:@F@zc": "ZSTD_compress"}
         )
         self.assertIn("data-tip=", svg)
         self.assertNotIn("<title>", svg)  # replaced by the JS tooltip
-        # multi-line: pieces are separated by <br>
-        self.assertIn("<br>", svg)
-        # pretty name (not the USR), the run, and the five-number distribution.
         self.assertIn("ZSTD_compress", svg)
-        self.assertIn("run run-A", svg)
-        self.assertIn("min 100", svg)
-        self.assertIn("median 115", svg)
-        self.assertIn("max 130", svg)
-        self.assertIn("n 5", svg)
+        self.assertIn("<table>", svg)
+        # ordered max at top, min at bottom
+        self.assertLess(svg.index(">max<"), svg.index(">min<"))
+        self.assertLess(svg.index(">q3<"), svg.index(">q1<"))
+        # the sample count "n" is gone from the tooltip
+        self.assertNotIn(">n<", svg)
+        self.assertNotIn("<td>n</td>", svg)
+        # values present; a copyable plain-text payload too
+        self.assertIn(">130<", svg)
+        self.assertIn(">100<", svg)
+        self.assertIn("data-copy=", svg)
 
-    def test_render_uses_pretty_names_and_includes_tooltip_script(self):
+    def test_render_includes_click_to_copy_tooltip(self):
         sbr = {"r": [[_ep("c:@F@zc", "z.c", NumSteps=1)]]}
         sbr["r"][0][0]["debug_name"] = "ZSTD_compress"
         html_out = render_html(
             _frames(sbr), run_order=["r"], names={"c:@F@zc": "ZSTD_compress"}
         )
         self.assertIn("data-tip=", html_out)
+        self.assertIn("data-copy=", html_out)
         self.assertIn("ZSTD_compress", html_out)
-        # the instant floating tooltip: styled box + cursor-following listeners
         self.assertIn('id="aqb-tip"', html_out)
         self.assertIn("mousemove", html_out)
+        # click-to-copy wiring, with a fallback for non-secure contexts
+        self.assertIn("addEventListener('click'", html_out)
+        self.assertIn("clipboard", html_out)
+        self.assertIn("execCommand", html_out)
         self.assertNotIn("<script src", html_out)
 
 

@@ -52,9 +52,9 @@ def svg_chart(
     its ``{entity: Candle}``. Candles are drawn on a linear y-scale (0..max) by
     default; each candle carries its raw five-number values (``data-*``) and the
     chart carries its geometry (``data-ph``/``data-pt``/``data-ymax``) so the
-    inline log-toggle script can recompute y client-side. Each candle also gets
-    a native ``<title>`` tooltip (pretty name from ``labels`` + run +
-    distribution) shown on hover."""
+    inline log-toggle script can recompute y client-side. Each candle also
+    carries ``data-tip`` (styled multi-line hover tooltip HTML) and ``data-copy``
+    (plain text copied to the clipboard on click)."""
     runs = list(series_by_run.keys())
     all_candles = [c for r in runs for c in series_by_run[r].values() if c is not None]
     ymax = max((c.max for c in all_candles), default=1.0) or 1.0
@@ -90,27 +90,32 @@ def svg_chart(
             color = _color(ri)
             mid = cx + _CANDLE_W / 2
             # Hover tooltip content: the entity's pretty name, which run, the
-            # metric, and the distribution the candlestick summarizes — one item
-            # per line. Pre-escaped and joined with <br>; the delegated tooltip
-            # script renders it as innerHTML (safe: pieces are html-escaped).
-            tip = "<br>".join(
-                [
-                    f"<b>{html.escape(label)}</b>",
-                    f"run {html.escape(run)}",
-                    html.escape(title),
-                    f"min {candle.min:g}",
-                    f"q1 {candle.q1:g}",
-                    f"median {candle.median:g}",
-                    f"q3 {candle.q3:g}",
-                    f"max {candle.max:g}",
-                    f"n {candle.n}",
-                ]
+            # metric, then the five-number summary ordered max..min with values
+            # right-aligned in a table. Pre-escaped; the delegated tooltip script
+            # renders data-tip as innerHTML (safe — pieces are html-escaped) and
+            # copies data-copy (plain text) to the clipboard on click.
+            esc = html.escape
+            stats = [
+                ("max", candle.max),
+                ("q3", candle.q3),
+                ("median", candle.median),
+                ("q1", candle.q1),
+                ("min", candle.min),
+            ]
+            rows = "".join(f"<tr><td>{k}</td><td>{v:g}</td></tr>" for k, v in stats)
+            tip = (
+                f"<b>{esc(label)}</b><br>run {esc(run)}<br>{esc(title)}"
+                f"<table>{rows}</table>"
+            )
+            copy = "&#10;".join(
+                [esc(label), f"run {esc(run)}", esc(title)]
+                + [f"{k} {v:g}" for k, v in stats]
             )
             # Raw values on the group so the log-toggle script can reposition.
             parts.append(
                 f'<g class="candle" data-lo="{candle.min:g}" data-q1="{candle.q1:g}" '
                 f'data-md="{candle.median:g}" data-q3="{candle.q3:g}" '
-                f'data-hi="{candle.max:g}" data-tip="{tip}">'
+                f'data-hi="{candle.max:g}" data-tip="{tip}" data-copy="{copy}">'
             )
             # wick (min..max)
             parts.append(
@@ -168,7 +173,7 @@ summary { cursor: pointer; font-family: monospace; }
 .tick, .xlabel, .legend { font-size: 10px; fill: #555; }
 .axis { stroke: #ccc; }
 .logtoggle { font-size: 11px; margin-left: 0.5rem; cursor: pointer; color: #555; }
-.candle { cursor: crosshair; }
+.candle { cursor: pointer; }
 #aqb-tip {
   position: fixed; display: none; pointer-events: none; z-index: 10;
   background: #222d; color: #fff; padding: 5px 8px; border-radius: 4px;
@@ -176,6 +181,11 @@ summary { cursor: pointer; font-family: monospace; }
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
 }
 #aqb-tip b { font-size: 12px; }
+#aqb-tip table { border-collapse: collapse; margin-top: 3px; }
+#aqb-tip td { padding: 0 0 0 14px; }
+#aqb-tip td:first-child { padding-left: 0; color: #bbb; }
+#aqb-tip td:last-child { text-align: right; }
+#aqb-tip.copied { outline: 2px solid #4caf50; }
 """
 
 # Inline (self-contained) script: link horizontal scrolling of all charts that
@@ -278,6 +288,23 @@ _TIP_SCRIPT = """
   function candleOf(t) {
     return t && t.closest ? t.closest('.candle') : null;
   }
+  function copy(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(fallback);
+    } else {
+      fallback();
+    }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  }
   document.addEventListener('mouseover', function (e) {
     var g = candleOf(e.target);
     if (!g) return;
@@ -294,6 +321,13 @@ _TIP_SCRIPT = """
       current = null;
       tip.style.display = 'none';
     }
+  });
+  document.addEventListener('click', function (e) {
+    var g = candleOf(e.target);
+    if (!g) return;
+    copy(g.getAttribute('data-copy') || '');
+    tip.classList.add('copied');
+    setTimeout(function () { tip.classList.remove('copied'); }, 600);
   });
 })();
 </script>
