@@ -115,9 +115,12 @@ def svg_chart(
             rows = []
             for k, v in stats:
                 intp, dot, frac = _fmt(v).partition(".")
+                # Single-quoted class attrs: this markup is embedded inside the
+                # double-quoted data-tip attribute, so double quotes here would
+                # terminate it and corrupt the tooltip.
                 rows.append(
-                    f'<tr><td class="lbl">{k}</td><td class="int">{intp}</td>'
-                    f'<td class="frac">{dot + frac}</td></tr>'
+                    f"<tr><td class='lbl'>{k}</td><td class='int'>{intp}</td>"
+                    f"<td class='frac'>{dot + frac}</td></tr>"
                 )
             tip = (
                 f"<b>{esc(label)}</b><br>run {esc(run)}<br>{esc(title)}"

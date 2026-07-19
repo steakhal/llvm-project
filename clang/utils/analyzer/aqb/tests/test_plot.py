@@ -131,18 +131,33 @@ class HoverTooltipTest(unittest.TestCase):
         # the sample count "n" is gone from the tooltip
         self.assertNotIn(">n<", svg)
         # integer values sit in the right-aligned int column, no fraction
-        self.assertIn('class="int">130<', svg)
-        self.assertIn('class="int">100<', svg)
+        self.assertIn("class='int'>130<", svg)
+        self.assertIn("class='int'>100<", svg)
         self.assertIn("data-copy=", svg)
+
+    def test_data_tip_attribute_is_well_formed(self):
+        # Regression: the tooltip markup is embedded in a double-quoted data-tip
+        # attribute, so it must NOT contain a double quote (which would terminate
+        # the attribute and break the tooltip). Table classes are single-quoted.
+        import re
+
+        series = {"run-A": {"c:@F@zc": Candle(100, 110, 115, 120, 130, 5)}}
+        svg = svg_chart(
+            ["c:@F@zc"], series, title="NumSteps", labels={"c:@F@zc": "ZSTD_compress"}
+        )
+        tip = re.search(r'data-tip="([^"]*)"', svg).group(1)
+        self.assertIn("<table>", tip)  # the whole table survived the attribute
+        self.assertIn("class='int'>130<", tip)
+        self.assertIn("class='lbl'>min<", tip)
 
     def test_decimal_values_split_for_dot_alignment_no_scientific(self):
         # q1/q3 land on .5 boundaries; a big value must not go scientific.
         series = {"run-A": {"e": Candle(100, 110.5, 115, 122.5, 17366000, 4)}}
         svg = svg_chart(["e"], series, title="NumSteps")
         # decimal values: integer part in the int cell, ".5" in the frac cell
-        self.assertIn('class="int">110<', svg)
-        self.assertIn('class="frac">.5<', svg)
-        self.assertIn('class="int">122<', svg)
+        self.assertIn("class='int'>110<", svg)
+        self.assertIn("class='frac'>.5<", svg)
+        self.assertIn("class='int'>122<", svg)
         # large value stays plain, not "1.7366e+07"
         self.assertIn("17366000", svg)
         self.assertNotIn("e+", svg)
