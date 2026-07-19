@@ -41,6 +41,15 @@ def _color(run_index: int) -> str:
     return _PALETTE[run_index % len(_PALETTE)]
 
 
+def _fmt(v: float) -> str:
+    """Format a stat value plainly (never scientific notation); integers show
+    without a trailing ``.0``."""
+    v = float(v)
+    if v.is_integer():
+        return str(int(v))
+    return f"{v:.6f}".rstrip("0").rstrip(".")
+
+
 def svg_chart(
     entities: List[str],
     series_by_run: Dict[str, Dict[str, Candle]],
@@ -70,10 +79,10 @@ def svg_chart(
     parts: List[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
         f'height="{height}" class="chart" data-ph="{_PLOT_H}" '
-        f'data-pt="{_PAD_TOP}" data-ymax="{ymax:g}">',
+        f'data-pt="{_PAD_TOP}" data-ymax="{_fmt(ymax)}">',
         f'<text x="{_PAD_LEFT}" y="14" class="title">{html.escape(title)}</text>',
         # y-axis min/max ticks
-        f'<text x="4" y="{y(ymax):.1f}" class="tick">{ymax:g}</text>',
+        f'<text x="4" y="{y(ymax):.1f}" class="tick">{_fmt(ymax)}</text>',
         f'<text x="4" y="{y(0):.1f}" class="tick">0</text>',
         f'<line x1="{_PAD_LEFT}" y1="{_PAD_TOP}" x2="{_PAD_LEFT}" '
         f'y2="{_PAD_TOP + _PLOT_H}" class="axis"/>',
@@ -90,10 +99,11 @@ def svg_chart(
             color = _color(ri)
             mid = cx + _CANDLE_W / 2
             # Hover tooltip content: the entity's pretty name, which run, the
-            # metric, then the five-number summary ordered max..min with values
-            # right-aligned in a table. Pre-escaped; the delegated tooltip script
-            # renders data-tip as innerHTML (safe — pieces are html-escaped) and
-            # copies data-copy (plain text) to the clipboard on click.
+            # metric, then the five-number summary ordered max..min. Values are
+            # split into integer/fraction cells so decimal points align across
+            # rows (right-aligned int column flush against a left-aligned frac
+            # column). Pre-escaped; the tooltip script renders data-tip as
+            # innerHTML and copies data-copy (plain text) on click.
             esc = html.escape
             stats = [
                 ("max", candle.max),
@@ -102,20 +112,28 @@ def svg_chart(
                 ("q1", candle.q1),
                 ("min", candle.min),
             ]
-            rows = "".join(f"<tr><td>{k}</td><td>{v:g}</td></tr>" for k, v in stats)
+            rows = []
+            for k, v in stats:
+                intp, dot, frac = _fmt(v).partition(".")
+                rows.append(
+                    f'<tr><td class="lbl">{k}</td><td class="int">{intp}</td>'
+                    f'<td class="frac">{dot + frac}</td></tr>'
+                )
             tip = (
                 f"<b>{esc(label)}</b><br>run {esc(run)}<br>{esc(title)}"
-                f"<table>{rows}</table>"
+                f'<table>{"".join(rows)}</table>'
             )
             copy = "&#10;".join(
                 [esc(label), f"run {esc(run)}", esc(title)]
-                + [f"{k} {v:g}" for k, v in stats]
+                + [f"{k} {_fmt(v)}" for k, v in stats]
             )
-            # Raw values on the group so the log-toggle script can reposition.
+            # Raw values on the group so the log-toggle script can reposition
+            # (plain decimals, JS-parseable — never scientific).
             parts.append(
-                f'<g class="candle" data-lo="{candle.min:g}" data-q1="{candle.q1:g}" '
-                f'data-md="{candle.median:g}" data-q3="{candle.q3:g}" '
-                f'data-hi="{candle.max:g}" data-tip="{tip}" data-copy="{copy}">'
+                f'<g class="candle" data-lo="{_fmt(candle.min)}" '
+                f'data-q1="{_fmt(candle.q1)}" data-md="{_fmt(candle.median)}" '
+                f'data-q3="{_fmt(candle.q3)}" data-hi="{_fmt(candle.max)}" '
+                f'data-tip="{tip}" data-copy="{copy}">'
             )
             # wick (min..max)
             parts.append(
@@ -182,9 +200,10 @@ summary { cursor: pointer; font-family: monospace; }
 }
 #aqb-tip b { font-size: 12px; }
 #aqb-tip table { border-collapse: collapse; margin-top: 3px; }
-#aqb-tip td { padding: 0 0 0 14px; }
-#aqb-tip td:first-child { padding-left: 0; color: #bbb; }
-#aqb-tip td:last-child { text-align: right; }
+#aqb-tip td { padding: 0; }
+#aqb-tip td.lbl { color: #bbb; padding-right: 14px; }
+#aqb-tip td.int { text-align: right; }
+#aqb-tip td.frac { text-align: left; }
 #aqb-tip.copied { outline: 2px solid #4caf50; }
 """
 

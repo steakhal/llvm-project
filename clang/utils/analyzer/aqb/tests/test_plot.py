@@ -130,11 +130,22 @@ class HoverTooltipTest(unittest.TestCase):
         self.assertLess(svg.index(">q3<"), svg.index(">q1<"))
         # the sample count "n" is gone from the tooltip
         self.assertNotIn(">n<", svg)
-        self.assertNotIn("<td>n</td>", svg)
-        # values present; a copyable plain-text payload too
-        self.assertIn(">130<", svg)
-        self.assertIn(">100<", svg)
+        # integer values sit in the right-aligned int column, no fraction
+        self.assertIn('class="int">130<', svg)
+        self.assertIn('class="int">100<', svg)
         self.assertIn("data-copy=", svg)
+
+    def test_decimal_values_split_for_dot_alignment_no_scientific(self):
+        # q1/q3 land on .5 boundaries; a big value must not go scientific.
+        series = {"run-A": {"e": Candle(100, 110.5, 115, 122.5, 17366000, 4)}}
+        svg = svg_chart(["e"], series, title="NumSteps")
+        # decimal values: integer part in the int cell, ".5" in the frac cell
+        self.assertIn('class="int">110<', svg)
+        self.assertIn('class="frac">.5<', svg)
+        self.assertIn('class="int">122<', svg)
+        # large value stays plain, not "1.7366e+07"
+        self.assertIn("17366000", svg)
+        self.assertNotIn("e+", svg)
 
     def test_render_includes_click_to_copy_tooltip(self):
         sbr = {"r": [[_ep("c:@F@zc", "z.c", NumSteps=1)]]}
