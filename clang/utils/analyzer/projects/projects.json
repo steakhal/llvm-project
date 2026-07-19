@@ -37,7 +37,8 @@
     "source": "git",
     "origin": "https://github.com/nsf/termbox.git",
     "commit": "a04f34c11494a1dbfb6286fc95470dea4086c520",
-    "size": "tiny"
+    "size": "tiny",
+    "enabled": false
   },
   {
     "name": "tinyvm",
