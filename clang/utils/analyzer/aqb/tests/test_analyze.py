@@ -110,6 +110,15 @@ class AnalyzeRunArgvTest(unittest.TestCase):
         self.assertIn("CCC_CXX=ccache g++", argv)
         self.assertIn("CCACHE_DIR=/ccache", argv)
 
+    def test_forces_lld_linker_for_all_projects(self):
+        argv = self._argv()
+        # LDFLAGS is seeded into CMAKE_*_LINKER_FLAGS by CMake and honored by
+        # make/autotools, so this selects lld for every project's link. lld does
+        # AArch64 long-branch range extension, avoiding R_AARCH64_CALL26 overflow
+        # on the large Debug binaries.
+        self.assertIn("LDFLAGS=-fuse-ld=lld", argv)
+
+
 
 
 if __name__ == "__main__":

@@ -100,6 +100,11 @@ def analyze_run_argv(
     ``CCACHE_DIR``), so repeated/benchmark builds of the same corpus are fast.
     Analysis (the wrapper via ``--use-analyzer``) is a separate path and is
     never cached, so every TU is still analyzed.
+
+    ``LDFLAGS=-fuse-ld=lld`` links every project with lld (CMake seeds
+    ``CMAKE_*_LINKER_FLAGS`` from it; make/autotools honor it too), whose
+    AArch64 long-branch range extension avoids ``R_AARCH64_CALL26`` overflow on
+    large Debug binaries.
     """
     ep_dir = ep_csv_dir or f"{PROJECTS_MOUNT}/{EP_CSV_DIR_NAME}"
     args = ["run", "--rm", "-w", PROJECTS_MOUNT]
@@ -138,6 +143,12 @@ def analyze_run_argv(
         "CCC_CC=ccache gcc",
         "-e",
         "CCC_CXX=ccache g++",
+        # Link every project with lld. CMake seeds CMAKE_*_LINKER_FLAGS from
+        # LDFLAGS (and make/autotools honor it too), so this is corpus-wide. lld
+        # does AArch64 long-branch range extension, avoiding R_AARCH64_CALL26
+        # "relocation truncated to fit" on large Debug binaries.
+        "-e",
+        "LDFLAGS=-fuse-ld=lld",
         "--entrypoint",
         "python3",
         image,
