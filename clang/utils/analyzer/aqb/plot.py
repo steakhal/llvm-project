@@ -89,20 +89,29 @@ def svg_chart(
             cx = slot_x + 12 + ri * (_CANDLE_W + 4)
             color = _color(ri)
             mid = cx + _CANDLE_W / 2
-            # Hover tooltip: pretty name, which run, and the distribution the
-            # candlestick summarizes.
-            tip = (
-                f"{label} — {run}\n{title}: min={candle.min:g} q1={candle.q1:g} "
-                f"median={candle.median:g} q3={candle.q3:g} max={candle.max:g} "
-                f"(n={candle.n})"
+            # Hover tooltip content: the entity's pretty name, which run, the
+            # metric, and the distribution the candlestick summarizes — one item
+            # per line. Pre-escaped and joined with <br>; the delegated tooltip
+            # script renders it as innerHTML (safe: pieces are html-escaped).
+            tip = "<br>".join(
+                [
+                    f"<b>{html.escape(label)}</b>",
+                    f"run {html.escape(run)}",
+                    html.escape(title),
+                    f"min {candle.min:g}",
+                    f"q1 {candle.q1:g}",
+                    f"median {candle.median:g}",
+                    f"q3 {candle.q3:g}",
+                    f"max {candle.max:g}",
+                    f"n {candle.n}",
+                ]
             )
             # Raw values on the group so the log-toggle script can reposition.
             parts.append(
                 f'<g class="candle" data-lo="{candle.min:g}" data-q1="{candle.q1:g}" '
                 f'data-md="{candle.median:g}" data-q3="{candle.q3:g}" '
-                f'data-hi="{candle.max:g}">'
+                f'data-hi="{candle.max:g}" data-tip="{tip}">'
             )
-            parts.append(f"<title>{html.escape(tip)}</title>")
             # wick (min..max)
             parts.append(
                 f'<line class="wick" x1="{mid:.1f}" y1="{y(candle.max):.1f}" '
@@ -159,6 +168,14 @@ summary { cursor: pointer; font-family: monospace; }
 .tick, .xlabel, .legend { font-size: 10px; fill: #555; }
 .axis { stroke: #ccc; }
 .logtoggle { font-size: 11px; margin-left: 0.5rem; cursor: pointer; color: #555; }
+.candle { cursor: crosshair; }
+#aqb-tip {
+  position: fixed; display: none; pointer-events: none; z-index: 10;
+  background: #222d; color: #fff; padding: 5px 8px; border-radius: 4px;
+  font: 11px/1.5 ui-monospace, monospace; white-space: nowrap;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+}
+#aqb-tip b { font-size: 12px; }
 """
 
 # Inline (self-contained) script: link horizontal scrolling of all charts that
@@ -241,6 +258,47 @@ _LOG_SCRIPT = """
 </script>
 """
 
+# Inline (self-contained) instant tooltip: a single floating box (one delegated
+# listener set, not per-candle) that shows a candle's ``data-tip`` on hover and
+# follows the cursor. Rendered as innerHTML — safe because the server pre-escapes
+# every field and only injects literal <b>/<br> tags.
+_TIP_SCRIPT = """
+<script>
+(function () {
+  var tip = document.getElementById('aqb-tip');
+  var current = null;
+  function place(x, y) {
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    var nx = x + 14, ny = y + 14;
+    if (nx + w > window.innerWidth) nx = x - w - 14;
+    if (ny + h > window.innerHeight) ny = y - h - 14;
+    tip.style.left = nx + 'px';
+    tip.style.top = ny + 'px';
+  }
+  function candleOf(t) {
+    return t && t.closest ? t.closest('.candle') : null;
+  }
+  document.addEventListener('mouseover', function (e) {
+    var g = candleOf(e.target);
+    if (!g) return;
+    current = g;
+    tip.innerHTML = g.getAttribute('data-tip') || '';
+    tip.style.display = 'block';
+    place(e.clientX, e.clientY);
+  });
+  document.addEventListener('mousemove', function (e) {
+    if (current) place(e.clientX, e.clientY);
+  });
+  document.addEventListener('mouseout', function (e) {
+    if (candleOf(e.target)) {
+      current = null;
+      tip.style.display = 'none';
+    }
+  });
+})();
+</script>
+"""
+
 
 def _ordered_entities(cf: pd.DataFrame, oldest_run: str) -> List[str]:
     """Entities in a level's candle frame ``cf``, ordered by ``oldest_run``'s
@@ -316,7 +374,9 @@ def render_html(
         f"<h1>AQB benchmark plot</h1><p>Runs: {run_names}</p>"
         f'<div class="toc">{"".join(toc)}</div>'
         f'{"".join(body)}'
+        '<div id="aqb-tip"></div>'
         f"{_SYNC_SCRIPT}"
         f"{_LOG_SCRIPT}"
+        f"{_TIP_SCRIPT}"
         "</body></html>"
     )

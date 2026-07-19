@@ -116,28 +116,35 @@ class ScrollSyncTest(unittest.TestCase):
 
 
 class HoverTooltipTest(unittest.TestCase):
-    def test_candle_has_title_with_distribution(self):
+    def test_candle_has_data_tip_with_multiline_distribution(self):
         series = {"run-A": {"c:@F@zc": Candle(100, 110, 115, 120, 130, 5)}}
         svg = svg_chart(
             ["c:@F@zc"], series, title="NumSteps", labels={"c:@F@zc": "ZSTD_compress"}
         )
-        self.assertIn("<title>", svg)
+        self.assertIn("data-tip=", svg)
+        self.assertNotIn("<title>", svg)  # replaced by the JS tooltip
+        # multi-line: pieces are separated by <br>
+        self.assertIn("<br>", svg)
         # pretty name (not the USR), the run, and the five-number distribution.
         self.assertIn("ZSTD_compress", svg)
-        self.assertIn("run-A", svg)
-        self.assertIn("min=100", svg)
-        self.assertIn("median=115", svg)
-        self.assertIn("max=130", svg)
-        self.assertIn("(n=5)", svg)
+        self.assertIn("run run-A", svg)
+        self.assertIn("min 100", svg)
+        self.assertIn("median 115", svg)
+        self.assertIn("max 130", svg)
+        self.assertIn("n 5", svg)
 
-    def test_render_uses_pretty_names_at_entry_point_level(self):
+    def test_render_uses_pretty_names_and_includes_tooltip_script(self):
         sbr = {"r": [[_ep("c:@F@zc", "z.c", NumSteps=1)]]}
         sbr["r"][0][0]["debug_name"] = "ZSTD_compress"
         html_out = render_html(
             _frames(sbr), run_order=["r"], names={"c:@F@zc": "ZSTD_compress"}
         )
-        self.assertIn("<title>", html_out)
+        self.assertIn("data-tip=", html_out)
         self.assertIn("ZSTD_compress", html_out)
+        # the instant floating tooltip: styled box + cursor-following listeners
+        self.assertIn('id="aqb-tip"', html_out)
+        self.assertIn("mousemove", html_out)
+        self.assertNotIn("<script src", html_out)
 
 
 class LogToggleTest(unittest.TestCase):
