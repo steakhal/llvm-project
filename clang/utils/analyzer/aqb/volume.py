@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
+import urllib.request
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from aqb.errors import ClangBuildError, RuntimeCommandError
+from aqb.errors import ClangBuildError, CommitTitleError, RuntimeCommandError
 from aqb.presets import assemble_user_presets
 from aqb.runtime import Runtime
 
@@ -105,6 +107,7 @@ class ClangVolume:
     name: str
     config_digest: str
     built: bool  # True if this call built it; False if an existing volume was reused
+    commit_title: str = ""  # analyzer commit subject (provenance)
 
 
 def _is_local_source(source: str) -> bool:
@@ -144,15 +147,32 @@ def _worktree_common_dir_mount(source: str) -> Optional[str]:
     return f"{common}:{common}:ro"
 
 
-def _resolve_commit_title(source: str, commit: str) -> str:
-    """Best-effort subject line of ``commit`` read from a local ``source`` repo.
+def _github_repo(url: str) -> Optional[Tuple[str, str]]:
+    """``(owner, repo)`` if ``url`` is a GitHub remote (https/ssh/git@), else
+    None. The optional trailing ``.git`` is stripped."""
+    match = re.search(r"github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?/?$", url)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
 
-    Empty for a remote-URL source (no local repo to query) or on any error.
-    AQB always derives the title from the commit itself — there is no manual
-    override.
-    """
-    if not _is_local_source(source):
+
+def _github_commit_title(owner: str, repo: str, commit: str) -> str:
+    """Best-effort commit subject from the GitHub API; empty on any error."""
+    api = f"https://api.github.com/repos/{owner}/{repo}/commits/{commit}"
+    req = urllib.request.Request(
+        api,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "aqb"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            message = json.load(resp)["commit"]["message"]
+    except Exception:
         return ""
+    return message.split("\n", 1)[0].strip()
+
+
+def _git_commit_title(source: str, commit: str) -> str:
+    """Commit subject from a local repo via ``git log``; empty on any error."""
     try:
         result = subprocess.run(
             ["git", "-C", source, "log", "-1", "--format=%s", commit],
@@ -161,9 +181,27 @@ def _resolve_commit_title(source: str, commit: str) -> str:
         )
     except OSError:
         return ""
-    if result.returncode != 0:
-        return ""
-    return result.stdout.strip()
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _resolve_commit_title(source: str, commit: str) -> str:
+    """The subject line of ``commit`` — a hard requirement, not best-effort. For
+    a local ``source`` repo it is read with ``git log``; for a GitHub remote URL
+    it is fetched from the GitHub API. A commit always has a title, so an
+    unresolvable one (offline, non-GitHub URL, unknown commit) raises
+    ``CommitTitleError`` rather than recording empty provenance.
+    """
+    if _is_local_source(source):
+        title = _git_commit_title(source, commit)
+    else:
+        repo = _github_repo(source)
+        title = _github_commit_title(*repo, commit) if repo else ""
+    if not title:
+        raise CommitTitleError(
+            f"could not resolve the title of commit {commit!r} from {source!r} "
+            f"(need a local clone of the commit or a reachable GitHub URL)"
+        )
+    return title
 
 
 def _builder_run_argv(volume: str, spec: ClangBuildSpec) -> List[str]:
@@ -269,7 +307,12 @@ def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> ClangVolum
 
     if runtime.volume_exists(name):
         if _clang_volume_status(runtime, name, spec.builder_image) == "complete":
-            return ClangVolume(name=name, config_digest=digest, built=False)
+            return ClangVolume(
+                name=name,
+                config_digest=digest,
+                built=False,
+                commit_title=spec.commit_title,
+            )
         # Residue of an interrupted build: discard and rebuild.
         runtime.remove_volume(name)
 
@@ -297,7 +340,9 @@ def resolve_or_build_clang(runtime: Runtime, spec: ClangBuildSpec) -> ClangVolum
             f"building clang for {spec.commit} failed "
             f"(exit {result.returncode}): {result.stderr.strip()}"
         )
-    return ClangVolume(name=name, config_digest=digest, built=True)
+    return ClangVolume(
+        name=name, config_digest=digest, built=True, commit_title=spec.commit_title
+    )
 
 
 def build_clang_volume(

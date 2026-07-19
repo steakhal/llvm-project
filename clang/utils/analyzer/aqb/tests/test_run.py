@@ -135,7 +135,10 @@ class PerformRunTest(unittest.TestCase):
 
             def fake_resolve_clang(rt, **kwargs):
                 return ClangVolume(
-                    name="aqb-clang-deadbeef-abc123", config_digest="abc123", built=True
+                    name="aqb-clang-deadbeef-abc123",
+                    config_digest="abc123",
+                    built=True,
+                    commit_title="[analyzer] fix a thing",
                 )
 
             run_path = perform_run(
@@ -156,6 +159,8 @@ class PerformRunTest(unittest.TestCase):
             self.assertEqual(meta["analyzer"]["commit"], "deadbeef")
             self.assertEqual(meta["analyzer"]["volume"], "aqb-clang-deadbeef-abc123")
             self.assertEqual(meta["analyzer"]["config_digest"], "abc123")
+            # the commit title flows from the resolved volume into provenance
+            self.assertEqual(meta["analyzer"]["commit_title"], "[analyzer] fix a thing")
             self.assertEqual(meta["kind"], "functional")
             self.assertEqual([p["name"] for p in meta["corpus"]], ["zstd"])
 

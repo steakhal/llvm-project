@@ -30,7 +30,7 @@ from aqb.normalize import Finding, load_findings
 from aqb.runtime import Runtime
 from aqb.runid import new_run_id
 from aqb.store import RunStore
-from aqb.volume import CCACHE_VOLUME, _resolve_commit_title, build_clang_volume
+from aqb.volume import CCACHE_VOLUME, build_clang_volume
 
 
 def materialize_corpus(
@@ -134,10 +134,8 @@ def perform_run(
     )
     names = [p.name for p in selected]
 
-    # The commit's title is always derived from the commit itself (no override).
-    commit_title = _resolve_commit_title(source, commit)
-
-    # Resolve (or build) the analyzer.
+    # Resolve (or build) the analyzer. The commit title (provenance) is resolved
+    # as part of this and carried on the returned volume.
     volume = resolve_clang(
         runtime,
         commit=commit,
@@ -149,6 +147,7 @@ def perform_run(
         memory=memory,
         cpus=cpus,
     )
+    commit_title = getattr(volume, "commit_title", "")
 
     # Stage a writable corpus once; analyze it (once, or N times for a benchmark).
     work_dir = os.path.join(home, "work", run_id)

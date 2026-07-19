@@ -15,3 +15,11 @@ class RuntimeCommandError(AqbError):
 
 class ClangBuildError(AqbError):
     """Building a Clang Volume failed; the partial volume has been removed."""
+
+
+class CommitTitleError(AqbError):
+    """The analyzer commit's title could not be resolved (local repo or GitHub).
+
+    A commit always has a title, so AQB treats a resolution failure as fatal
+    rather than recording empty provenance.
+    """

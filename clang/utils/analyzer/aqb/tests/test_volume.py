@@ -331,6 +331,8 @@ class ResolveOrBuildTest(unittest.TestCase):
 
 class BuildClangVolumeTest(unittest.TestCase):
     def test_assembles_presets_resolves_image_and_builds(self):
+        from unittest import mock
+
         def handler(argv):
             if argv[1:3] == ["image", "inspect"]:
                 return ProcResult(0, "sha256:BUILDERID\n", "")
@@ -339,17 +341,19 @@ class BuildClangVolumeTest(unittest.TestCase):
             return ProcResult(0, "", "")
 
         runner = ScriptedRunner(handler)
-        vol = build_clang_volume(
-            Runtime("docker", runner),
-            commit="349146dabe4b07651d02fb",
-            source="/work/llvm-project",
-            preset="aqb-base",
-            user_overlay_json=None,
-            builder_image="aqb-clang-builder:latest",
-            created="2026-07-16T13:15:00+00:00",
-        )
+        with mock.patch("aqb.volume._resolve_commit_title", return_value="the title"):
+            vol = build_clang_volume(
+                Runtime("docker", runner),
+                commit="349146dabe4b07651d02fb",
+                source="/work/llvm-project",
+                preset="aqb-base",
+                user_overlay_json=None,
+                builder_image="aqb-clang-builder:latest",
+                created="2026-07-16T13:15:00+00:00",
+            )
         self.assertTrue(vol.name.startswith("aqb-clang-349146dabe4b-"))
         self.assertTrue(vol.built)
+        self.assertEqual(vol.commit_title, "the title")
         self.assertTrue([c for c in runner.calls if c[1:3] == ["image", "inspect"]])
         build = [c for c in runner.calls if c[1:2] == ["run"] and "test" not in c][0]
         self.assertTrue(
@@ -455,14 +459,53 @@ class ResolveCommitTitleTest(unittest.TestCase):
             ).stdout.strip()
             self.assertEqual(_resolve_commit_title(repo, sha), "hello world subject")
 
-    def test_url_source_yields_empty(self):
+    def test_url_source_uses_github_api(self):
+        from unittest import mock
+
         from aqb.volume import _resolve_commit_title
 
-        self.assertEqual(_resolve_commit_title("https://github.com/x/y.git", "abc"), "")
+        # A GitHub URL resolves via the API (mocked — no network in tests).
+        with mock.patch(
+            "aqb.volume._github_commit_title", return_value="from the api"
+        ) as fetch:
+            title = _resolve_commit_title(
+                "https://github.com/llvm/llvm-project.git", "4070621c"
+            )
+        self.assertEqual(title, "from the api")
+        fetch.assert_called_once_with("llvm", "llvm-project", "4070621c")
 
-    def test_bad_commit_yields_empty(self):
+    def test_unresolvable_raises(self):
+        from aqb.errors import CommitTitleError
+        from aqb.volume import _resolve_commit_title
+
+        # Non-GitHub remote: nothing to query -> hard error (not empty).
+        with self.assertRaises(CommitTitleError):
+            _resolve_commit_title("https://example.com/x/y.git", "abc")
+
+    def test_bad_commit_raises(self):
+        from aqb.errors import CommitTitleError
         from aqb.volume import _resolve_commit_title
 
         with tempfile.TemporaryDirectory() as repo:
-            # not even a git repo -> empty, no raise
-            self.assertEqual(_resolve_commit_title(repo, "deadbeef"), "")
+            # not even a git repo -> cannot resolve -> raise
+            with self.assertRaises(CommitTitleError):
+                _resolve_commit_title(repo, "deadbeef")
+
+
+class GithubRepoParseTest(unittest.TestCase):
+    def test_parses_owner_repo_from_github_urls(self):
+        from aqb.volume import _github_repo
+
+        for url in (
+            "https://github.com/llvm/llvm-project.git",
+            "https://github.com/llvm/llvm-project",
+            "git@github.com:llvm/llvm-project.git",
+            "ssh://git@github.com/llvm/llvm-project.git",
+        ):
+            self.assertEqual(_github_repo(url), ("llvm", "llvm-project"), url)
+
+    def test_non_github_url_is_none(self):
+        from aqb.volume import _github_repo
+
+        self.assertIsNone(_github_repo("https://gitlab.com/a/b.git"))
+        self.assertIsNone(_github_repo("/local/path"))

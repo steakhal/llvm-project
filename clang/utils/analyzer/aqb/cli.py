@@ -14,7 +14,12 @@ from aqb.benchmark import (
     pretty_names,
 )
 from aqb.diff import diff_runs, summarize, verdict
-from aqb.errors import ClangBuildError, RunNotFoundError, RuntimeCommandError
+from aqb.errors import (
+    ClangBuildError,
+    CommitTitleError,
+    RunNotFoundError,
+    RuntimeCommandError,
+)
 from aqb.normalize import Finding
 from aqb.plot import render_html
 from aqb.run import perform_run
@@ -206,7 +211,7 @@ def cmd_build_clang(args: argparse.Namespace) -> int:
             memory=args.memory,
             cpus=args.cpus,
         )
-    except (ClangBuildError, RuntimeCommandError) as exc:
+    except (ClangBuildError, CommitTitleError, RuntimeCommandError) as exc:
         print(f"aqb build-clang: {exc}", file=sys.stderr)
         return 1
     print(volume.name)
@@ -248,7 +253,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             kind=kind,
             iterations=iterations,
         )
-    except (ClangBuildError, RuntimeCommandError) as exc:
+    except (ClangBuildError, CommitTitleError, RuntimeCommandError) as exc:
         print(f"aqb run: {exc}", file=sys.stderr)
         return 1
     run_id = os.path.basename(run_path)
