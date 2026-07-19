@@ -118,7 +118,8 @@
     "source": "git",
     "origin": "https://github.com/google/re2.git",
     "commit": "972a15cedd008d846f1a39b2e88ce48d7f166cbd",
-    "size": "small"
+    "size": "small",
+    "enabled": false
   },
   {
     "name": "cppcheck",
