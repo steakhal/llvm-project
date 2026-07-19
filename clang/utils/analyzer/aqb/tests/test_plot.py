@@ -110,6 +110,9 @@ class ScrollSyncTest(unittest.TestCase):
         self.assertIn("<script>", html_out)
         self.assertNotIn("<script src", html_out)
         self.assertIn("scrollLeft", html_out)
+        # Smooth: propagation coalesced into an animation frame, passive listener.
+        self.assertIn("requestAnimationFrame", html_out)
+        self.assertIn("passive", html_out)
 
 
 class LogToggleTest(unittest.TestCase):

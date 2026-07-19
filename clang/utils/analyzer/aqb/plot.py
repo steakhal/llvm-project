@@ -151,22 +151,36 @@ summary { cursor: pointer; font-family: monospace; }
 # every per-TU chart in lockstep and their columns stay aligned (same for
 # per-entry-point and per-run). Charts within a level share an identical x-axis,
 # so equal scrollLeft lines the columns up.
+#
+# Propagation is coalesced into ONE requestAnimationFrame per frame (not per
+# scroll event) and skips panels already at the target offset — otherwise
+# writing scrollLeft to dozens of very wide panels on every scroll tick thrashes
+# layout and makes scrolling stutter. Listeners are passive so scrolling is
+# never blocked on JS.
 _SYNC_SCRIPT = """
 <script>
 (function () {
   function link(group) {
     var boxes = Array.prototype.slice.call(
       document.querySelectorAll('.chartbox[data-sync="' + group + '"]'));
-    var syncing = false;
+    var active = null, target = 0, pending = false;
+    function apply() {
+      pending = false;
+      for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i] !== active && boxes[i].scrollLeft !== target) {
+          boxes[i].scrollLeft = target;
+        }
+      }
+    }
     boxes.forEach(function (box) {
       box.addEventListener('scroll', function () {
-        if (syncing) return;
-        syncing = true;
-        boxes.forEach(function (other) {
-          if (other !== box) other.scrollLeft = box.scrollLeft;
-        });
-        syncing = false;
-      });
+        active = box;
+        target = box.scrollLeft;
+        if (!pending) {
+          pending = true;
+          requestAnimationFrame(apply);
+        }
+      }, { passive: true });
     });
   }
   ['run', 'tu', 'entry-point'].forEach(link);
