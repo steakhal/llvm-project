@@ -115,6 +115,31 @@ class ScrollSyncTest(unittest.TestCase):
         self.assertIn("passive", html_out)
 
 
+class HoverTooltipTest(unittest.TestCase):
+    def test_candle_has_title_with_distribution(self):
+        series = {"run-A": {"c:@F@zc": Candle(100, 110, 115, 120, 130, 5)}}
+        svg = svg_chart(
+            ["c:@F@zc"], series, title="NumSteps", labels={"c:@F@zc": "ZSTD_compress"}
+        )
+        self.assertIn("<title>", svg)
+        # pretty name (not the USR), the run, and the five-number distribution.
+        self.assertIn("ZSTD_compress", svg)
+        self.assertIn("run-A", svg)
+        self.assertIn("min=100", svg)
+        self.assertIn("median=115", svg)
+        self.assertIn("max=130", svg)
+        self.assertIn("(n=5)", svg)
+
+    def test_render_uses_pretty_names_at_entry_point_level(self):
+        sbr = {"r": [[_ep("c:@F@zc", "z.c", NumSteps=1)]]}
+        sbr["r"][0][0]["debug_name"] = "ZSTD_compress"
+        html_out = render_html(
+            _frames(sbr), run_order=["r"], names={"c:@F@zc": "ZSTD_compress"}
+        )
+        self.assertIn("<title>", html_out)
+        self.assertIn("ZSTD_compress", html_out)
+
+
 class LogToggleTest(unittest.TestCase):
     def test_candles_carry_raw_values_and_chart_carries_geometry(self):
         series = {"run-A": {"f1.c": Candle(1, 2, 3, 4, 5, 4)}}

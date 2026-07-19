@@ -449,6 +449,28 @@ the shared ccache volume at ``/ccache``. Env: ``PATH=/analyzer/bin:...``,
 ``/projects/<name>/RefScanBuildResults/`` (reports) and
 ``/projects/aqb-entry-point-stats/*.csv`` (metrics).
 
+Python Environment
+------------------
+
+AQB's benchmark/metrics data manipulation uses **pandas** (``parse``, the tidy
+long frame, the ``(file, USR)`` inner join, and the group-by/quantile candle
+aggregation). pandas is a declared dependency (``requirements.txt``, pinned
+``pandas>=2.3.3`` for numpy-2 compatibility; also used by ``SATestBenchmark``)
+and is AQB's only hard third-party requirement — the SVG plot rendering is
+hand-written stdlib (no matplotlib).
+
+If the interpreter you invoke AQB with has an incompatible pandas/numpy (e.g. a
+system Python carrying ``pandas 1.0.5`` against ``numpy 2.0``, which raises
+``ValueError: numpy.dtype size changed`` on import), run AQB from an isolated
+venv::
+
+   python3 -m venv ~/.aqb-venv
+   ~/.aqb-venv/bin/pip install -r clang/utils/analyzer/requirements.txt
+   AQB_HOME=... ~/.aqb-venv/bin/python -m aqb <verb> ...
+
+(``pip install 'pandas>=2.3.3'`` alone suffices for AQB; the rest of
+``requirements.txt`` is for other analyzer tooling.)
+
 Run Artifacts and Provenance
 ============================
 

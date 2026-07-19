@@ -7,7 +7,12 @@ import os
 import sys
 from typing import Dict, List, Optional
 
-from aqb.benchmark import candle_frames, frame_from_samples, inner_join_runs
+from aqb.benchmark import (
+    candle_frames,
+    frame_from_samples,
+    inner_join_runs,
+    pretty_names,
+)
 from aqb.diff import diff_runs, summarize, verdict
 from aqb.errors import ClangBuildError, RunNotFoundError, RuntimeCommandError
 from aqb.normalize import Finding
@@ -354,7 +359,11 @@ def cmd_plot(args: argparse.Namespace) -> int:
 
     frames = candle_frames(frame)
     with open(args.output, "w") as handle:
-        handle.write(render_html(frames, run_order=list(samples_by_run)))
+        handle.write(
+            render_html(
+                frames, run_order=list(samples_by_run), names=pretty_names(frame)
+            )
+        )
     out_abs = os.path.abspath(args.output)
     print(out_abs)
     print(f"wrote {out_abs} ({len(samples_by_run)} run(s))", file=sys.stderr)

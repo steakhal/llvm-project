@@ -53,6 +53,15 @@ def inner_join_runs(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[Tuple[str, str
     return df[mask].reset_index(drop=True), dropped
 
 
+def pretty_names(df: pd.DataFrame) -> Dict[str, str]:
+    """Map each ``USR`` to its human-readable ``debug_name`` (first seen), for
+    labelling entry-point candles in tooltips."""
+    if df.empty:
+        return {}
+    unique = df.drop_duplicates(subset="usr")
+    return dict(zip(unique["usr"], unique["debug_name"]))
+
+
 def _level_values(df: pd.DataFrame, level: str) -> pd.DataFrame:
     """Per-``(run, entity, metric, iteration)`` value for a granularity: the
     USR's own value (entry-point), or the sum over entry points sharing a file

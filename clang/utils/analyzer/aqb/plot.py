@@ -42,17 +42,23 @@ def _color(run_index: int) -> str:
 
 
 def svg_chart(
-    entities: List[str], series_by_run: Dict[str, Dict[str, Candle]], title: str
+    entities: List[str],
+    series_by_run: Dict[str, Dict[str, Candle]],
+    title: str,
+    labels: Dict[str, str] = None,
 ) -> str:
     """One candlestick chart: x-axis lists ``entities``; at each entity, one
     candle per run (color-coded), overlaid. ``series_by_run`` maps a run name to
     its ``{entity: Candle}``. Candles are drawn on a linear y-scale (0..max) by
     default; each candle carries its raw five-number values (``data-*``) and the
     chart carries its geometry (``data-ph``/``data-pt``/``data-ymax``) so the
-    inline log-toggle script can recompute y client-side."""
+    inline log-toggle script can recompute y client-side. Each candle also gets
+    a native ``<title>`` tooltip (pretty name from ``labels`` + run +
+    distribution) shown on hover."""
     runs = list(series_by_run.keys())
     all_candles = [c for r in runs for c in series_by_run[r].values() if c is not None]
     ymax = max((c.max for c in all_candles), default=1.0) or 1.0
+    labels = labels or {}
 
     slot_w = max(44, len(runs) * (_CANDLE_W + 4) + 16)
     width = _PAD_LEFT + slot_w * max(1, len(entities)) + 16
@@ -75,6 +81,7 @@ def svg_chart(
 
     for ei, entity in enumerate(entities):
         slot_x = _PAD_LEFT + ei * slot_w
+        label = labels.get(entity, entity)
         for ri, run in enumerate(runs):
             candle = series_by_run[run].get(entity)
             if candle is None:
@@ -82,12 +89,20 @@ def svg_chart(
             cx = slot_x + 12 + ri * (_CANDLE_W + 4)
             color = _color(ri)
             mid = cx + _CANDLE_W / 2
+            # Hover tooltip: pretty name, which run, and the distribution the
+            # candlestick summarizes.
+            tip = (
+                f"{label} — {run}\n{title}: min={candle.min:g} q1={candle.q1:g} "
+                f"median={candle.median:g} q3={candle.q3:g} max={candle.max:g} "
+                f"(n={candle.n})"
+            )
             # Raw values on the group so the log-toggle script can reposition.
             parts.append(
                 f'<g class="candle" data-lo="{candle.min:g}" data-q1="{candle.q1:g}" '
                 f'data-md="{candle.median:g}" data-q3="{candle.q3:g}" '
                 f'data-hi="{candle.max:g}">'
             )
+            parts.append(f"<title>{html.escape(tip)}</title>")
             # wick (min..max)
             parts.append(
                 f'<line class="wick" x1="{mid:.1f}" y1="{y(candle.max):.1f}" '
@@ -254,14 +269,21 @@ def _series_by_run(
     return series
 
 
-def render_html(frames: Dict[str, pd.DataFrame], run_order: List[str]) -> str:
+def render_html(
+    frames: Dict[str, pd.DataFrame],
+    run_order: List[str],
+    names: Dict[str, str] = None,
+) -> str:
     """Render one self-contained HTML bundling candlestick charts for every
     metric at all three granularities (per-run, per-TU, per-entry-point),
     overlaying the runs in ``run_order``. ``frames`` maps each level to its
-    candle DataFrame (see ``benchmark.candle_frames``). No external assets."""
+    candle DataFrame (see ``benchmark.candle_frames``). ``names`` maps a USR to
+    its pretty ``debug_name`` for entry-point hover tooltips. No external
+    assets."""
     body: List[str] = []
     toc: List[str] = []
     oldest_run = run_order[0] if run_order else ""
+    names = names or {}
 
     for level, heading in _LEVELS:
         anchor = f"level-{level}"
@@ -271,13 +293,16 @@ def render_html(frames: Dict[str, pd.DataFrame], run_order: List[str]) -> str:
         if cf is None or cf.empty:
             body.append("<p><em>no data</em></p>")
             continue
+        # Entry points get pretty names in tooltips; TU/run entities are already
+        # human-readable (the file path / the whole-run marker).
+        labels = names if level == "entry-point" else None
         # One entity order per level (by the oldest run's ORDER_METRIC), and the
         # SAME full entity list for every metric chart at this level — so slots
         # line up column-for-column and horizontal scrolling can be synced.
         ordered = _ordered_entities(cf, oldest_run)
         for metric in sorted(cf["metric"].unique()):
             series_by_run = _series_by_run(cf[cf["metric"] == metric], run_order)
-            chart = svg_chart(ordered, series_by_run, title=metric)
+            chart = svg_chart(ordered, series_by_run, title=metric, labels=labels)
             body.append(
                 f"<details><summary>{html.escape(metric)}</summary>"
                 '<label class="logtoggle"><input type="checkbox"> log scale</label>'
