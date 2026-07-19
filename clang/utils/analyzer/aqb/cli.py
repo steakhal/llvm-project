@@ -60,9 +60,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="git remote URL or absolute local clone path",
     )
     build.add_argument(
-        "--commit-title", default="", help="commit subject line (provenance)"
-    )
-    build.add_argument(
         "--preset",
         default="aqb-base",
         help="configure-preset name to build (default: aqb-base)",
@@ -96,9 +93,6 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--commit", required=True, help="analyzer commit to analyze with")
     run.add_argument(
         "--source", required=True, help="git remote URL or absolute local clone path"
-    )
-    run.add_argument(
-        "--commit-title", default="", help="commit subject line (provenance)"
     )
     run.add_argument(
         "--preset",
@@ -205,7 +199,6 @@ def cmd_build_clang(args: argparse.Namespace) -> int:
             runtime,
             commit=args.commit,
             source=args.source,
-            commit_title=args.commit_title,
             preset=args.preset,
             user_overlay_json=overlay,
             builder_image=args.builder_image,
@@ -246,7 +239,6 @@ def cmd_run(args: argparse.Namespace) -> int:
             projects_src=os.path.join(analyzer_dir, "projects"),
             scripts_dir=analyzer_dir,
             project_names=names,
-            commit_title=args.commit_title,
             preset=args.preset,
             user_overlay_json=overlay,
             builder_image=args.builder_image,

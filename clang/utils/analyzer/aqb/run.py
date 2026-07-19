@@ -30,7 +30,7 @@ from aqb.normalize import Finding, load_findings
 from aqb.runtime import Runtime
 from aqb.runid import new_run_id
 from aqb.store import RunStore
-from aqb.volume import CCACHE_VOLUME, build_clang_volume
+from aqb.volume import CCACHE_VOLUME, _resolve_commit_title, build_clang_volume
 
 
 def materialize_corpus(
@@ -94,7 +94,6 @@ def perform_run(
     scripts_dir: str,
     project_names: Sequence[str] = (),
     sizes: Optional[Sequence] = None,
-    commit_title: str = "",
     preset: str = "aqb-base",
     user_overlay_json: Optional[str] = None,
     builder_image: str = "aqb-clang-builder:latest",
@@ -135,12 +134,14 @@ def perform_run(
     )
     names = [p.name for p in selected]
 
+    # The commit's title is always derived from the commit itself (no override).
+    commit_title = _resolve_commit_title(source, commit)
+
     # Resolve (or build) the analyzer.
     volume = resolve_clang(
         runtime,
         commit=commit,
         source=source,
-        commit_title=commit_title,
         preset=preset,
         user_overlay_json=user_overlay_json,
         builder_image=builder_image,

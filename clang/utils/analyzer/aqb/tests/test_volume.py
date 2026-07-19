@@ -343,7 +343,6 @@ class BuildClangVolumeTest(unittest.TestCase):
             Runtime("docker", runner),
             commit="349146dabe4b07651d02fb",
             source="/work/llvm-project",
-            commit_title="t",
             preset="aqb-base",
             user_overlay_json=None,
             builder_image="aqb-clang-builder:latest",

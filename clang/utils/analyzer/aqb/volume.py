@@ -148,7 +148,8 @@ def _resolve_commit_title(source: str, commit: str) -> str:
     """Best-effort subject line of ``commit`` read from a local ``source`` repo.
 
     Empty for a remote-URL source (no local repo to query) or on any error.
-    Used to fill in provenance when ``--commit-title`` was not given explicitly.
+    AQB always derives the title from the commit itself — there is no manual
+    override.
     """
     if not _is_local_source(source):
         return ""
@@ -304,7 +305,6 @@ def build_clang_volume(
     *,
     commit: str,
     source: str,
-    commit_title: str,
     preset: str,
     user_overlay_json: Optional[str],
     builder_image: str,
@@ -316,7 +316,8 @@ def build_clang_volume(
 
     Assembles ``aqb-base`` + the user's preset overlay into a canonical
     CMakeUserPresets.json, resolves the builder image's content digest
-    (``{{.Id}}``), and delegates to ``resolve_or_build_clang``. ``memory``/``cpus``
+    (``{{.Id}}``), and delegates to ``resolve_or_build_clang``. The commit's
+    title is read from the ``source`` repo for provenance. ``memory``/``cpus``
     cap the builder container's resources (building LLVM is memory-hungry).
     """
     user_presets_json = assemble_user_presets(user_overlay_json)
@@ -329,7 +330,7 @@ def build_clang_volume(
     spec = ClangBuildSpec(
         commit=commit,
         source=source,
-        commit_title=commit_title or _resolve_commit_title(source, commit),
+        commit_title=_resolve_commit_title(source, commit),
         preset=preset,
         user_presets_json=user_presets_json,
         builder_image=builder_image,
