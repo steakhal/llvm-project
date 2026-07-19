@@ -100,6 +100,17 @@ class AnalyzeRunArgvTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("--cpus") + 1], "8")
         self.assertEqual(argv[argv.index("-w") + 1], "/projects")
 
+    def test_ccache_wraps_real_build_compiler(self):
+        argv = self._argv()
+        # ccc-analyzer's real (throwaway) compile uses $CCC_CC/$CCC_CXX; route it
+        # through ccache so repeated project builds hit the shared /ccache cache.
+        # The analyzer clang (--use-analyzer, the wrapper) is a separate path and
+        # stays uncached, so every TU is still actually analyzed.
+        self.assertIn("CCC_CC=ccache gcc", argv)
+        self.assertIn("CCC_CXX=ccache g++", argv)
+        self.assertIn("CCACHE_DIR=/ccache", argv)
+
+
 
 if __name__ == "__main__":
     unittest.main()

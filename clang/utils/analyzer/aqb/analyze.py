@@ -94,6 +94,12 @@ def analyze_run_argv(
     clang is ``AQB_REAL_CLANG``. Collect + ``merge_entry_point_csvs`` afterward.
     ``ep_csv_dir`` overrides the in-container CSV dir (e.g. a per-iteration
     ``.../iter-<i>`` dir for benchmarks); empty means the default.
+
+    ccc-analyzer's real (throwaway) object compile runs through ccache
+    (``CCC_CC="ccache gcc"`` / ``CCC_CXX="ccache g++"``, cache at
+    ``CCACHE_DIR``), so repeated/benchmark builds of the same corpus are fast.
+    Analysis (the wrapper via ``--use-analyzer``) is a separate path and is
+    never cached, so every TU is still analyzed.
     """
     ep_dir = ep_csv_dir or f"{PROJECTS_MOUNT}/{EP_CSV_DIR_NAME}"
     args = ["run", "--rm", "-w", PROJECTS_MOUNT]
@@ -123,6 +129,15 @@ def analyze_run_argv(
         f"AQB_EP_CSV_DIR={ep_dir}",
         "-e",
         f"CCACHE_DIR={CCACHE_MOUNT}",
+        # ccc-analyzer's real (throwaway) object compile uses $CCC_CC/$CCC_CXX;
+        # route it through ccache so repeated/benchmark project builds hit the
+        # shared cache. shellwords() in ccc-analyzer splits "ccache gcc" into
+        # launcher + compiler. The analyzer clang (the wrapper, via
+        # --use-analyzer) is a separate path, so analysis itself is never cached.
+        "-e",
+        "CCC_CC=ccache gcc",
+        "-e",
+        "CCC_CXX=ccache g++",
         "--entrypoint",
         "python3",
         image,
