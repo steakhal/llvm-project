@@ -55,6 +55,7 @@ def svg_chart(
     series_by_run: Dict[str, Dict[str, Candle]],
     title: str,
     labels: Dict[str, str] = None,
+    run_titles: Dict[str, str] = None,
 ) -> str:
     """One candlestick chart: x-axis lists ``entities``; at each entity, one
     candle per run (color-coded), overlaid. ``series_by_run`` maps a run name to
@@ -68,6 +69,7 @@ def svg_chart(
     all_candles = [c for r in runs for c in series_by_run[r].values() if c is not None]
     ymax = max((c.max for c in all_candles), default=1.0) or 1.0
     labels = labels or {}
+    run_titles = run_titles or {}
 
     slot_w = max(44, len(runs) * (_CANDLE_W + 4) + 16)
     width = _PAD_LEFT + slot_w * max(1, len(entities)) + 16
@@ -122,14 +124,17 @@ def svg_chart(
                     f"<tr><td class='lbl'>{k}</td><td class='int'>{intp}</td>"
                     f"<td class='frac'>{dot + frac}</td></tr>"
                 )
-            tip = (
-                f"<b>{esc(label)}</b><br>run {esc(run)}<br>{esc(title)}"
-                f'<table>{"".join(rows)}</table>'
-            )
-            copy = "&#10;".join(
-                [esc(label), f"run {esc(run)}", esc(title)]
-                + [f"{k} {_fmt(v)}" for k, v in stats]
-            )
+            clang_title = run_titles.get(run, "")
+            head = f"<b>{esc(label)}</b><br>run {esc(run)}"
+            copy_lines = [esc(label), f"run {esc(run)}"]
+            if clang_title:
+                # The clang commit (analyzer under test) that produced this run.
+                head += f"<br>clang: {esc(clang_title)}"
+                copy_lines.append(f"clang: {esc(clang_title)}")
+            tip = f"{head}<br>{esc(title)}<table>{''.join(rows)}</table>"
+            copy_lines.append(esc(title))
+            copy_lines += [f"{k} {_fmt(v)}" for k, v in stats]
+            copy = "&#10;".join(copy_lines)
             # Raw values on the group so the log-toggle script can reposition
             # (plain decimals, JS-parseable — never scientific).
             parts.append(
@@ -387,12 +392,14 @@ def render_html(
     frames: Dict[str, pd.DataFrame],
     run_order: List[str],
     names: Dict[str, str] = None,
+    run_titles: Dict[str, str] = None,
 ) -> str:
     """Render one self-contained HTML bundling candlestick charts for every
     metric at all three granularities (per-run, per-TU, per-entry-point),
     overlaying the runs in ``run_order``. ``frames`` maps each level to its
     candle DataFrame (see ``benchmark.candle_frames``). ``names`` maps a USR to
-    its pretty ``debug_name`` for entry-point hover tooltips. No external
+    its pretty ``debug_name`` for entry-point hover tooltips; ``run_titles`` maps
+    a run id to its analyzer commit title (shown per candle). No external
     assets."""
     body: List[str] = []
     toc: List[str] = []
@@ -416,7 +423,13 @@ def render_html(
         ordered = _ordered_entities(cf, oldest_run)
         for metric in sorted(cf["metric"].unique()):
             series_by_run = _series_by_run(cf[cf["metric"] == metric], run_order)
-            chart = svg_chart(ordered, series_by_run, title=metric, labels=labels)
+            chart = svg_chart(
+                ordered,
+                series_by_run,
+                title=metric,
+                labels=labels,
+                run_titles=run_titles,
+            )
             body.append(
                 f"<details><summary>{html.escape(metric)}</summary>"
                 '<label class="logtoggle"><input type="checkbox"> log scale</label>'

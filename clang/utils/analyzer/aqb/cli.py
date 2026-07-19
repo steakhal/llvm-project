@@ -329,6 +329,7 @@ def _load_samples(store: RunStore, run_id: str):
 def cmd_plot(args: argparse.Namespace) -> int:
     store = RunStore(args.home or default_home())
     samples_by_run = {}
+    run_titles = {}
     try:
         resolved = [store.resolve(raw) for raw in args.runs]
         # Order runs oldest-first by metadata.created so overlaid candles read
@@ -336,6 +337,7 @@ def cmd_plot(args: argparse.Namespace) -> int:
         resolved.sort(key=lambda rid: store.get(rid).created)
         for run_id in resolved:
             samples_by_run[run_id] = _load_samples(store, run_id)
+            run_titles[run_id] = store.get(run_id).analyzer.commit_title
     except RunNotFoundError as exc:
         print(f"aqb plot: {exc}", file=sys.stderr)
         return 1
@@ -358,7 +360,10 @@ def cmd_plot(args: argparse.Namespace) -> int:
     with open(args.output, "w") as handle:
         handle.write(
             render_html(
-                frames, run_order=list(samples_by_run), names=pretty_names(frame)
+                frames,
+                run_order=list(samples_by_run),
+                names=pretty_names(frame),
+                run_titles=run_titles,
             )
         )
     out_abs = os.path.abspath(args.output)

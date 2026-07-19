@@ -162,6 +162,25 @@ class HoverTooltipTest(unittest.TestCase):
         self.assertIn("17366000", svg)
         self.assertNotIn("e+", svg)
 
+    def test_tooltip_includes_clang_commit_title_per_run(self):
+        series = {
+            "run-A": {"c:@F@zc": Candle(100, 110, 115, 120, 130, 5)},
+            "run-B": {"c:@F@zc": Candle(90, 95, 100, 105, 110, 5)},
+        }
+        svg = svg_chart(
+            ["c:@F@zc"],
+            series,
+            title="NumSteps",
+            labels={"c:@F@zc": "ZSTD_compress"},
+            run_titles={
+                "run-A": "[analyzer] change A (#111)",
+                "run-B": "[analyzer] change B (#222)",
+            },
+        )
+        # each run's candle tooltip carries that run's clang commit title
+        self.assertIn("clang: [analyzer] change A (#111)", svg)
+        self.assertIn("clang: [analyzer] change B (#222)", svg)
+
     def test_render_includes_click_to_copy_tooltip(self):
         sbr = {"r": [[_ep("c:@F@zc", "z.c", NumSteps=1)]]}
         sbr["r"][0][0]["debug_name"] = "ZSTD_compress"
