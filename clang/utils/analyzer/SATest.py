@@ -188,6 +188,7 @@ def docker_run(args, command, docker_args=""):
             "-v {clang}:/analyzer "
             "-v {scripts}:/scripts "
             "-v {projects}:/projects "
+            "-v satest-ccache:/ccache "
             "{docker_args} "
             "satest-image:latest {command}".format(
                 llvm=args.llvm_project_dir,

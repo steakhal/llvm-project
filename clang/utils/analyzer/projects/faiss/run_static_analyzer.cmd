@@ -1,2 +1,8 @@
-./configure --without-cuda
-make
+cmake . -DCMAKE_BUILD_TYPE=Debug -Bbuild -GNinja \
+  -DBUILD_TESTING=OFF \
+  -DFAISS_ENABLE_EXTRAS=OFF \
+  -DFAISS_ENABLE_GPU=OFF \
+  -DFAISS_ENABLE_METAL=OFF \
+  -DFAISS_ENABLE_MKL=OFF \
+  -DFAISS_ENABLE_PYTHON=OFF
+cmake --build build
