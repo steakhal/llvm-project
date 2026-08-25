@@ -285,10 +285,10 @@ ProgramStateRef CallEvent::invalidateRegions(unsigned BlockCount,
     // TODO: This is unnecessary when there's no destructor, but that's
     // currently hard to figure out.
     if (getKind() != CE_CXXAllocator)
-      if (isArgumentConstructedDirectly(Idx))
-        if (auto AdjIdx = getAdjustedParameterIndex(Idx))
+      if (isArgumentConstructedDirectly(getASTArgumentIndex(Idx)))
+        if (std::optional<unsigned> DeclIdx = getDeclaredParameterIndex(Idx))
           if (const TypedValueRegion *TVR =
-                  getParameterLocation(*AdjIdx, BlockCount))
+                  getParameterLocation(*DeclIdx, BlockCount))
             ValuesToInvalidate.push_back(loc::MemRegionVal(TVR));
   }
 
