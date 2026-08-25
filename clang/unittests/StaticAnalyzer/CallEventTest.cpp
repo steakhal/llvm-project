@@ -159,6 +159,30 @@ void addCXXInstanceCallChecker(AnalysisASTConsumer &AnalysisConsumer,
   });
 }
 
+TEST(CXXInstanceCall, ExplicitObjectMemberFunction) {
+  std::string Diags;
+  EXPECT_TRUE(runCheckerOnCodeWithArgs<addCXXInstanceCallChecker>(
+      R"(
+    struct S {
+      int implicit_method(int) const;
+      int explicit_method(this const S &self, int);
+    };
+
+    void top(S s) {
+      s.implicit_method(1);
+      s.explicit_method(2);
+    }
+  )",
+      {"-std=c++2b"}, Diags));
+  // The object is never an argument, and the explicit object parameter is not
+  // among parameters(), so both spellings look the same to a checker.
+  EXPECT_EQ(Diags,
+            "test.CXXInstanceCall: implicit_method: CXXMemberCall, NumArgs: 1, "
+            "NumParams: 1, This: &s, Arg0: 1 S32b\n"
+            "test.CXXInstanceCall: explicit_method: CXXMemberCall, NumArgs: 1, "
+            "NumParams: 1, This: &s, Arg0: 2 S32b\n");
+}
+
 TEST(CXXInstanceCall, ExplicitObjectOperator) {
   std::string Diags;
   EXPECT_TRUE(runCheckerOnCodeWithArgs<addCXXInstanceCallChecker>(
@@ -174,12 +198,28 @@ TEST(CXXInstanceCall, ExplicitObjectOperator) {
     }
   )",
       {"-std=c++2b"}, Diags));
-  // The object is never an argument, and the explicit object parameter is not
-  // among parameters(), so both spellings look the same to a checker.
   EXPECT_EQ(Diags, "test.CXXInstanceCall: operator+: CXXMemberOperatorCall, "
                    "NumArgs: 1, NumParams: 1, This: &s, Arg0: 1 S32b\n"
                    "test.CXXInstanceCall: operator-: CXXMemberOperatorCall, "
                    "NumArgs: 1, NumParams: 1, This: &s, Arg0: 2 S32b\n");
+}
+
+TEST(CXXInstanceCall, ExplicitObjectConversionFunction) {
+  std::string Diags;
+  EXPECT_TRUE(runCheckerOnCodeWithArgs<addCXXInstanceCallChecker>(
+      R"(
+    struct S {
+      operator int(this const S &self);
+    };
+
+    void top(S s) {
+      int i = s;
+      (void)i;
+    }
+  )",
+      {"-std=c++2b"}, Diags));
+  EXPECT_EQ(Diags, "test.CXXInstanceCall: operator int: CXXMemberCall, "
+                   "NumArgs: 0, NumParams: 0, This: &s\n");
 }
 
 } // namespace

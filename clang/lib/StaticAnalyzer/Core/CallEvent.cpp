@@ -958,7 +958,14 @@ void CXXInstanceCall::getInitialStackFrameContents(const StackFrame *CalleeSF,
 }
 
 const Expr *CXXMemberCall::getCXXThisExpr() const {
-  return getOriginExpr()->getImplicitObjectArgument();
+  if (const auto *MCE = getOriginMemberCallExpr())
+    return MCE->getImplicitObjectArgument();
+
+  // A call to an explicit object member function is a plain CallExpr whose
+  // first argument is the object.
+  assert(hasExplicitObjectParameter());
+  assert(getOriginExpr()->getNumArgs() > 0);
+  return getOriginExpr()->getArg(0);
 }
 
 RuntimeDefinition CXXMemberCall::getRuntimeDefinition() const {
@@ -966,6 +973,10 @@ RuntimeDefinition CXXMemberCall::getRuntimeDefinition() const {
   // id-expression in the class member access expression is a qualified-id,
   // that function is called. Otherwise, its final overrider in the dynamic type
   // of the object expression is called.
+  //
+  // Note that the callee of a call to an explicit object member function is a
+  // DeclRefExpr rather than a MemberExpr, so this exception never applies to it
+  // - which is fine, since such a function is never virtual anyway.
   if (const auto *ME = dyn_cast<MemberExpr>(getOriginExpr()->getCallee()))
     if (ME->hasQualifier())
       return AnyFunctionCall::getRuntimeDefinition();
@@ -1519,6 +1530,16 @@ CallEventManager::getSimpleCall(const CallExpr *CE, ProgramStateRef State,
 
   } else if (CE->getCallee()->getType()->isBlockPointerType()) {
     return create<BlockCall>(CE, State, SF, ElemRef);
+
+  } else if (const auto *MD =
+                 dyn_cast_or_null<CXXMethodDecl>(CE->getDirectCallee())) {
+    // Sema builds a call to an explicit object member function as a plain
+    // CallExpr with a DeclRefExpr callee and the object as argument 0, no
+    // matter whether it was written with member syntax. This is still an
+    // instance call. Note that a call through a pointer to such a function has
+    // no direct callee, and so is handled as a plain function call below.
+    if (MD->isExplicitObjectMemberFunction() && CE->getNumArgs() > 0)
+      return create<CXXMemberCall>(CE, State, SF, ElemRef);
   }
 
   // Otherwise, it's a normal function call, static member function call, or

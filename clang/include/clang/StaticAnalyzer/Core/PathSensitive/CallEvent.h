@@ -862,31 +862,59 @@ public:
 /// Represents a non-static C++ member function call.
 ///
 /// Example: \c obj.fun()
+///
+/// The origin expression is a \c CXXMemberCallExpr, unless \c fun is an
+/// explicit object member function ("deducing this"), which Sema builds as a
+/// plain \c CallExpr with the object as argument #0 and a \c DeclRefExpr callee
+/// (see \c Sema::BuildCallToMemberFunction). Use getOriginMemberCallExpr() when
+/// a \c CXXMemberCallExpr is required. Either way the object argument is not
+/// part of getNumArgs()/getArgExpr(); use getCXXThisExpr()/getCXXThisVal().
 class CXXMemberCall : public CXXInstanceCall {
   friend class CallEventManager;
 
 protected:
-  CXXMemberCall(const CXXMemberCallExpr *CE, ProgramStateRef St,
-                const StackFrame *SF, CFGBlock::ConstCFGElementRef ElemRef)
+  CXXMemberCall(const CallExpr *CE, ProgramStateRef St, const StackFrame *SF,
+                CFGBlock::ConstCFGElementRef ElemRef)
       : CXXInstanceCall(CE, St, SF, ElemRef) {}
   CXXMemberCall(const CXXMemberCall &Other) = default;
 
   void cloneTo(void *Dest) const override { new (Dest) CXXMemberCall(*this); }
 
 public:
-  const CXXMemberCallExpr *getOriginExpr() const override {
-    return cast<CXXMemberCallExpr>(CXXInstanceCall::getOriginExpr());
+  const CallExpr *getOriginExpr() const override {
+    return cast<CallExpr>(CXXInstanceCall::getOriginExpr());
+  }
+
+  /// \returns the origin expression as a \c CXXMemberCallExpr, or null if the
+  /// callee is an explicit object member function.
+  const CXXMemberCallExpr *getOriginMemberCallExpr() const {
+    return dyn_cast<CXXMemberCallExpr>(getOriginExpr());
   }
 
   unsigned getNumArgs() const override {
-    if (const CallExpr *CE = getOriginExpr())
+    const CallExpr *CE = getOriginExpr();
+    if (!CE)
+      return 0;
+    if (!hasExplicitObjectParameter())
       return CE->getNumArgs();
-    return 0;
+    // Ignore the object argument. A call to an explicit object member function
+    // always has one, unless the AST is invalid.
+    assert(CE->getNumArgs() > 0);
+    return CE->getNumArgs() - 1;
   }
 
   const Expr *getArgExpr(unsigned Index) const override {
-    return getOriginExpr()->getArg(Index);
+    return getOriginExpr()->getArg(getASTArgumentIndex(Index));
   }
+
+  unsigned getASTArgumentIndex(unsigned CallArgumentIndex) const override {
+    // Account for the object argument of an explicit object member function.
+    return CallArgumentIndex + (hasExplicitObjectParameter() ? 1 : 0);
+  }
+
+  // Note: getAdjustedParameterIndex() is the inherited identity. For an
+  // explicit object member function the object argument (AST index 0) does
+  // correspond to a declared parameter, namely the explicit object parameter.
 
   const Expr *getCXXThisExpr() const override;
 

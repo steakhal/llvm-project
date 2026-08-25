@@ -71,3 +71,20 @@ void use_deducing_this() {
   int result = S2{} == S2{}; // no-crash
   clang_analyzer_dump(result); // expected-warning {{1 S32b}}
 }
+
+// The object argument of a call to an explicit object member function may be a
+// prvalue, in which case there is no object region to speak of unless the
+// parameter binds a reference to it.
+struct S3 {
+  int num;
+  void by_value(this S3 Self) {
+    clang_analyzer_dump(&Self); // expected-warning {{&Self}}
+  }
+  void by_reference(this const S3 &Self) {
+    clang_analyzer_dump(&Self); // expected-warning-re {{&temp_object{S3, S{{[0-9]+}}}}}
+  }
+};
+void prvalue_object() {
+  S3{}.by_value();
+  S3{}.by_reference();
+}
