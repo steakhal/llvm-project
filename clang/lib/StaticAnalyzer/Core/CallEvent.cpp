@@ -809,9 +809,26 @@ SVal CXXInstanceCall::getCXXThisVal() const {
   SVal ThisVal = Base ? getSVal(Base) : UnknownVal();
 
   if (isa<NonLoc>(ThisVal)) {
+    // An explicit object parameter passed by value is an ordinary argument, so
+    // the object expression may denote a value rather than a location. If the
+    // object is constructed directly into the parameter region, report that
+    // region; it is where the callee's object lives.
+    if (std::optional<SVal> V = ExprEngine::getObjectUnderConstruction(
+            getState(), {getOriginExpr(), /*Index=*/0u}, getStackFrame()))
+      if (isa<Loc>(*V))
+        return *V;
+
     SValBuilder &SVB = getState()->getStateManager().getSValBuilder();
     QualType OriginalTy = ThisVal.getType(SVB.getContext());
-    return SVB.evalCast(ThisVal, Base->getType(), OriginalTy);
+    SVal Casted = SVB.evalCast(ThisVal, Base->getType(), OriginalTy);
+
+    // A compound value is not a location, and callers may only ever see a
+    // location here: feeding one to ProgramState::assume() would crash. Give up
+    // instead.
+    // FIXME: Model by-value explicit object parameters more precisely.
+    if (!Casted.isUnknownOrUndef() && !isa<Loc>(Casted))
+      return UnknownVal();
+    return Casted;
   }
 
   assert(ThisVal.isUnknownOrUndef() || isa<Loc>(ThisVal));
@@ -839,7 +856,8 @@ RuntimeDefinition CXXInstanceCall::getRuntimeDefinition() const {
   if (!D)
     return {};
 
-  // If the method is non-virtual, we know we can inline it.
+  // If the method is non-virtual, we know we can inline it. This is always the
+  // case for explicit object member functions, which cannot be virtual.
   const auto *MD = cast<CXXMethodDecl>(D);
   if (!MD->isVirtual())
     return AnyFunctionCall::getRuntimeDefinition();
@@ -889,13 +907,26 @@ void CXXInstanceCall::getInitialStackFrameContents(const StackFrame *CalleeSF,
                                                    BindingsTy &Bindings) const {
   AnyFunctionCall::getInitialStackFrameContents(CalleeSF, Bindings);
 
+  const auto *MD = cast<CXXMethodDecl>(CalleeSF->getDecl());
+  SValBuilder &SVB = getState()->getStateManager().getSValBuilder();
+
+  // An explicit object member function has no implicit 'this': the object
+  // initializes declared parameter #0, which this CallEvent hides from its
+  // argument list. Bind it just like any other argument. Note that we must use
+  // the raw object argument value here rather than getCXXThisVal(), because a
+  // by-value object parameter receives a copy of the object, not its address.
+  if (MD->isExplicitObjectMemberFunction()) {
+    addParameterValueToBindings(
+        CalleeSF, Bindings, SVB, *this, MD->getParamDecl(0), /*DeclParamIdx=*/0,
+        /*ASTArgIdx=*/0, getCXXThisExpr(), getObjectArgumentValue());
+    return;
+  }
+
   // Handle the binding of 'this' in the new stack frame.
   SVal ThisVal = getCXXThisVal();
   if (!ThisVal.isUnknown()) {
     ProgramStateManager &StateMgr = getState()->getStateManager();
-    SValBuilder &SVB = StateMgr.getSValBuilder();
 
-    const auto *MD = cast<CXXMethodDecl>(CalleeSF->getDecl());
     Loc ThisLoc = SVB.getCXXThis(MD, CalleeSF);
 
     // If we devirtualized to a different member function, we need to make sure
@@ -1478,11 +1509,12 @@ CallEventManager::getSimpleCall(const CallExpr *CE, ProgramStateRef State,
 
   if (const auto *OpCE = dyn_cast<CXXOperatorCallExpr>(CE)) {
     const FunctionDecl *DirectCallee = OpCE->getDirectCallee();
-    if (const auto *MD = dyn_cast<CXXMethodDecl>(DirectCallee)) {
-      if (MD->isImplicitObjectMemberFunction())
+    if (const auto *MD = dyn_cast_or_null<CXXMethodDecl>(DirectCallee)) {
+      // This covers both implicit and explicit object member functions; the
+      // object is argument 0 of the operator call expression either way.
+      if (!MD->isStatic())
         return create<CXXMemberOperatorCall>(OpCE, State, SF, ElemRef);
-      if (MD->isStatic())
-        return create<CXXStaticOperatorCall>(OpCE, State, SF, ElemRef);
+      return create<CXXStaticOperatorCall>(OpCE, State, SF, ElemRef);
     }
 
   } else if (CE->getCallee()->getType()->isBlockPointerType()) {

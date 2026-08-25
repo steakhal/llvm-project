@@ -708,6 +708,14 @@ public:
 
 /// Represents a non-static C++ member function call, no matter how
 /// it is written.
+///
+/// The object the call is made on is never part of the argument list: it is
+/// available through getCXXThisExpr() / getCXXThisVal(), and getNumArgs() /
+/// getArgExpr() / parameters() only describe the arguments written after it.
+/// This holds even when the object is spelled as an argument in the AST, which
+/// is the case for overloaded operator calls and for calls to explicit object
+/// member functions ("deducing this"). It keeps the argument numbering of a
+/// member function independent of how its object parameter is declared.
 class CXXInstanceCall : public AnyFunctionCall {
 protected:
   CXXInstanceCall(const CallExpr *CE, ProgramStateRef St, const StackFrame *SF,
@@ -727,6 +735,31 @@ protected:
   /// If the Pointer is null, the flag has no meaning.
   std::pair<const CXXRecordDecl *, bool> getDeclForDynamicType() const;
 
+  /// \returns true if the callee is an explicit object member function
+  /// ("deducing this"), in which case the object is argument #0 of the origin
+  /// expression *and* declared parameter #0 of the callee.
+  ///
+  /// Such a function is never virtual, and has no implicit 'this' region in
+  /// its stack frame; the object lives in the parameter region instead.
+  bool hasExplicitObjectParameter() const {
+    // Deliberately uses getDirectCallee() instead of getDecl(): the latter is
+    // state-dependent, while this predicate is used to answer questions about
+    // the shape of the call. A CXXDestructorCall has no origin expression.
+    const auto *CE = dyn_cast_or_null<CallExpr>(CallEvent::getOriginExpr());
+    const auto *MD =
+        CE ? dyn_cast_or_null<CXXMethodDecl>(CE->getDirectCallee()) : nullptr;
+    return MD && MD->isExplicitObjectMemberFunction();
+  }
+
+  /// \returns the value of the object argument as written at the call site,
+  /// without the pointer-like adjustments that getCXXThisVal() performs. For an
+  /// explicit object parameter passed by value this can legitimately be a
+  /// (lazy) compound value rather than a location.
+  SVal getObjectArgumentValue() const {
+    const Expr *Base = getCXXThisExpr();
+    return Base ? getSVal(Base) : UnknownVal();
+  }
+
 public:
   /// Returns the expression representing the implicit 'this' object.
   virtual const Expr *getCXXThisExpr() const { return nullptr; }
@@ -740,6 +773,14 @@ public:
 
   void getInitialStackFrameContents(const StackFrame *CalleeSF,
                                     BindingsTy &Bindings) const override;
+
+  /// Returns the parameters the arguments of this call initialize. The explicit
+  /// object parameter, if any, is not among them: it is initialized by the
+  /// object rather than by an argument of this CallEvent.
+  ArrayRef<ParmVarDecl *> parameters() const override {
+    ArrayRef<ParmVarDecl *> Params = AnyFunctionCall::parameters();
+    return hasExplicitObjectParameter() ? Params.drop_front() : Params;
+  }
 
   static bool classof(const CallEvent *CA) {
     return CA->getKind() >= CE_BEG_CXX_INSTANCE_CALLS &&
@@ -863,6 +904,12 @@ public:
 /// implemented as a non-static member function.
 ///
 /// Example: <tt>iter + 1</tt>
+///
+/// The object is argument #0 of the operator call expression, but it is not
+/// part of getNumArgs()/getArgExpr(); use getCXXThisExpr()/getCXXThisVal().
+/// This holds whether or not the operator declares its object parameter
+/// explicitly ("deducing this"), so <tt>iter + 1</tt> has a single argument
+/// either way.
 class CXXMemberOperatorCall : public CXXInstanceCall {
   friend class CallEventManager;
 
@@ -883,6 +930,8 @@ public:
   }
 
   unsigned getNumArgs() const override {
+    // Ignore the object argument, which an operator call expression always has.
+    assert(getOriginExpr()->getNumArgs() > 0);
     return getOriginExpr()->getNumArgs() - 1;
   }
 
@@ -901,6 +950,12 @@ public:
 
   std::optional<unsigned>
   getAdjustedParameterIndex(unsigned ASTArgumentIndex) const override {
+    // For an explicit object member function, argument 0 on the expression
+    // corresponds to the explicit object parameter on the declaration, so the
+    // indices line up.
+    if (hasExplicitObjectParameter())
+      return ASTArgumentIndex;
+
     // For member operator calls argument 0 on the expression corresponds
     // to implicit this-parameter on the declaration.
     return (ASTArgumentIndex > 0)

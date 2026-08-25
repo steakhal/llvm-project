@@ -155,7 +155,8 @@ void ContainerModeling::checkPostCall(const CallEvent &Call,
   if (Func->isOverloadedOperator()) {
     const auto Op = Func->getOverloadedOperator();
     if (Op == OO_Equal) {
-      // Only handle the assignment operator with implicit this
+      // A call through a pointer to member has no CallEvent describing the
+      // object it is called on, so there is nothing to track.
       const auto *InstCall = dyn_cast<CXXInstanceCall>(&Call);
       if (!InstCall)
         return;

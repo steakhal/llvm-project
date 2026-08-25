@@ -1177,9 +1177,10 @@ static bool getPrintfFormatArgumentNum(const CallEvent &Call,
     // annotated with `__format__(__printf__, 2, 3)`. This checker doesn't
     // count the implicit `this` parameter, so in this case we need to subtract
     // one again.
-    // FIXME: Apparently the implementation of the format attribute doesn't
-    // support methods with an explicit object parameter, so we cannot
-    // implement proper support for that rare case either.
+    //
+    // The same adjustment is right for a method with an explicit object
+    // parameter: the attribute counts that parameter, while the CallEvent
+    // reports the object through getCXXThisVal() rather than as an argument.
     const CXXMethodDecl *MDecl = dyn_cast<CXXMethodDecl>(FDecl);
     if (MDecl && !MDecl->isStatic())
       ArgNum--;

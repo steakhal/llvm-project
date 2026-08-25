@@ -638,8 +638,7 @@ ProgramStateRef ExprEngine::finishArgumentConstruction(ProgramStateRef State,
     return State;
 
   const StackFrame *SF = Call.getStackFrame();
-  for (unsigned CallI = 0, CallN = Call.getNumArgs(); CallI != CallN; ++CallI) {
-    unsigned I = Call.getASTArgumentIndex(CallI);
+  auto FinishOne = [&](unsigned I) {
     if (std::optional<SVal> V = getObjectUnderConstruction(State, {E, I}, SF)) {
       SVal VV = *V;
       (void)VV;
@@ -648,7 +647,17 @@ ProgramStateRef ExprEngine::finishArgumentConstruction(ProgramStateRef State,
                  ->getParent() == SF);
       State = finishObjectConstruction(State, {E, I}, SF);
     }
-  }
+  };
+
+  // A CallEvent may hide a leading argument of its origin expression: the
+  // object argument of an operator call, or of a call to an explicit object
+  // member function. Such an argument can still be constructed directly into
+  // the parameter region, in which case it needs to be finished too.
+  for (unsigned I = 0, N = Call.getASTArgumentIndex(0); I != N; ++I)
+    FinishOne(I);
+
+  for (unsigned CallI = 0, CallN = Call.getNumArgs(); CallI != CallN; ++CallI)
+    FinishOne(Call.getASTArgumentIndex(CallI));
 
   return State;
 }

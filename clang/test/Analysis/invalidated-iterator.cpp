@@ -209,17 +209,20 @@ void invalidated_subscript_end_ptr_iterator(cont_with_ptr_iterator<int> &C) {
 
 #if __cplusplus >= 202302L
 namespace GH116372 {
+  // An assignment operator with an explicit object parameter is a
+  // CXXMemberOperatorCall like any other: the object is reported through
+  // getCXXThisVal() and 'other' is argument 0.
   class ExplicitThis {
     int f = 0;
   public:
     ExplicitThis();
     ExplicitThis(ExplicitThis& other);
-  
+
     ExplicitThis& operator=(this ExplicitThis& self, ExplicitThis const& other) { // no crash
       self.f = other.f;
       return self;
     }
-  
+
     ~ExplicitThis();
   };
   

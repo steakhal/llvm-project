@@ -125,6 +125,63 @@ TEST(PrivateMethodCache, NeverReturnDanglingPointersWithMultipleASTs) {
   }
 }
 
+/// Describes every instance call, so that the implicit and the explicit object
+/// spelling of the same member function can be compared.
+class CXXInstanceCallChecker : public Checker<check::PreCall> {
+public:
+  void checkPreCall(const CallEvent &Call, CheckerContext &C) const {
+    const auto *IC = dyn_cast<CXXInstanceCall>(&Call);
+    if (!IC)
+      return;
+
+    SmallString<100> WarningBuf;
+    llvm::raw_svector_ostream OS(WarningBuf);
+    // Note: not getName(), which asserts for operators and conversions.
+    OS << IC->getDecl()->getNameAsString() << ": " << IC->getKindAsString()
+       << ", NumArgs: " << IC->getNumArgs()
+       << ", NumParams: " << IC->parameters().size() << ", This: ";
+    IC->getCXXThisVal().dumpToStream(OS);
+    for (unsigned I = 0, N = IC->getNumArgs(); I != N; ++I) {
+      OS << ", Arg" << I << ": ";
+      IC->getArgSVal(I).dumpToStream(OS);
+    }
+
+    reportBug(this, *IC, C, WarningBuf);
+  }
+};
+
+void addCXXInstanceCallChecker(AnalysisASTConsumer &AnalysisConsumer,
+                               AnalyzerOptions &AnOpts) {
+  AnOpts.CheckersAndPackages = {{"test.CXXInstanceCall", true}};
+  AnalysisConsumer.AddCheckerRegistrationFn([](CheckerRegistry &Registry) {
+    Registry.addChecker<CXXInstanceCallChecker>("test.CXXInstanceCall",
+                                                "MockDescription");
+  });
+}
+
+TEST(CXXInstanceCall, ExplicitObjectOperator) {
+  std::string Diags;
+  EXPECT_TRUE(runCheckerOnCodeWithArgs<addCXXInstanceCallChecker>(
+      R"(
+    struct S {
+      int operator+(int) const;
+      int operator-(this const S &self, int);
+    };
+
+    void top(S s) {
+      (void)(s + 1);
+      (void)(s - 2);
+    }
+  )",
+      {"-std=c++2b"}, Diags));
+  // The object is never an argument, and the explicit object parameter is not
+  // among parameters(), so both spellings look the same to a checker.
+  EXPECT_EQ(Diags, "test.CXXInstanceCall: operator+: CXXMemberOperatorCall, "
+                   "NumArgs: 1, NumParams: 1, This: &s, Arg0: 1 S32b\n"
+                   "test.CXXInstanceCall: operator-: CXXMemberOperatorCall, "
+                   "NumArgs: 1, NumParams: 1, This: &s, Arg0: 2 S32b\n");
+}
+
 } // namespace
 } // namespace ento
 } // namespace clang
