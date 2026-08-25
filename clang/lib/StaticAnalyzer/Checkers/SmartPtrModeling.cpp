@@ -836,6 +836,8 @@ void SmartPtrModeling::handleBoolConversion(const CallEvent &Call,
   const Expr *CallExpr = Call.getOriginExpr();
   const MemRegion *ThisRegion =
       cast<CXXInstanceCall>(&Call)->getCXXThisVal().getAsRegion();
+  if (!ThisRegion)
+    return;
 
   QualType ThisType = cast<CXXMethodDecl>(Call.getDecl())->getThisType();
 

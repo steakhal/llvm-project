@@ -46,10 +46,28 @@ public:
                                   const Expr *ArgE) const;
 };
 
+/// The bit vectors below are indexed the same way \p Call indexes its
+/// arguments. That is not necessarily the same as the index of the declared
+/// parameter the argument initializes: a call to a member function with an
+/// explicit object parameter does not count the object among its arguments,
+/// even though it is declared parameter #0.
+///
+/// \returns the number of leading declared parameters that \p Call does not
+/// pass an argument for.
+template <class CallType>
+unsigned getDeclParameterOffset(const CallType &Call) {
+  const auto *FD = dyn_cast_or_null<FunctionDecl>(Call.getDecl());
+  if (!FD)
+    return 0;
+  assert(FD->getNumParams() >= Call.parameters().size());
+  return FD->getNumParams() - Call.parameters().size();
+}
+
 template <class CallType>
 void setBitsAccordingToFunctionAttributes(const CallType &Call,
                                           llvm::SmallBitVector &AttrNonNull) {
   const Decl *FD = Call.getDecl();
+  const unsigned Offset = getDeclParameterOffset(Call);
 
   for (const auto *NonNull : FD->specific_attrs<NonNullAttr>()) {
     if (!NonNull->args_size()) {
@@ -63,9 +81,12 @@ void setBitsAccordingToFunctionAttributes(const CallType &Call,
       // 'nonnull' attribute's parameters are 1-based and should be adjusted to
       // match actual AST parameter/argument indices.
       unsigned IdxAST = Idx.getASTIndex();
-      if (IdxAST >= AttrNonNull.size())
+      if (IdxAST < Offset)
         continue;
-      AttrNonNull.set(IdxAST);
+      unsigned IdxArg = IdxAST - Offset;
+      if (IdxArg >= AttrNonNull.size())
+        continue;
+      AttrNonNull.set(IdxArg);
     }
   }
 }
@@ -73,13 +94,14 @@ void setBitsAccordingToFunctionAttributes(const CallType &Call,
 template <class CallType>
 void setBitsAccordingToParameterAttributes(const CallType &Call,
                                            llvm::SmallBitVector &AttrNonNull) {
+  unsigned IdxArg = 0;
   for (const ParmVarDecl *Parameter : Call.parameters()) {
-    unsigned ParameterIndex = Parameter->getFunctionScopeIndex();
-    if (ParameterIndex == AttrNonNull.size())
+    if (IdxArg == AttrNonNull.size())
       break;
 
     if (Parameter->hasAttr<NonNullAttr>())
-      AttrNonNull.set(ParameterIndex);
+      AttrNonNull.set(IdxArg);
+    ++IdxArg;
   }
 }
 

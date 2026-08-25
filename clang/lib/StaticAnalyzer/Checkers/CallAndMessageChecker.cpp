@@ -577,11 +577,10 @@ ProgramStateRef CallAndMessageChecker::checkArgInitializedness(
 
   const BugType &BT = isa<ObjCMethodCall>(Call) ? MsgArgBug : CallArgBug;
 
-  const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D);
+  ArrayRef<ParmVarDecl *> Params = Call.parameters();
   for (unsigned i = 0, e = Call.getNumArgs(); i != e; ++i) {
-    const ParmVarDecl *ParamDecl = nullptr;
-    if (FD && i < FD->getNumParams())
-      ParamDecl = FD->getParamDecl(i);
+    // For variadic functions a corresponding parameter decl may not exist.
+    const ParmVarDecl *ParamDecl = i < Params.size() ? Params[i] : nullptr;
     if (PreVisitProcessArg(C, Call.getArgSVal(i), Call.getArgSourceRange(i),
                            Call.getArgExpr(i), i, checkUninitFields, Call, BT,
                            ParamDecl))
