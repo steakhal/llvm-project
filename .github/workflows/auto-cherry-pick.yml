@@ -21,8 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-          filter: blob:none
+          # Only the script is needed from this branch. The job fetches the
+          # history it needs (and nothing else) for each PR itself.
+          fetch-depth: 1
+          sparse-checkout: .github/scripts
           # A PAT (contents:write on this fork), so that pushes trigger the
           # pull_request 'synchronize' event on the swiftlang PR. Pushes made
           # with GITHUB_TOKEN do not trigger any workflows.
