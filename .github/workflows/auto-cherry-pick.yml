@@ -6,7 +6,7 @@ on:
       dry_run:
         description: Report only, don't push
         type: boolean
-        default: true
+        default: false
 
 concurrency:
   group: steakhal-ci-auto-cherry-pick
@@ -32,7 +32,7 @@ jobs:
       - name: Sync opted-in PRs
         env:
           GH_TOKEN: ${{ secrets.STEAKHAL_CI_PAT }}
-          # Scheduled runs push; manual runs default to a dry run.
+          # Scheduled runs always push; manual runs push unless dry_run is ticked.
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '' }}
         run: |
           git config user.name  "steakhal-ci[bot]"
