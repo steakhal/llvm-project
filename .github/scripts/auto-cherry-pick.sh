@@ -2,9 +2,12 @@
 # Keep opted-in PR branches (in the fork) up to date by cherry-picking upstream
 # commits that touch a monitored set of paths.
 #
-# PR body directives (one per line, may repeat):
-#   /steakhal-ci auto-cherry-pick <path> [<path>...]   opt in + paths to monitor
-#   /steakhal-ci ignore <sha> [<sha>...] [# comment]   never pick these commits
+# Directives (one per line), read from the PR body and from comments by $AUTHOR
+# (comments by anyone else are ignored):
+#   /steakhal-ci auto-cherry-pick <path> [<path>...]   opt in + paths to monitor;
+#                                                      the last one wins
+#   /steakhal-ci ignore <sha> [<sha>...] [# comment]   never pick these commits;
+#                                                      all occurrences accumulate
 #
 # Env (defaults in parentheses):
 #   UP_REPO     (swiftlang/llvm-project)  repo holding the PRs and the upstream ref
@@ -31,6 +34,12 @@ say() {
   [ -n "${GITHUB_STEP_SUMMARY:-}" ] && echo "$*" >> "$GITHUB_STEP_SUMMARY"
 }
 
+# PR JSON on stdin -> text to scan for directives: the body plus comments by $AUTHOR.
+pr_text() {
+  jq -r --arg a "$AUTHOR" \
+    '[.body] + [.comments[]? | select(.author.login == $a) | .body] | join("\n")'
+}
+
 # Number of files changed by $1 that lie outside every path in the remaining args.
 files_outside_paths() {
   local sha=$1; shift
@@ -47,7 +56,7 @@ sync_branch() {
 
   local directive
   directive=$(printf '%s\n' "$body" |
-    sed -n 's|^[[:space:]]*/steakhal-ci auto-cherry-pick[[:space:]]\{1,\}||p' | head -1)
+    sed -n 's|^[[:space:]]*/steakhal-ci auto-cherry-pick[[:space:]]\{1,\}||p' | tail -1)
   [ -z "$directive" ] && return 0
   local paths
   read -ra paths <<<"$directive"
@@ -139,11 +148,11 @@ fi
 while IFS= read -r pr; do
   n=$(jq -r .number <<<"$pr")
   b=$(jq -r .headRefName <<<"$pr")
-  body=$(jq -r .body <<<"$pr")
+  body=$(pr_text <<<"$pr")
   [ -z "${SKIP_FETCH:-}" ] && git fetch -q --filter=blob:none "$FORK_REMOTE" "$b"
   sync_branch "$b" "$body" "$UP_REPO#$n"
 done < <(gh pr list -R "$UP_REPO" --author "$AUTHOR" --state open -L 100 \
-           --json number,body,headRefName,headRepositoryOwner |
+           --json number,body,comments,headRefName,headRepositoryOwner |
          jq -c --arg o "$FORK_OWNER" '.[] | select(.headRepositoryOwner.login == $o)')
 
 exit $FAILED
