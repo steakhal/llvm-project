@@ -220,15 +220,26 @@ if [ -n "${LOCAL_BRANCH:-}" ]; then
   exit $FAILED
 fi
 
-while IFS= read -r pr; do
-  n=$(jq -r .number <<<"$pr")
+# List PRs with light fields only: asking for commits/comments of many PRs at once
+# exceeds GitHub's GraphQL node limit. The heavy fields are fetched per PR below.
+if ! prs=$(gh pr list -R "$UP_REPO" --author "$AUTHOR" --state open -L 100 \
+             --json number,headRefName,headRepositoryOwner); then
+  echo "::error::gh pr list failed"
+  exit 1
+fi
+
+for n in $(jq -r --arg o "$FORK_OWNER" \
+             '.[] | select(.headRepositoryOwner.login == $o) | .number' <<<"$prs"); do
+  if ! pr=$(gh pr view "$n" -R "$UP_REPO" --json number,body,comments,commits,headRefName); then
+    echo "::error::gh pr view $n failed"
+    FAILED=1
+    continue
+  fi
   b=$(jq -r .headRefName <<<"$pr")
   text=$(pr_text <<<"$pr")
   commits=$(jq -r '[.commits[].oid] | join(" ")' <<<"$pr")
   since=$(jq -r '[.commits[].authoredDate] | min // empty' <<<"$pr")
   sync_branch "$b" "$text" "$UP_REPO#$n" "$commits" "$since"
-done < <(gh pr list -R "$UP_REPO" --author "$AUTHOR" --state open -L 100 \
-           --json number,body,comments,commits,headRefName,headRepositoryOwner |
-         jq -c --arg o "$FORK_OWNER" '.[] | select(.headRepositoryOwner.login == $o)')
+done
 
 exit $FAILED
