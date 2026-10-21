@@ -1,6 +1,6 @@
 name: steakhal-ci auto-cherry-pick
 on:
-  schedule: [{ cron: '23 */2 * * *' }]
+  schedule: [{ cron: '5 10 * * *' }]
   workflow_dispatch:
     inputs:
       dry_run:
