@@ -17,6 +17,7 @@
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Analysis/Analyses/LifetimeSafety/LifetimeAnnotations.h"
 #include "clang/Analysis/DomainSpecific/CocoaConventions.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringSet.h"
 #include <optional>
 
@@ -752,24 +753,27 @@ class TrivialFunctionAnalysisVisitor
     if (CacheIt != Cache.end() && canUseCachedResult(CacheIt->second))
       return CacheIt->second;
 
-    // Treat a recursive statement to be trivial until proven otherwise.
-    auto [RecursiveIt, IsNew] = RecursiveFn.insert(std::make_pair(S, true));
-    if (!IsNew)
-      return RecursiveIt->second;
+    // Treat what is still being analyzed as trivial until proven otherwise.
+    size_t Mark = TentativelyTrivial.size();
+    if (!TentativelyTrivial.insert(S))
+      return true;
 
-    bool Result = Function();
-
-    if (!Result) {
-      for (auto &It : RecursiveFn)
-        It.second = false;
+    if (!Function()) {
+      // Being non-trivial is final.
+      // What was found trivial since S was inserted might have relied on S.
+      while (TentativelyTrivial.size() > Mark)
+        TentativelyTrivial.pop_back();
+      Cache[S] = false;
+      return false;
     }
-    RecursiveIt = RecursiveFn.find(S);
-    assert(RecursiveIt != RecursiveFn.end());
-    Result = RecursiveIt->second;
-    RecursiveFn.erase(RecursiveIt);
-    Cache[S] = Result;
 
-    return Result;
+    // The outermost one is trivial, so everything tentative turned out to be.
+    if (Mark == 0) {
+      for (auto Key : TentativelyTrivial)
+        Cache[Key] = true;
+      TentativelyTrivial.clear();
+    }
+    return true;
   }
 
   static bool isTrivialType(QualType Ty) {
@@ -1544,7 +1548,10 @@ private:
   CacheTy &Cache;
   CacheTy FieldCtorCache;
   CacheTy FieldDtorCache;
-  CacheTy RecursiveFn;
+  // What is being analyzed, and what was found trivial while relying on that.
+  // These are committed to the cache once the outermost analysis is trivial.
+  llvm::SetVector<llvm::PointerUnion<const Decl *, const Stmt *>>
+      TentativelyTrivial;
   const Stmt **OffendingStmt;
   SmallVectorImpl<NonTrivialityReason::Frame> *CallStack;
   unsigned ActiveDepth = 0;
